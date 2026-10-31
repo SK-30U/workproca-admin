@@ -2148,8 +2148,10 @@ Responde solo con un objeto JSON:
   function semanasDe(desde, hasta){ const out=[]; if(!desde||!hasta||desde>hasta) return out; for(let w=inicioSemana(desde); w<=hasta; w=sumarDias(w,7)) out.push(w); return out; }
   function semanasPagadasSup(id){
     const set=new Map();
-    cortes.forEach(k=>{ const L=(k.lineas||[]).find(l=>l.trabajadorId===id); if(!L||!(num(L.sueldoFijo)>0)) return;
-      (Array.isArray(L.semanas)?L.semanas:semanasDe(k.desde,k.hasta)).forEach(w=>set.set(w,k.fecha||k.hasta)); });
+    cortes.forEach(k=>{ const L=(k.lineas||[]).find(l=>l.trabajadorId===id); if(!L) return;
+      /* Las semanas que entraron en un corte quedan cerradas aunque el monto se haya puesto en 0 (esa semana no cobró y está bien). Cortes viejos sin lista de semanas: solo si cobró. */
+      if(Array.isArray(L.semanas)){ L.semanas.forEach(w=>set.set(w,k.fecha||k.hasta)); return; }
+      if(num(L.sueldoFijo)>0) semanasDe(k.desde,k.hasta).forEach(w=>set.set(w,k.fecha||k.hasta)); });
     return set;
   }
   /* Hasta qué fecha se le pagó a cada trabajador (el último corte donde apareció). Permite cortes parciales por cargo. */
