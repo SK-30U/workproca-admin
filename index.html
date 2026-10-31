@@ -3869,11 +3869,12 @@ Qué lees y qué propones:
 - Mensaje o nota tipo "saqué 10 discos para Lupara V", "usamos 2 láminas en la base de la planta", "Andrés se llevó 1 bombona de argón": SALIDAS, con la orden o trabajo al que va el material y quién lo retiró si se dice.
 - Foto o lista de un conteo físico del almacén ("hay 12 discos, 3 láminas, 1 bombona"): CONTEOS, con la cantidad contada de cada ítem (la app calcula la diferencia).
 - Material que regresa al almacén desde una orden ("sobraron 2 tubos de la Omega"): DEVOLUCIONES, con la orden de la que regresa.
-- Si un ítem no está en el catálogo, propón un ÍTEM NUEVO (nombre corto y claro, categoría, unidad, mínimo si se deduce) y usa ese nombre en el movimiento. No crees duplicados de ítems que ya existen con otro nombre, otra mayúscula o abreviatura: usa el registrado.
+- Si un ítem no está en el catálogo, el movimiento lo trae como nuevo: item_id vacío, item_nombre corto y claro (por ejemplo "Tubo 1\" sch 40 x 6 m", "Manilla de bronce"), item_categoria, item_unidad y item_minimo si se deduce. No crees duplicados de ítems que ya existen con otro nombre, otra mayúscula o abreviatura: usa el registrado.
+- Un pedido al proveedor suele llegar en dos partes: una lista de precios ("1 ángulo 2x2x1/4...142.500 Bs", "cu" = cada uno) y una lista de cantidades ("2 ángulos", "7 manillas de bronce"). Combínalas: una ENTRADA por ítem con la cantidad de la lista de cantidades y el precio unitario de la lista de precios. Un precio sin cantidad pedida no genera movimiento; una cantidad sin precio va con costo 0 y se avisa una sola vez en "dudas".
 
 Reglas:
 - Unidades: usa la del ítem del catálogo. Si el documento trae otra ("2 bombonas", "1 caja de 25 discos"), convierte solo cuando sea evidente y dilo en "motivo"; si no es evidente, deja la cantidad tal cual y ponlo en "dudas".
-- Costos siempre por unidad y en dólares (USD). Si la factura está en bolívares, pon costo_total_bs y la tasa si aparece; la app lo convierte. No inventes costos: si no aparece, 0.
+- Costos siempre por unidad: en dólares en costo_unit_usd; si el precio viene en bolívares, ponlo tal cual en costo_unit_bs (y costo_unit_usd en 0). La app lo lleva a dólares con la tasa del día que Fran confirma, así que NUNCA pidas la tasa en "dudas"; pon "tasa" solo si el documento la trae. No inventes costos: si no aparece, 0.
 - En una factura, el total es la suma de los ítems: si no cuadra, revísalo antes de proponer.
 - Una entrada no es un gasto de dinero por sí sola: si el documento muestra que ya se pagó (recibo, comprobante, "pagué"), marca pagado=true y la cuenta ("banco" si fue en bolívares, "binance" si fue en USDT, "efectivo" si fue en dólares) para que Fran decida si registra también el gasto.
 - Asocia cada salida al trabajo activo que corresponda por descripción, unidad (embarcación) u orden de servicio. Si no se dice para qué orden, déjala sin orden (consumo general) y no lo conviertas en duda.
@@ -3895,76 +3896,129 @@ Material a leer:
 ${texto?'Texto:\n<<<\n'+texto+'\n>>>\n':''}${textosArch.join('\n\n')}${nImgs?`\n(Además van ${nImgs} imagen(es) adjunta(s): léelas con cuidado, en especial cantidades y unidades.)`:''}
 
 Responde solo con un objeto JSON:
-{"resumen":"una frase de lo que entendiste","items_nuevos":[{"nombre":"","categoria":"","unidad":"und","minimo":0,"motivo":""}],"movimientos":[{"tipo":"entrada|salida|conteo|devolucion","fecha":"AAAA-MM-DD","item_id":"id del catálogo o vacío si es nuevo","item_nombre":"nombre tal como está en el catálogo o el del ítem nuevo","cantidad":0,"costo_unit_usd":0,"costo_total_usd":0,"costo_total_bs":0,"tasa":0,"proveedor":"","referencia":"N° de factura o nota","trabajo_id":"","quien_id":"","nota":"","pagado":false,"cuenta":"","motivo":"de dónde lo sacaste"}],"dudas":[]}
-Para "conteo", "cantidad" es la cantidad contada. Si no hay nada que registrar, "movimientos" va vacío y lo explicas en "resumen".`;
+{"resumen":"una frase de lo que entendiste","tasa":0,"movimientos":[{"tipo":"entrada|salida|conteo|devolucion","fecha":"AAAA-MM-DD","item_id":"id del catálogo o vacío si es nuevo","item_nombre":"nombre tal como está en el catálogo, o el del ítem nuevo","item_categoria":"solo si es nuevo","item_unidad":"solo si es nuevo","item_minimo":0,"cantidad":0,"costo_unit_usd":0,"costo_unit_bs":0,"proveedor":"","referencia":"N° de factura o nota","trabajo_id":"","quien_id":"","nota":"","pagado":false,"cuenta":"","motivo":"de dónde lo sacaste"}],"dudas":[]}
+"tasa" (bolívares por dólar) solo si el documento la trae. Para "conteo", "cantidad" es la cantidad contada. Si no hay nada que registrar, "movimientos" va vacío y lo explicas en "resumen".`;
   }
   function renderAIInv(res){
     const nuevos=(Array.isArray(res.items_nuevos)?res.items_nuevos:[]).filter(x=>x&&x.nombre).map(x=>({...x, nombre:String(x.nombre).trim()}));
     const movsP=(Array.isArray(res.movimientos)?res.movimientos:[]).filter(x=>x&&['entrada','salida','conteo','devolucion'].includes(x.tipo));
-    aiInv={items:nuevos, movs:movsP};
     const dudas=Array.isArray(res.dudas)?res.dudas.filter(Boolean):[];
+    const ts=tasaSugerida();
     const catOpts=v=>icfg.categorias.map(c=>`<option${norm(c)===norm(v)?' selected':''}>${esc(c)}</option>`).join('');
     const uniOpts=v=>UNIDADES.map(([k,l])=>`<option value="${k}"${k===v?' selected':''}>${l} · ${UNI_LBL[k]}</option>`).join('');
-    const itemOpts=(x)=>{ const ex=items.filter(it=>it.activo!==false).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es')); let sel=x.item_id&&itemDe(x.item_id)?x.item_id:''; if(!sel&&x.item_nombre){ const m=items.find(it=>norm(it.nombre)===norm(x.item_nombre))||(parecido(x.item_nombre, items.map(i=>i.nombre))?items.find(it=>it.nombre===parecido(x.item_nombre, items.map(i=>i.nombre))):null); if(m) sel=m.id; }
-      const nuevo=!sel&&x.item_nombre ? (nuevos.find(n=>norm(n.nombre)===norm(x.item_nombre))||{nombre:x.item_nombre}) : null;
-      return {sel, html:(nuevo?`<option value="nuevo:${esc(nuevo.nombre)}" selected>${esc(nuevo.nombre)} (nuevo)</option>`:'')+ex.map(it=>`<option value="${esc(it.id)}"${it.id===sel?' selected':''}>${esc(it.nombre)} (${esc(uni(it.unidad))})</option>`).join('')}; };
+    const nombres=items.map(i=>i.nombre);
+    /* A qué ítem del catálogo corresponde cada movimiento; si no existe, queda como nuevo con los datos que propuso el asistente */
+    const resolver=x=>{
+      let sel=x.item_id&&itemDe(x.item_id)?x.item_id:'';
+      if(!sel&&x.item_nombre){ const nm=norm(x.item_nombre); const m=items.find(it=>norm(it.nombre)===nm)||(()=>{ const pz=parecido(x.item_nombre, nombres); return pz?items.find(it=>it.nombre===pz):null; })(); if(m) sel=m.id; }
+      const nuevo=!sel&&x.item_nombre ? (nuevos.find(n=>norm(n.nombre)===norm(x.item_nombre))||{nombre:String(x.item_nombre).trim(), categoria:x.item_categoria||'', unidad:x.item_unidad||x.unidad||'und', minimo:x.item_minimo||0}) : null;
+      return {sel, nuevo};
+    };
+    const resueltos=movsP.map(resolver);
+    const huerfanos=nuevos.filter(n=>!resueltos.some(r=>r.nuevo&&norm(r.nuevo.nombre)===norm(n.nombre)));
+    aiInv={items:huerfanos, movs:movsP};
+    const itemSelect=(i,r)=>{ const ex=items.filter(it=>it.activo!==false).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
+      return `<select data-im="${i}" data-k="item">${r.nuevo?`<option value="nuevo:${esc(r.nuevo.nombre)}" selected>${esc(r.nuevo.nombre)} (nuevo)</option>`:''}${ex.map(it=>`<option value="${esc(it.id)}"${it.id===r.sel?' selected':''}>${esc(it.nombre)} (${esc(uni(it.unidad))})</option>`).join('')}</select>`; };
     const trabOpts=v=>'<option value="">Sin orden (consumo general)</option>'+trabajosActivos().map(d=>`<option value="${esc(d.id)}"${d.id===v?' selected':''}>${esc(nombreTrabajo(d))}</option>`).join('');
     const quienOpts=v=>'<option value="">Sin especificar</option>'+trabs.filter(t=>t.activo!==false).map(t=>`<option value="${esc(t.id)}"${t.id===v?' selected':''}>${esc(t.nombre)}</option>`).join('');
     const ctaOpts=v=>gcfg.cuentas.map(c=>`<option value="${esc(c.id)}"${c.id===v?' selected':''}>${esc(c.nombre)}</option>`).join('');
+    const hayEntradas=movsP.some(x=>x.tipo==='entrada'), hayBs=movsP.some(x=>x.tipo==='entrada'&&(num(x.costo_unit_bs)>0||num(x.costo_total_bs)>0));
     let h=(res.resumen?`<div class="sum">${esc(res.resumen)}</div>`:'');
-    h+=nuevos.map((n,i)=>`<div class="act tr"><input type="checkbox" data-ichk="n${i}" checked aria-label="Incluir"><div style="min-width:0;flex:1"><span class="tag">Ítem nuevo</span>
+    if(hayEntradas) h+=`<div class="panel num" style="margin:0 0 10px"><label class="f">Tasa del día (Bs. por USD)<input id="aiTasaInv" inputmode="decimal" value="${num(res.tasa)>0?nfT.format(num(res.tasa)):ts?nfT.format(ts):''}" placeholder="0,00"></label><div class="tip" style="margin:6px 0 0">${hayBs?'Los costos que vienen en bolívares se llevan a dólares con esta tasa. ':''}Vale para todas las tarjetas; puedes cambiarla en una en particular.</div></div>`;
+    h+=huerfanos.map((n,i)=>`<div class="act tr"><input type="checkbox" data-ichk="n${i}" checked aria-label="Incluir"><div style="min-width:0;flex:1"><span class="tag">Ítem nuevo</span>
       <div class="g"><label style="grid-column:1/-1">Nombre<input data-in="${i}" data-k="nombre" value="${esc(n.nombre)}"></label><label>Categoría<select data-in="${i}" data-k="categoria">${catOpts(n.categoria)}</select></label><label>Unidad<select data-in="${i}" data-k="unidad">${uniOpts(UNIDADES.some(u=>u[0]===n.unidad)?n.unidad:'und')}</select></label><label>Mínimo<input data-in="${i}" data-k="minimo" inputmode="decimal" value="${num(n.minimo)>0?nq.format(num(n.minimo)):''}"></label></div>
       ${n.motivo?`<small>${esc(n.motivo)}</small>`:''}<small class="err" data-ierr="n${i}"></small></div></div>`).join('');
     h+=movsP.map((x,i)=>{
-      const io=itemOpts(x); const it=itemDe(io.sel); const u=it?uni(it.unidad):(nuevos.find(n=>norm(n.nombre)===norm(x.item_nombre))||{}).unidad||'';
-      let cu=num(x.costo_unit_usd); if(!(cu>0)&&num(x.costo_total_usd)>0&&num(x.cantidad)>0) cu=num(x.costo_total_usd)/num(x.cantidad); if(!(cu>0)&&num(x.costo_total_bs)>0&&num(x.tasa)>0&&num(x.cantidad)>0) cu=num(x.costo_total_bs)/num(x.tasa)/num(x.cantidad);
+      const r=resueltos[i], it=itemDe(r.sel), nuevo=r.nuevo;
+      const u = it ? it.unidad : (nuevo && UNIDADES.some(k=>k[0]===nuevo.unidad) ? nuevo.unidad : 'und');
+      const q=num(x.cantidad);
+      const tasa=num(x.tasa)>0?num(x.tasa):(num(res.tasa)>0?num(res.tasa):ts);
+      let cuBs=num(x.costo_unit_bs); if(!(cuBs>0)&&num(x.costo_total_bs)>0&&q>0) cuBs=num(x.costo_total_bs)/q;
+      let cu=num(x.costo_unit_usd); if(!(cu>0)&&num(x.costo_total_usd)>0&&q>0) cu=num(x.costo_total_usd)/q;
+      const usdAuto=!(cu>0)&&cuBs>0&&tasa>0; if(usdAuto) cu=cuBs/tasa;
       const ent=x.tipo==='entrada', sal=x.tipo==='salida', con=x.tipo==='conteo', dev=x.tipo==='devolucion';
-      return `<div class="act tr"><input type="checkbox" data-ichk="m${i}" checked aria-label="Incluir"><div style="min-width:0;flex:1"><span class="tag">${TIPO_INV[x.tipo]}</span>
+      const nf3=v=>v>0?nf.format(r2(v)):'';
+      return `<div class="act tr"><input type="checkbox" data-ichk="m${i}" checked aria-label="Incluir"><div style="min-width:0;flex:1"><span class="tag">${TIPO_INV[x.tipo]}${nuevo?' · ítem nuevo':''}</span>
         <div class="g">
-          <label style="grid-column:1/-1">Ítem<select data-im="${i}" data-k="item">${io.html}</select></label>
+          <label style="grid-column:1/-1">Ítem${itemSelect(i,r)}</label>
+          <label data-nf="${i}"${nuevo?'':' hidden'}>Categoría<select data-im="${i}" data-k="item_categoria">${catOpts(nuevo?nuevo.categoria:'')}</select></label>
+          <label data-nf="${i}"${nuevo?'':' hidden'}>Unidad<select data-im="${i}" data-k="item_unidad">${uniOpts(u)}</select></label>
+          <label data-nf="${i}"${nuevo?'':' hidden'}>Mínimo en existencia<input data-im="${i}" data-k="item_minimo" inputmode="decimal" value="${nuevo&&num(nuevo.minimo)>0?nq.format(num(nuevo.minimo)):''}"></label>
           <label>Fecha<input type="date" data-im="${i}" data-k="fecha" value="${esc(x.fecha||today())}"></label>
-          <label>${con?'Cantidad contada':'Cantidad'}${u?' ('+esc(u)+')':''}<input data-im="${i}" data-k="cantidad" inputmode="decimal" value="${num(x.cantidad)?nq.format(num(x.cantidad)):''}"></label>
-          ${ent?`<label>Costo por unidad (USD)<input data-im="${i}" data-k="costo" inputmode="decimal" value="${cu>0?nf.format(r2(cu)):''}"></label><label>Proveedor<input data-im="${i}" data-k="proveedor" value="${esc(x.proveedor||'')}"></label><label>N° factura o nota<input data-im="${i}" data-k="referencia" value="${esc(x.referencia||'')}"></label>
-          <label class="chkl" style="grid-column:1/-1"><input type="checkbox" data-im="${i}" data-k="gasto"${x.pagado?' checked':''}> Registrar también el gasto</label><label>Cuenta del pago<select data-im="${i}" data-k="cuenta">${ctaOpts(['banco','binance','efectivo'].includes(x.cuenta)?x.cuenta:'binance')}</select></label><label>Tasa del pago (Bs./USD)<input data-im="${i}" data-k="tasa" inputmode="decimal" value="${num(x.tasa)>0?nfT.format(num(x.tasa)):''}"></label>`:''}
+          <label><span>${con?'Cantidad contada':'Cantidad'} (<span data-ul="${i}">${esc(uni(u))}</span>)</span><input data-im="${i}" data-k="cantidad" inputmode="decimal" value="${q?nq.format(q):''}"></label>
+          ${ent?`<label>Costo por unidad (USD)<input data-im="${i}" data-k="costo" inputmode="decimal" value="${nf3(cu)}"${usdAuto?' data-auto="1"':''}></label><label>Costo por unidad (Bs.)<input data-im="${i}" data-k="costo_bs" inputmode="decimal" value="${nf3(cuBs)}"></label>
+          <label>Tasa (Bs./USD)<input data-im="${i}" data-k="tasa" inputmode="decimal" value="${tasa>0?nfT.format(tasa):''}"${num(x.tasa)>0?' data-manual="1"':''}></label><label>Proveedor<input data-im="${i}" data-k="proveedor" value="${esc(x.proveedor||'')}"></label><label>N° factura o nota<input data-im="${i}" data-k="referencia" value="${esc(x.referencia||'')}"></label>
+          <label class="chkl"><input type="checkbox" data-im="${i}" data-k="gasto"${x.pagado?' checked':''}> Registrar también el gasto</label><label>Cuenta del pago<select data-im="${i}" data-k="cuenta">${ctaOpts(['banco','binance','efectivo'].includes(x.cuenta)?x.cuenta:'binance')}</select></label>`:''}
           ${sal||dev?`<label style="grid-column:1/-1">${dev?'Orden de la que regresa':'Orden o trabajo'}<select data-im="${i}" data-k="trabajo">${trabOpts(x.trabajo_id)}</select></label>`:''}
           ${sal?`<label style="grid-column:1/-1">Quién lo retiró<select data-im="${i}" data-k="quien">${quienOpts(x.quien_id)}</select></label>`:''}
           <label style="grid-column:1/-1">Nota<input data-im="${i}" data-k="nota" value="${esc(x.nota||'')}"></label>
         </div>${x.motivo?`<small>${esc(x.motivo)}</small>`:''}<small class="err" data-ierr="m${i}"></small></div></div>`;
     }).join('');
     h+=(dudas.length?`<div class="dudas"><b>Revisa antes de guardar</b><ul>${dudas.map(q=>`<li>${esc(q)}</li>`).join('')}</ul></div>`:'');
-    if(!nuevos.length&&!movsP.length) h+='<div class="sum">No encontré movimientos de inventario en lo que enviaste.</div>';
+    if(!huerfanos.length&&!movsP.length) h+='<div class="sum">No encontré movimientos de inventario en lo que enviaste.</div>';
     $('#aiRes').innerHTML=h;
-    $('#aiApplyRow').hidden=!(nuevos.length||movsP.length) || !canWrite;
+    $('#aiApplyRow').hidden=!(huerfanos.length||movsP.length) || !canWrite;
   }
+  /* Tarjetas del inventario: costo en bolívares → dólares con la tasa; tasa del día para todas; campos del ítem nuevo según el ítem elegido */
+  function recalcCostoAI(i){
+    const el=k=>document.querySelector(`[data-im="${i}"][data-k="${k}"]`); const usd=el('costo'), bs=el('costo_bs'), t=el('tasa'); if(!usd||!bs||!t) return;
+    const b=parseNum(bs.value)||0, tt=parseNum(t.value)||0;
+    if(b>0&&tt>0&&(usd.dataset.auto||!usd.value.trim())){ usd.value=nf.format(r2(b/tt)); usd.dataset.auto='1'; }
+  }
+  $('#aiRes').addEventListener('input', e=>{
+    const t=e.target; if(aiMode!=='inv') return;
+    if(t.id==='aiTasaInv'){ document.querySelectorAll('#aiRes [data-k="tasa"]').forEach(x=>{ if(!x.dataset.manual){ x.value=t.value; recalcCostoAI(x.dataset.im); } }); return; }
+    if(t.dataset.im==null) return;
+    if(t.dataset.k==='costo') delete t.dataset.auto;
+    if(t.dataset.k==='tasa'){ t.dataset.manual='1'; recalcCostoAI(t.dataset.im); }
+    if(t.dataset.k==='costo_bs') recalcCostoAI(t.dataset.im);
+  });
+  $('#aiRes').addEventListener('change', e=>{
+    const t=e.target; if(aiMode!=='inv'||t.dataset.im==null) return;
+    const i=t.dataset.im;
+    if(t.dataset.k==='item'||t.dataset.k==='item_unidad'){
+      const sel=document.querySelector(`[data-im="${i}"][data-k="item"]`), nuevo=String(sel.value).startsWith('nuevo:');
+      document.querySelectorAll(`[data-nf="${i}"]`).forEach(l=>l.hidden=!nuevo);
+      const it=itemDe(sel.value), ul=document.querySelector(`[data-ul="${i}"]`); if(ul) ul.textContent = it ? uni(it.unidad) : uni((document.querySelector(`[data-im="${i}"][data-k="item_unidad"]`)||{}).value||'und');
+    }
+  });
   async function aplicarAIInv(){
     if(!iDb) return;
     const btn=$('#aiApply'); let ok=0, conErr=0; btn.disabled=true; btn.textContent='Guardando…';
     const vN=(i,k)=>{ const e=document.querySelector(`[data-in="${i}"][data-k="${k}"]`); return e?e.value.trim():''; };
     const vM=(i,k)=>{ const e=document.querySelector(`[data-im="${i}"][data-k="${k}"]`); return e ? (e.type==='checkbox'?e.checked:e.value.trim()) : ''; };
-    const creados={};  // nombre normalizado → id del ítem nuevo
+    const creados={};  // nombre normalizado → id del ítem creado en esta pasada
+    const crearItem=async(nombre, categoria, unidad, minimo)=>{
+      const nm=norm(nombre); if(creados[nm]) return creados[nm];
+      const ex=items.find(it=>norm(it.nombre)===nm); if(ex){ creados[nm]=ex.id; return ex.id; }
+      const ref=iDb.collection('inventario').doc();
+      await ref.set({nombre, categoria:categoria||icfg.categorias[0], unidad:UNIDADES.some(u=>u[0]===unidad)?unidad:'und', minimo:Math.max(0,parseNum(minimo)||0), ubicacion:'', proveedor:'', activo:true, creado:new Date().toISOString(), actualizado:new Date().toISOString()});
+      creados[nm]=ref.id; return ref.id;
+    };
     for(let i=0;i<aiInv.items.length;i++){
       const chk=document.querySelector(`[data-ichk="n${i}"]`), errEl=document.querySelector(`[data-ierr="n${i}"]`); if(!chk||!chk.checked) continue;
       const nombre=vN(i,'nombre'); if(!nombre){ errEl.textContent='Falta el nombre.'; conErr++; continue; }
-      const ex=items.find(it=>norm(it.nombre)===norm(nombre)); if(ex){ creados[norm(nombre)]=ex.id; errEl.textContent=''; chk.checked=false; chk.closest('.act').style.opacity='.5'; continue; }
-      try{ const ref=iDb.collection('inventario').doc(); await ref.set({nombre, categoria:vN(i,'categoria'), unidad:vN(i,'unidad')||'und', minimo:Math.max(0,parseNum(vN(i,'minimo'))||0), ubicacion:'', proveedor:'', activo:true, creado:new Date().toISOString(), actualizado:new Date().toISOString()}); creados[norm(nombre)]=ref.id; ok++; errEl.textContent=''; chk.checked=false; chk.closest('.act').style.opacity='.5'; }
+      try{ const antes=Object.keys(creados).length; await crearItem(nombre, vN(i,'categoria'), vN(i,'unidad'), vN(i,'minimo')); if(Object.keys(creados).length>antes) ok++; errEl.textContent=''; chk.checked=false; chk.closest('.act').style.opacity='.5'; }
       catch(e){ errEl.textContent=errMsg(e); conErr++; }
     }
     for(let i=0;i<aiInv.movs.length;i++){
       const chk=document.querySelector(`[data-ichk="m${i}"]`), errEl=document.querySelector(`[data-ierr="m${i}"]`); if(!chk||!chk.checked) continue;
       const x=aiInv.movs[i]; let itemId=vM(i,'item');
-      if(String(itemId).startsWith('nuevo:')){ const nm=norm(itemId.slice(6)); itemId=creados[nm]||(items.find(it=>norm(it.nombre)===nm)||{}).id||''; if(!itemId){ errEl.textContent='El ítem nuevo no se guardó; márcalo arriba o elige uno del catálogo.'; conErr++; continue; } }
-      const it=itemDe(itemId)||{id:itemId, categoria:'', unidad:'und', nombre:vM(i,'item')};
-      if(!itemId){ errEl.textContent='Elige el ítem.'; conErr++; continue; }
-      const q=parseNum(vM(i,'cantidad')); if(isNaN(q)||q<0||(x.tipo!=='conteo'&&!(q>0))){ errEl.textContent='Falta la cantidad.'; conErr++; continue; }
-      const f=vM(i,'fecha')||today();
-      const body={tipo:x.tipo, fecha:f, itemId, nota:vM(i,'nota'), registradoPor:quienRegistra(), creado:new Date().toISOString(), actualizado:new Date().toISOString()};
-      if(x.tipo==='conteo') body.contado=r2q(q); else body.cantidad=r2q(q);
       try{
+        if(String(itemId).startsWith('nuevo:')) itemId=await crearItem(itemId.slice(6), vM(i,'item_categoria'), vM(i,'item_unidad'), vM(i,'item_minimo'));
+        if(!itemId){ errEl.textContent='Elige el ítem.'; conErr++; continue; }
+        const it=itemDe(itemId)||{id:itemId, categoria:vM(i,'item_categoria'), unidad:vM(i,'item_unidad')||'und', nombre:String(vM(i,'item')).replace(/^nuevo:/,'')};
+        const q=parseNum(vM(i,'cantidad')); if(isNaN(q)||q<0||(x.tipo!=='conteo'&&!(q>0))){ errEl.textContent='Falta la cantidad.'; conErr++; continue; }
+        const f=vM(i,'fecha')||today();
+        const body={tipo:x.tipo, fecha:f, itemId, nota:vM(i,'nota'), registradoPor:quienRegistra(), creado:new Date().toISOString(), actualizado:new Date().toISOString()};
+        if(x.tipo==='conteo') body.contado=r2q(q); else body.cantidad=r2q(q);
         if(x.tipo==='entrada'){
-          const cu=parseNum(vM(i,'costo'))||0; if(!(cu>0)){ errEl.textContent='Falta el costo por unidad.'; conErr++; continue; }
+          const t=parseNum(vM(i,'tasa'))||0; let cu=parseNum(vM(i,'costo'))||0; const bs=parseNum(vM(i,'costo_bs'))||0;
+          const usdEl=document.querySelector(`[data-im="${i}"][data-k="costo"]`); if(bs>0&&t>0&&(!(cu>0)||(usdEl&&usdEl.dataset.auto))) cu=bs/t;   // el valor exacto, no el redondeado de la casilla
+          if(!(cu>0)){ errEl.textContent = bs>0 ? 'Escribe la tasa para llevar el costo en bolívares a dólares.' : 'Falta el costo por unidad. Si no lo sabes aún, desmarca esta tarjeta y regístrala después.'; conErr++; continue; }
           Object.assign(body,{costoUnit:r4(cu), proveedor:vM(i,'proveedor'), referencia:vM(i,'referencia'), movId:''});
-          if(vM(i,'gasto')){ const cta=cuentaDe(vM(i,'cuenta')), gt=parseNum(vM(i,'tasa'))||0, tot=r2(cu*q); if(cta.moneda==='VES'&&!(gt>0)){ errEl.textContent='Escribe la tasa del pago en bolívares.'; conErr++; continue; }
-            const gref=gDb.collection('movimientos').doc(); await gref.set({tipo:'gasto', fecha:f, concepto:`Compra: ${it.nombre} (${cant(q,it.unidad)})`, categoria:CAT_GASTO_INV[it.categoria]||'Materiales', aCargo:'Empresa', cuenta:cta.id, monto:cta.moneda==='VES'?r2(tot*gt):tot, tasa:cta.moneda==='VES'?gt:0, trabajoId:'', referencia:body.referencia, inventario:true, creado:body.creado, actualizado:body.creado}); body.movId=gref.id; }
+          if(vM(i,'gasto')){ const cta=cuentaDe(vM(i,'cuenta')), tot=r2(cu*q); if(cta.moneda==='VES'&&!(t>0)){ errEl.textContent='Escribe la tasa del pago en bolívares.'; conErr++; continue; }
+            const gref=gDb.collection('movimientos').doc(); await gref.set({tipo:'gasto', fecha:f, concepto:`Compra: ${it.nombre} (${cant(q,it.unidad)})`, categoria:CAT_GASTO_INV[it.categoria]||'Materiales', aCargo:'Empresa', cuenta:cta.id, monto:cta.moneda==='VES'?r2(tot*t):tot, tasa:cta.moneda==='VES'?t:0, trabajoId:'', referencia:body.referencia, inventario:true, creado:body.creado, actualizado:body.creado}); body.movId=gref.id; }
         } else if(x.tipo==='salida'||x.tipo==='devolucion'){ body.trabajoId=vM(i,'trabajo')||''; if(x.tipo==='salida'){ body.quienId=vM(i,'quien')||''; const ex=estadoItem(itemId).existencia; if(q>ex+0.0005){ errEl.textContent=`Solo hay ${cant(ex,it.unidad)}; registra primero la entrada o un conteo.`; conErr++; continue; } } }
         await iDb.collection('invMovs').doc().set(body); ok++; errEl.textContent=''; chk.checked=false; chk.closest('.act').style.opacity='.5';
       }catch(e){ errEl.textContent=errMsg(e); conErr++; }
@@ -3973,7 +4027,6 @@ Para "conteo", "cantidad" es la cantidad contada. Si no hay nada que registrar, 
     $('#aiStat').textContent=`${ok} ${ok===1?'registro guardado':'registros guardados'}.${conErr?` ${conErr} por corregir: revisa los mensajes en rojo.`:''}`;
     if(ok && !conErr){ toast('Inventario actualizado'); $('#aiText').value=''; aiFiles=[]; renderChips(); }
   }
-
   /* =====================================================================
      RESUMEN: caja, cobranzas, nómina y órdenes en una sola pantalla, con el cruce entre ellas
      ===================================================================== */
