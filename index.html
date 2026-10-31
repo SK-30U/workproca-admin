@@ -3622,14 +3622,14 @@ Responde solo con un objeto JSON:
      más viejo y se lleva ese costo; un conteo ajusta la existencia (lo que falta es merma, lo que sobra entra al costo promedio). */
   function estadoItem(id, hasta){
     const ms=invMovs.filter(m=>m.itemId===id && (!hasta||m.fecha<=hasta)).sort(byFechaCreado);
-    const lotes=[], det={}; let exist=0, ultimoCU=0, sinCosto=0; const tRef=tasaSugerida()||0;
+    const lotes=[], det={}; let exist=0, ultimoCU=0, sinCosto=0; const tRef=tasaSugerida()||0, ref=num((itemDe(id)||{}).precioRef);   // precio de referencia del ítem: vale para toda entrada que no traiga costo
     const promedio=()=>{ const q=sum(lotes,l=>l.q), v=sum(lotes,l=>l.q*l.cu); return q>0 ? v/q : ultimoCU; };
     /* Bolívares de cada lote: el precio de lista con que entró (lo que cuesta si se paga en bolívares); si no lo trae, su costo en dólares a la última tasa */
     const promedioBs=()=>{ const q=sum(lotes,l=>l.q), v=sum(lotes,l=>l.q*l.cuBs); return q>0 ? v/q : ultimoCU*tRef; };
     const consumir=q=>{ let r=q, c=0; for(const l of lotes){ if(r<=0) break; if(l.q<=0) continue; const u=Math.min(l.q,r); l.q=r2q(l.q-u); r=r2q(r-u); c+=u*l.cu; } if(r>0) c+=r*promedio(); return c; };
     for(const m of ms){
       const q=num(m.cantidad);
-      if(m.tipo==='entrada'||m.tipo==='devolucion'){ const sc=m.tipo==='entrada'&&!(num(m.costoUnit)>0); const cu=sc?0:(num(m.costoUnit)>0?num(m.costoUnit):promedio()); const cuBs=sc?0:(m.tipo==='entrada'&&num(m.costoUnitBs)>0?num(m.costoUnitBs):(num(m.costoUnit)>0?cu*tRef:promedioBs())); lotes.push({q, cu, cuBs, fecha:m.fecha, id:m.id, sc}); exist=r2q(exist+q); if(m.tipo==='entrada'&&num(m.costoUnit)>0) ultimoCU=num(m.costoUnit); det[m.id]={costo:r2(q*cu), cu:r2(cu), sinCosto:sc}; }
+      if(m.tipo==='entrada'||m.tipo==='devolucion'){ const propio=num(m.costoUnit)>0; const sc=m.tipo==='entrada'&&!propio&&!(ref>0); const cu=sc?0:(propio?num(m.costoUnit):(m.tipo==='entrada'?ref:promedio())); const cuBs=sc?0:(m.tipo==='entrada'&&num(m.costoUnitBs)>0?num(m.costoUnitBs):(m.tipo==='entrada'||propio?cu*tRef:promedioBs())); lotes.push({q, cu, cuBs, fecha:m.fecha, id:m.id, sc}); exist=r2q(exist+q); if(m.tipo==='entrada'&&cu>0) ultimoCU=cu; det[m.id]={costo:r2(q*cu), cu:r2(cu), sinCosto:sc, deReferencia:m.tipo==='entrada'&&!propio&&ref>0}; }
       else if(m.tipo==='salida'){ const c=consumir(q); exist=r2q(exist-q); det[m.id]={costo:r2(c), cu:q>0?r2(c/q):0}; }
       else if(m.tipo==='conteo'){ const d=r2q(num(m.contado)-exist); let c=0; if(d<0) c=-consumir(-d); else if(d>0){ const cu=promedio(); lotes.push({q:d, cu, cuBs:promedioBs(), fecha:m.fecha, id:m.id}); c=d*cu; } exist=r2q(num(m.contado)); det[m.id]={costo:r2(c), diferencia:d, cu:d!==0?r2(Math.abs(c/d)):0}; }
     }
@@ -3772,7 +3772,7 @@ Responde solo con un objeto JSON:
     $('#itUni').value=it&&it.unidad||'und'; $('#itMin').value=it&&num(it.minimo)>0?nq.format(num(it.minimo)):''; $('#itUbi').value=it&&it.ubicacion||''; $('#itProv').value=it&&it.proveedor||''; $('#itActivo').checked=!it||it.activo!==false;
     $('#itErr').textContent=''; $('#itDel').hidden=!it; $('#itDel').textContent='Eliminar'; delete $('#itDel').dataset.armed; $('#itEntrada').hidden=!it; $('#itSalida').hidden=!it;
     $('#itPrecio').value=it&&num(it.precioRef)>0?nf.format(num(it.precioRef)):''; $('#itPrecioBs').value='';
-    { const sc=it?estadoItem(it.id).sinCosto:0; $('#itPrecioTip').textContent = sc>0 ? `Hay ${cant(sc,it.unidad)} que entraron sin precio: al guardar con un precio aquí, esas entradas quedan con ese costo (en dólares, o en bolívares a la tasa que corresponda).` : 'Se propone al registrar entradas.'; }
+    { const sinP=it?invMovs.filter(m=>m.itemId===it.id&&m.tipo==='entrada'&&!(num(m.costoUnit)>0)).reduce((a,m)=>a+num(m.cantidad),0):0; $('#itPrecioTip').textContent = sinP>0 ? `Hay ${cant(sinP,it.unidad)} que entraron sin precio propio: con un precio aquí valen ese precio en todo (existencias, salidas y costos por orden) y al guardar queda escrito en esas entradas.` : 'Se propone al registrar entradas y vale para cualquier entrada que llegue sin precio.'; }
     if(it){
       const e=estadoItem(it.id), ms=invMovs.filter(m=>m.itemId===it.id).sort(byFechaCreado).reverse().slice(0,8), det=detallesInv();
       $('#itEstado').innerHTML=`<div class="panel num" style="margin-top:10px"><div class="brk"><div><span>Existencia</span><b>${cant(e.existencia,it.unidad)}</b></div><div><span>Valor al costo de los lotes</span><b>${usd(e.valor)}</b></div>${e.lotes.length?`<div><span>Lotes</span><b>${e.lotes.map(l=>`${nq.format(l.q)} a ${usd(l.cu)}`).join(' · ')}</b></div>`:''}</div>
