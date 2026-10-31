@@ -104,6 +104,15 @@ window.__standalone = true;
   const wrapDoc = d => ({ id: d.id, set: (o, opt) => opt ? d.set(limpiar(o), opt) : d.set(limpiar(o)), update: o => d.update(limpiar(o)), delete: () => d.delete(), onSnapshot: (f, e) => d.onSnapshot(f, e), get: () => d.get() });
   const wrapColl = c => ({ doc: id => wrapDoc(id ? c.doc(id) : c.doc()), onSnapshot: (f, e) => c.onSnapshot(f, e) });
   const adapter = { collection: c => wrapColl(fs.collection(c)), doc: p => wrapDoc(fs.doc(p)) };
+  /* Personas invitadas (modo registro): cada escritura se convierte en una solicitud que el dueño aprueba; nada cambia hasta entonces */
+  let quien = null;
+  const solicitar = (col, docId, op, datos) => fs.collection('solicitudes').doc().set(limpiar({ col, docId, op, datos: datos || null, autor: quien.email, nombre: quien.nombre, fecha: new Date().toISOString(), estado: 'pendiente' }))
+    .then(() => { window.dispatchEvent(new Event('wk-solicitud')); });
+  const docInvitado = (col, d) => ({ id: d.id, set: (o, opt) => solicitar(col, d.id, opt && opt.merge ? 'merge' : 'set', limpiar(o)), update: o => solicitar(col, d.id, 'update', limpiar(o)), delete: () => solicitar(col, d.id, 'delete', null), onSnapshot: (f, e) => d.onSnapshot(f, e), get: () => d.get() });
+  const adapterInvitado = {
+    collection: c => c === 'solicitudes' ? ({ doc: id => wrapDoc(id ? fs.collection(c).doc(id) : fs.collection(c).doc()), onSnapshot: (f, e) => fs.collection(c).where('autor', '==', quien.email).onSnapshot(f, e) }) : ({ doc: id => docInvitado(c, id ? fs.collection(c).doc(id) : fs.collection(c).doc()), onSnapshot: (f, e) => fs.collection(c).onSnapshot(f, e) }),
+    doc: p => { const [c] = p.split('/'); return c === 'solicitudes' ? wrapDoc(fs.doc(p)) : docInvitado(c, fs.doc(p)); }
+  };
   const provider = new firebase.auth.GoogleAuthProvider();
   let entregado = false;
   auth.onAuthStateChanged(async u => {
@@ -113,8 +122,11 @@ window.__standalone = true;
     catch (e) {
       if (e && e.code === 'permission-denied') { msg.innerHTML = `La cuenta <b>${u.email}</b> no tiene acceso. Agrega ese correo en las reglas de Firestore (ver README.md) o entra con otra cuenta.`; btn.hidden = false; btn.textContent = 'Entrar con otra cuenta'; btn.onclick = () => auth.signOut().then(() => location.reload()); return; }
     }
+    let perfil = null;
+    try { const a = await fs.collection('acceso').doc(String(u.email || '').toLowerCase()).get(); if (a.exists) perfil = a.data() || {}; } catch (_) {}
     ov.hidden = true; document.documentElement.dataset.user = u.email || '';
-    if (!entregado) { entregado = true; resolveDb(adapter); }
+    if (perfil && perfil.activo !== false) { quien = { email: u.email, nombre: perfil.nombre || u.email }; document.documentElement.dataset.rol = 'registro'; if (location.hash !== '#registro') history.replaceState(null, '', '#registro'); }
+    if (!entregado) { entregado = true; resolveDb(quien ? adapterInvitado : adapter); }
   });
   btn.onclick = () => auth.signInWithPopup(provider).catch(e => { if (e && (e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-this-environment' || e.code === 'auth/cancelled-popup-request')) return auth.signInWithRedirect(provider); msg.textContent = 'No se pudo entrar: ' + (e && e.message || e); });
   window.__cerrarSesion = () => auth.signOut().then(() => location.reload());
@@ -144,8 +156,8 @@ window.__standalone = true;
 :root[data-theme="dark"]{
   --bg:#0E161B; --surface:#162128; --sunk:#111B21; --ink:#E3E9ED; --muted:#91A1AC; --line:#25333C;
   --accent:#4DB0B7; --accent-ink:#04282B; --danger:#F08A82;
-  --pe:#A7B4BD; --pe-bg:#222E36; --so:#F0A452; --so-bg:#3A2914; --lf:#86B4EF; --lf-bg:#172A43; --co:#7FCB8E; --co-bg:#15321D; color-scheme:dark}
-  --c-lf:#4A8BDD; --c-po:#1FA48C; --c-so:#D27A1F; --c-ps:#8C72E6; --c-co:#43A25A; --track:#22303A;
+  --pe:#A7B4BD; --pe-bg:#222E36; --so:#F0A452; --so-bg:#3A2914; --lf:#86B4EF; --lf-bg:#172A43; --co:#7FCB8E; --co-bg:#15321D; color-scheme:dark;
+  --c-lf:#4A8BDD; --c-po:#1FA48C; --c-so:#D27A1F; --c-ps:#8C72E6; --c-co:#43A25A; --track:#22303A;}
 
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.4;-webkit-tap-highlight-color:transparent}
@@ -166,6 +178,20 @@ h1{font-family:var(--f-disp);font-weight:700;font-size:34px;line-height:1;margin
 .ghost.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 
 .hero{margin-top:16px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 14px 12px}
+html[data-rol="registro"] #modTabs,html[data-rol="registro"] #cobBtns,html[data-rol="registro"] #nTabs [data-v="corte"],html[data-rol="registro"] #nTabs [data-v="trab"],html[data-rol="registro"] #nTabs [data-v="ajustes"],html[data-rol="registro"] #mvACargoL,html[data-rol="registro"] #imGastoBox,html[data-rol="registro"] .wacts [data-dividir],html[data-rol="registro"] [data-desactivar],html[data-rol="registro"] #wAdel{display:none!important}
+.regBtns{display:grid;grid-template-columns:1fr;gap:10px;margin-top:14px}
+.regBtns button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:16px;text-align:left;font-family:inherit;color:var(--ink)}
+.regBtns button b{font-size:18px}.regBtns button span{font-size:13.5px;color:var(--muted)}
+.volverReg{display:none}html[data-rol="registro"] .volverReg{display:inline-flex}
+.solic{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:10px 12px;margin-top:8px}
+.solic .acts{display:flex;gap:8px;margin-top:8px}
+.opcRep{margin-top:10px;border:1px solid var(--line);border-radius:11px;padding:8px 12px;background:var(--surface)}
+.opcRep>summary{font-weight:700;font-size:13.5px;color:var(--accent);cursor:pointer}
+.heroTog{display:flex;justify-content:space-between;align-items:center;width:100%;border:0;background:transparent;padding:0;color:inherit;font-family:inherit;text-align:left}
+.heroTog .chev{font-size:12.5px;font-weight:700;color:var(--accent)}
+#hero.plegado .segbar,#hero.plegado .rows,#hero.plegado .tot,#hero.plegado .sub{display:none}
+#list{padding-bottom:170px}
+.toast{pointer-events:none}.toast .tact{pointer-events:auto}
 .hero .lbl{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--muted)}
 .hero .big{font-family:var(--f-disp);font-weight:700;font-size:clamp(30px,9vw,40px);line-height:1.05;margin-top:2px;white-space:nowrap}
 .hero .big small{font-family:var(--f-body);font-size:13px;font-weight:600;color:var(--muted);margin-right:6px}
@@ -238,12 +264,16 @@ main{padding-bottom:130px}
 .pill.so{background:var(--so-bg);color:var(--so)}
 .pill.lf{background:var(--lf-bg);color:var(--lf)}
 .pill.co{background:var(--co-bg);color:var(--co)}
+.wacts{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px}.wacts .lnk{font-size:13px}
 .pill.ej{background:color-mix(in srgb,var(--c-po) 16%,transparent);color:var(--c-po)}
 .hbtns{display:flex;gap:8px;flex-wrap:wrap}
 .topnav{position:sticky;top:env(safe-area-inset-top,0px);z-index:8;background:var(--bg);padding-block:14px 10px;border-bottom:1px solid var(--line)}
 /* Instalada en la pantalla de inicio, la barra de estado del teléfono queda pegada arriba: más aire para las pestañas */
 @media (display-mode: standalone){.topnav{padding-top:22px}}
 .modtabs{display:flex;gap:4px}
+@media (max-width:370px){.modtabs{gap:3px}.modtabs button{font-size:11px;letter-spacing:-.03em;padding:9px 0}}
+.tabs{mask-image:linear-gradient(90deg,#000 88%,transparent);-webkit-mask-image:linear-gradient(90deg,#000 88%,transparent)}
+.tabs.fin{mask-image:none;-webkit-mask-image:none}
 .modtabs button{flex:1 1 0;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 1px;font-weight:700;font-size:12.5px;letter-spacing:-.01em;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:clip}
 .modtabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 13px}
@@ -398,7 +428,6 @@ legend{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;font-weigh
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .full{grid-column:1/-1}
 label.f{display:flex;flex-direction:column;gap:4px;font-size:12.5px;font-weight:600;color:var(--muted);min-width:0}
-label.f input.selq{font-size:14px;padding:7px 10px;margin-bottom:6px;background:var(--surface)}
 label.f input,label.f select{border:1px solid var(--line);background:var(--sunk);border-radius:10px;padding:10px 11px;font-size:16px;font-weight:500;color:var(--ink);width:100%;min-width:0}
 label.f input[type=date]{min-height:44px;-webkit-appearance:none;appearance:none;display:block;text-align:left}
 label.f input[type=date]::-webkit-date-and-time-value{text-align:left}
@@ -446,6 +475,17 @@ textarea.share{width:100%;min-height:46vh;border:1px solid var(--line);backgroun
 .ecchips label.on{background:var(--lf-bg);border-color:var(--lf);color:var(--ink)}
 .ecchips input{width:16px;height:16px;accent-color:var(--accent)}
 textarea.share{min-height:38vh}
+.toast .tact{margin-left:12px;border:0;background:transparent;color:var(--accent);font-weight:800;font-size:14px;padding:4px 2px;text-decoration:underline}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .toast .tact{color:#04282B}}
+.combo{position:relative}.combo[hidden]{display:none}
+.combo-in{width:100%;border:1px solid var(--line);background:var(--sunk);border-radius:10px;padding:10px 34px 10px 11px;font-size:16px;font-weight:500;color:var(--ink);font-family:inherit;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%;background-size:5px 5px;background-repeat:no-repeat}
+.combo-in::placeholder{color:var(--muted)}
+.combo-list{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:25;max-height:260px;overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:4px}
+.combo-list[hidden]{display:none}
+.combo-list button{display:block;width:100%;text-align:left;border:0;background:transparent;color:var(--ink);font-size:15px;padding:9px 10px;border-radius:7px;font-family:inherit}
+.combo-list button.on{background:var(--sunk);font-weight:700}.combo-list button:active{background:var(--sunk)}
+.combo-nada{padding:9px 10px;color:var(--muted);font-size:14px}
+select.combo-oculto{display:none}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(140px + env(safe-area-inset-bottom,0px));z-index:30;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:600;font-size:14px;max-width:calc(100% - 32px)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}.card:active{transform:none}}
 </style>
@@ -469,6 +509,7 @@ textarea.share{min-height:38vh}
         <div class="eyebrow">Workproca · Trabajos Profesionales C.A.</div>
         <h1 id="modTitle">Cobranzas</h1>
       </div>
+      <button type="button" class="btn sec volverReg" id="btnVolverReg">‹ Inicio</button>
       <div class="hbtns" id="cobBtns">
         <button class="ghost" id="btnAI" type="button" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></svg>
@@ -549,6 +590,7 @@ textarea.share{min-height:38vh}
 </div>
 
 <div id="modRes" hidden><main class="wrap" id="rMain"></main></div>
+<div id="modReg" hidden><main class="wrap" id="regMain"></main></div>
 
 <button class="fab" id="fab" type="button">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
@@ -583,8 +625,8 @@ textarea.share{min-height:38vh}
         </button>
         <div class="grid">
           <label class="f full">Descripción<input id="iDesc" placeholder="Corta, por ejemplo: Reemplazo de 6 rubber bearings"></label>
-          <label class="f">Cliente<input class="selq" data-filtra="#iCliente" placeholder="Buscar cliente…" autocomplete="off" aria-label="Buscar cliente…"><select id="iCliente"></select></label>
-          <label class="f">Unidad (embarcación)<input class="selq" data-filtra="#iUnidad" placeholder="Buscar unidad…" autocomplete="off" aria-label="Buscar unidad…"><select id="iUnidad"></select></label>
+          <label class="f">Cliente<select data-combo id="iCliente"></select></label>
+          <label class="f">Unidad (embarcación)<select data-combo id="iUnidad"></select></label>
           <div class="full" id="newCli" hidden>
             <div class="ncrow"><input id="iNewCli" placeholder="Nombre del cliente nuevo" aria-label="Nombre del cliente nuevo"><button type="button" class="btn sec" id="btnNewCli">Agregar</button></div>
             <div class="tip" id="newCliMsg"></div>
@@ -593,8 +635,8 @@ textarea.share{min-height:38vh}
             <div class="ncrow"><input id="iNewUni" placeholder="Nombre de la unidad nueva" aria-label="Nombre de la unidad nueva"><button type="button" class="btn sec" id="btnNewUni">Agregar</button></div>
             <div class="tip" id="newUniMsg"></div>
           </div>
-          <label class="f">Orden de servicio<input id="iOds" placeholder="PO1062"></label>
-          <label class="f">Número de requisición<input id="iNota" placeholder="EPR 1232"></label>
+          <label class="f">Orden de servicio<input id="iOds" placeholder="Ej.: PO1062 (vacío si no hay)"></label>
+          <label class="f">Número de requisición<input id="iNota" placeholder="Ej.: EPR 1232"></label>
           <label class="f">Monto (USD)<input id="iMonto" inputmode="decimal" placeholder="0,00"></label>
           <label class="f">Fecha de solicitud<input id="iFecha" type="date"></label>
         </div>
@@ -606,6 +648,7 @@ textarea.share{min-height:38vh}
         <div class="grid" id="enEjecFields" style="margin:8px 0 10px"><label class="f full">Fecha de inicio<input id="iFechaIni" type="date"></label></div>
         <div class="tip" id="enEjecTip" style="margin:-4px 0 10px"></div>
         <label class="chk"><input type="checkbox" id="iEjecutado"> El trabajo ya se ejecutó</label>
+        <label class="chk" style="margin-top:8px"><input type="checkbox" id="iCancelado"> Cancelado: el cliente desistió (conserva sus costos y sale del pendiente)</label>
         <div class="grid" id="ejecFields" style="margin-top:10px">
           <label class="f full">Fecha de culminación<input id="iFechaEjec" type="date"></label>
         </div>
@@ -615,7 +658,7 @@ textarea.share{min-height:38vh}
         <legend>Facturas y pagos</legend>
         <div class="cobros" id="cobrosList"></div>
         <div class="saldo" id="saldoLine"></div>
-        <div class="hint" id="odsHint" hidden>Carga la orden de servicio para poder facturar este trabajo.</div>
+        <div class="hint" id="odsHint" hidden>Sin orden de servicio: lo que registres aquí queda como anticipo o pago sin factura (sirve también para clientes que no usan orden).</div>
         <div class="grid" id="payFields">
           <label class="f full">Modalidad de pago<select id="pModo"><option value="banco">Bolívares (banco)</option><option value="binance">Binance (USDT)</option><option value="efectivo">Efectivo (dólares)</option></select></label>
           <label class="f">Número de factura<input id="pNum" inputmode="numeric"></label>
@@ -639,6 +682,7 @@ textarea.share{min-height:38vh}
       <div class="err" id="formErr"></div>
       <div class="row-btns" style="margin-top:14px">
         <button type="submit" class="btn pri" id="btnSave">Guardar</button>
+        <button type="button" class="btn sec" id="btnDup" hidden>Duplicar o dividir</button>
         <button type="button" class="btn del" id="btnDel">Eliminar</button>
       </div>
     </form>
@@ -720,6 +764,7 @@ textarea.share{min-height:38vh}
         <label class="f">Cédula<input id="wCedula" inputmode="numeric" placeholder="18723803"></label>
         <label class="f">Teléfono personal<input id="wTel" inputmode="numeric" placeholder="04141234567"></label>
         <label class="f">Cargo<select id="wCargo"></select></label>
+        <label class="f">Fecha de ingreso<input id="wIngreso" type="date"></label>
         <label class="f" id="wTarifaL">Tarifa propia por día (USD)<input id="wTarifa" inputmode="decimal" placeholder="Usa la del cargo"></label>
         <label class="f full" id="wHxL">Hora extra propia (USD por hora)<input id="wHx" inputmode="decimal" placeholder="Usa la general"></label>
         <div class="tip num full" id="wHxInfo" style="margin-top:-4px"></div>
@@ -748,6 +793,7 @@ textarea.share{min-height:38vh}
     <div class="err" id="wErr"></div>
     <div class="row-btns" style="margin-top:12px">
       <button type="button" class="btn pri" id="wSave">Guardar</button>
+      <button type="button" class="btn sec" id="wAdel">Registrar adelanto</button>
       <button type="button" class="btn del" id="wDel">Eliminar</button>
     </div>
   </div>
@@ -764,10 +810,10 @@ textarea.share{min-height:38vh}
     <div class="grid" style="margin-top:12px">
       <label class="f">Fecha<input id="mvFecha" type="date"></label>
       <label class="f" id="mvACargoL">A cargo de<select id="mvACargo"><option>Empresa</option><option>Papá</option><option>Fran</option></select></label>
-      <label class="f full" id="mvCatL">Categoría<input class="selq" data-filtra="#mvCat" placeholder="Buscar categoría…" autocomplete="off" aria-label="Buscar categoría…"><select id="mvCat"></select></label>
-      <label class="f full" id="mvFactTrabL" hidden>Trabajo facturado<input class="selq" data-filtra="#mvFactTrab" placeholder="Buscar trabajo, unidad u orden…" autocomplete="off" aria-label="Buscar trabajo, unidad u orden…"><select id="mvFactTrab"></select></label>
+      <label class="f full" id="mvCatL">Categoría<select data-combo id="mvCat"></select></label>
+      <label class="f full" id="mvFactTrabL" hidden>Trabajo facturado<select data-combo id="mvFactTrab"></select></label>
       <label class="f full" id="mvModoL" hidden>Modalidad de pago<select id="mvModo"><option value="banco">Bolívares (banco)</option><option value="binance">Binance (USDT)</option><option value="efectivo">Efectivo (dólares)</option></select></label>
-      <label class="f" id="mvFactNumL" hidden>N° de factura (vacío si es adelanto)<input id="mvFactNum" inputmode="numeric"></label>
+      <label class="f" id="mvFactNumL" hidden>N° de factura (vacío si es anticipo)<input id="mvFactNum" inputmode="numeric"></label>
       <label class="f full" id="mvConceptoL">Concepto<input id="mvConcepto" autocomplete="off"></label>
       <label class="f" id="mvCuentaL">Cuenta<select id="mvCuenta"></select></label>
       <label class="f" id="mvMontoL"><span id="mvMontoLbl">Monto</span><input id="mvMonto" inputmode="decimal" placeholder="0,00"></label>
@@ -776,7 +822,7 @@ textarea.share{min-height:38vh}
       <label class="f" id="mvDestL">Entra a<select id="mvDest"></select></label>
       <label class="f" id="mvDestMontoL"><span id="mvDestMontoLbl">Monto que entra</span><input id="mvDestMonto" inputmode="decimal" placeholder="0,00"></label>
       <label class="f full" id="mvTasaL">Tasa (Bs. por USD)<input id="mvTasa" inputmode="decimal" placeholder="0,00"></label>
-      <label class="f full" id="mvTrabL">Centro de costo: orden o trabajo (opcional)<input class="selq" data-filtra="#mvTrab" placeholder="Buscar trabajo, unidad u orden…" autocomplete="off" aria-label="Buscar trabajo, unidad u orden…"><select id="mvTrab"></select></label>
+      <label class="f full" id="mvTrabL">Centro de costo: orden o trabajo (opcional)<select data-combo id="mvTrab"></select></label>
       <label class="f full">Referencia (opcional)<input id="mvRef" autocomplete="off"></label>
     </div>
     <div class="conv num" id="mvConv"></div>
@@ -796,12 +842,14 @@ textarea.share{min-height:38vh}
     <div class="grab"></div>
     <div class="sh-head"><h3 id="adTitle">Registrar adelanto</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
     <div class="grid">
-      <label class="f full">Trabajador<input class="selq" data-filtra="#adTrab" placeholder="Buscar trabajador…" autocomplete="off" aria-label="Buscar trabajador…"><select id="adTrab"></select></label>
+      <label class="f full">Trabajador<select data-combo id="adTrab"></select></label>
       <label class="f">Fecha<input id="adFecha" type="date"></label>
       <label class="f">Monto (USD)<input id="adMonto" inputmode="decimal" placeholder="0,00"></label>
+      <label class="f">Sale de<select id="adCuenta"><option value="">Elige la cuenta…</option><option value="efectivo">Efectivo (dólares)</option><option value="binance">Binance (dólares)</option><option value="banco">Banco (bolívares)</option></select></label>
+      <label class="f" id="adTasaL" hidden>Tasa (Bs. por USD)<input id="adTasa" inputmode="decimal" placeholder="0,00"></label>
       <label class="f full">Nota (opcional)<input id="adNota"></label>
     </div>
-    <div class="tip">Se descuenta en el próximo corte que incluya esa fecha.</div>
+    <div class="tip">El dinero sale de la cuenta elegida el día del adelanto, y se descuenta de lo que se le paga en el próximo corte.</div>
     <div class="err" id="adErr"></div>
     <div class="row-btns"><button type="button" class="btn pri" id="adSave">Guardar adelanto</button></div>
   </div>
@@ -814,7 +862,7 @@ textarea.share{min-height:38vh}
     <div class="sh-head"><h3 id="itTitle">Ítem del inventario</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
     <div class="grid" style="margin-top:4px">
       <label class="f full">Nombre<input id="itNombre" autocomplete="off" placeholder="Por ejemplo: Disco de corte 4½ pulgadas"></label>
-      <label class="f">Categoría<input class="selq" data-filtra="#itCat" placeholder="Buscar categoría…" autocomplete="off" aria-label="Buscar categoría…"><select id="itCat"></select></label>
+      <label class="f">Categoría<select data-combo id="itCat"></select></label>
       <label class="f">Unidad<select id="itUni"></select></label>
       <label class="f">Mínimo en existencia<input id="itMin" inputmode="decimal" placeholder="Avisa al bajar de aquí"></label>
       <label class="f">Ubicación<input id="itUbi" list="itUbiL" autocomplete="off" placeholder="Almacén"><datalist id="itUbiL"></datalist></label>
@@ -845,7 +893,7 @@ textarea.share{min-height:38vh}
     </div>
     <div class="tip" id="imTipoTip" style="margin-top:8px"></div>
     <div class="grid" style="margin-top:10px">
-      <label class="f full">Ítem<input class="selq" data-filtra="#imItem" placeholder="Buscar ítem…" autocomplete="off" aria-label="Buscar ítem…"><select id="imItem"></select></label>
+      <label class="f full">Ítem<select data-combo id="imItem"></select></label>
       <div class="tip num full" id="imExist" style="margin-top:-4px"></div>
       <label class="f">Fecha<input id="imFecha" type="date"></label>
       <label class="f"><span id="imCantLbl">Cantidad</span><input id="imCant" inputmode="decimal" placeholder="0"></label>
@@ -855,8 +903,8 @@ textarea.share{min-height:38vh}
       <label class="f" id="imTasaL">Tasa (Bs. por USD)<input id="imTasa" inputmode="decimal" placeholder="0,00"></label>
       <label class="f" id="imProvL">Proveedor<input id="imProv" list="provL" autocomplete="off"></label>
       <label class="f" id="imRefL">N° de factura o nota<input id="imRef" autocomplete="off"></label>
-      <label class="f full" id="imTrabL">Orden o trabajo (centro de costo)<input class="selq" data-filtra="#imTrab" placeholder="Buscar trabajo, unidad u orden…" autocomplete="off" aria-label="Buscar trabajo, unidad u orden…"><select id="imTrab"></select></label>
-      <label class="f full" id="imQuienL">Quién lo retiró<input class="selq" data-filtra="#imQuien" placeholder="Buscar trabajador…" autocomplete="off" aria-label="Buscar trabajador…"><select id="imQuien"></select></label>
+      <label class="f full" id="imTrabL">Orden o trabajo (centro de costo)<select data-combo id="imTrab"></select></label>
+      <label class="f full" id="imQuienL">Quién lo retiró<select data-combo id="imQuien"></select></label>
       <label class="f full">Nota (opcional)<input id="imNota" autocomplete="off"></label>
     </div>
     <div id="imGastoBox" class="panel" style="margin-top:10px">
@@ -886,7 +934,7 @@ textarea.share{min-height:38vh}
       <label class="f full">Nombre<input id="acNombre" autocomplete="off" placeholder="Por ejemplo: Esmeril angular DeWalt 4½"></label>
       <label class="f">Código o serial<input id="acCodigo" autocomplete="off"></label>
       <label class="f">Estado<select id="acEstado"><option>Bueno</option><option>En reparación</option><option>Dañado</option><option>Perdido</option></select></label>
-      <label class="f full">Responsable (quién lo tiene)<input class="selq" data-filtra="#acResp" placeholder="Buscar persona…" autocomplete="off" aria-label="Buscar persona…"><select id="acResp"></select></label>
+      <label class="f full">Responsable (quién lo tiene)<select data-combo id="acResp"></select></label>
       <label class="f">Ubicación<input id="acUbi" list="itUbiL" autocomplete="off" placeholder="Almacén"></label>
       <label class="f">Fecha de compra<input id="acFecha" type="date"></label>
       <label class="f">Costo (USD)<input id="acCosto" inputmode="decimal" placeholder="0,00"></label>
@@ -901,6 +949,32 @@ textarea.share{min-height:38vh}
   </div>
 </section>
 
+<!-- Inventario: registrar una compra completa (factura con varias líneas y cómo se pagó) -->
+<section class="sheet" id="rcSheet" hidden aria-modal="true" role="dialog" aria-labelledby="rcTitle">
+  <div class="wrap">
+    <div class="grab"></div>
+    <div class="sh-head"><h3 id="rcTitle">Registrar compra</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
+    <div class="tip">Una factura completa de una vez: crea las entradas al inventario, el gasto y el costo de cada ítem en dólares según lo que de verdad pagaste.</div>
+    <div class="grid" style="margin-top:8px">
+      <label class="f full">Proveedor<input id="rcProv" list="provL" autocomplete="off" placeholder="Ej.: MEOCA"></label>
+      <label class="f">N° de factura o nota<input id="rcRef" autocomplete="off"></label>
+      <label class="f">Fecha<input id="rcFecha" type="date"></label>
+    </div>
+    <div class="seg" id="rcMon" role="group" aria-label="Moneda de los precios" style="margin-top:10px;grid-template-columns:repeat(2,minmax(0,1fr))"><button type="button" data-m="bs" class="on">Precios en bolívares</button><button type="button" data-m="usd">Precios en dólares</button></div>
+    <div id="rcLineas" style="margin-top:8px"></div>
+    <div class="row-btns" style="margin-top:6px"><button type="button" class="btn sec" id="rcAdd">+ Agregar línea</button></div>
+    <div class="sech" style="margin-top:12px">Cómo se pagó</div>
+    <div class="grid">
+      <label class="f">Cuenta<select id="rcCuenta"><option value="binance">Binance (dólares)</option><option value="banco">Banco (bolívares)</option><option value="efectivo">Efectivo (dólares)</option><option value="">Todavía no se paga</option></select></label>
+      <label class="f" id="rcPagadoL">Monto pagado<input id="rcPagado" inputmode="decimal" placeholder="0,00"></label>
+      <label class="f full" id="rcTasaL">Tasa (Bs. por USD)<input id="rcTasa" inputmode="decimal" placeholder="0,00"></label>
+    </div>
+    <div class="conv num" id="rcTot"></div>
+    <div class="err" id="rcErr"></div>
+    <div class="row-btns" style="margin-top:12px"><button type="button" class="btn pri" id="rcSave">Guardar compra</button></div>
+  </div>
+</section>
+
 <!-- Inventario: cuadrar una compra con lo pagado -->
 <section class="sheet" id="cqSheet" hidden aria-modal="true" role="dialog" aria-labelledby="cqTitle">
   <div class="wrap">
@@ -908,8 +982,8 @@ textarea.share{min-height:38vh}
     <div class="sh-head"><h3 id="cqTitle">Cuadrar compra con lo pagado</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
     <div class="tip">Para facturas en bolívares pagadas en dólares: reparte lo pagado entre los ítems en proporción a su precio de lista, guarda el costo en dólares y en bolívares de cada entrada y las enlaza al gasto. A los ítems sin precio ponles uno estimado.</div>
     <div class="grid" style="margin-top:8px">
-      <label class="f full">Compra (entradas del mismo proveedor y factura)<input class="selq" data-filtra="#cqGrupo" placeholder="Buscar compra…" autocomplete="off" aria-label="Buscar compra…"><select id="cqGrupo"></select></label>
-      <label class="f full">Gasto con el que se pagó<input class="selq" data-filtra="#cqGasto" placeholder="Buscar gasto…" autocomplete="off" aria-label="Buscar gasto…"><select id="cqGasto"></select></label>
+      <label class="f full">Compra (entradas del mismo proveedor y factura)<select data-combo id="cqGrupo"></select></label>
+      <label class="f full">Gasto con el que se pagó<select data-combo id="cqGasto"></select></label>
       <label class="f full">Total pagado (USD)<input id="cqPagado" inputmode="decimal" placeholder="0,00"></label>
     </div>
     <div id="cqLineas"></div>
@@ -928,9 +1002,10 @@ textarea.share{min-height:38vh}
     listo:{lbl:'Listo para facturar', sec:'Listos para facturar', tab:'Listos para facturar', cls:'lf'},
     sinOrden:{lbl:'Ejecutado sin orden', sec:'Ejecutados sin orden de servicio', tab:'Sin orden', cls:'so'},
     porEjecutar:{lbl:'Por ejecutar', sec:'Por ejecutar', tab:'Por ejecutar', cls:'pe'},
-    cobrado:{lbl:'Cobrado', sec:'Cobrados', tab:'Cobrados', cls:'co'}
+    cobrado:{lbl:'Cobrado', sec:'Cobrados', tab:'Cobrados', cls:'co'},
+    cancelado:{lbl:'Cancelado', sec:'Cancelados (el cliente desistió)', tab:'Cancelados', cls:'pe'}
   };
-  const ORDEN = ['listo','sinOrden','porEjecutar','cobrado'];
+  const ORDEN = ['listo','sinOrden','porEjecutar','cobrado','cancelado'];
   const nf = new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2});
   const nfT = new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:4});
 
@@ -960,6 +1035,7 @@ textarea.share{min-height:38vh}
   const saldo = d => Math.max(0, r2(num(d.monto)-pagado(d)));
   const tieneOrden = d => !!String(d.ods||'').trim();
   function etapa(d){
+    if(d.cancelado) return 'cancelado';
     const m=num(d.monto);
     if(m>0 && pagado(d) >= m-0.005) return 'cobrado';
     if(!d.ejecutado) return 'porEjecutar';
@@ -967,12 +1043,15 @@ textarea.share{min-height:38vh}
   }
   /* "En ejecución": lo marcó Fran, o ya tiene gente asignada en la asistencia o material retirado del inventario, y aún no está ejecutado */
   function actividadDe(id){
-    const dias=Object.values(typeof asis==='object'&&asis||{}).filter(a=>Object.values(a.registros||{}).some(r=>r.trabajoId===id && r.tipo!=='no')).length;
+    const dias=Object.values(typeof asis==='object'&&asis||{}).filter(a=>Object.values(a.registros||{}).some(r=>partesReg(r).some(x=>x.tid===id) && r.tipo!=='no')).length;
     const mats=(Array.isArray(typeof invMovs!=='undefined'?invMovs:null)?invMovs:[]).filter(m=>m.tipo==='salida' && m.trabajoId===id).length;
     const p=[dias?`${dias} ${dias===1?'día':'días'} de asistencia`:'', mats?`${mats} ${mats===1?'retiro':'retiros'} de material`:''].filter(Boolean);
     return p.join(' y ');
   }
   const enEjecucion = d => !d.ejecutado && (d.enEjecucion===true || !!actividadDe(d.id));
+  /* Un registro del día puede repartirse mitad y mitad entre dos órdenes */
+  const partesReg = r => r&&r.dividir&&r.trabajoId2&&r.trabajoId2!==r.trabajoId ? [{tid:r.trabajoId||'', f:0.5},{tid:r.trabajoId2, f:0.5}] : [{tid:(r&&r.trabajoId)||'', f:1}];
+  const abiertoCosto = d => !d.cancelado && (etapa(d)!=='cobrado' || !d.ejecutado);
   const byOrden = (a,b) => (num(a.orden)-num(b.orden)) || String(a.creado||'').localeCompare(String(b.creado||''));
   const sum = (list,fn) => list.reduce((s,d)=>s+fn(d),0);
   const esCruce = c => Array.isArray(c.compensa) && c.compensa.length>0;
@@ -1013,19 +1092,46 @@ textarea.share{min-height:38vh}
     return `<b>${usd(parte)}</b> cobrados a través de ${fac}; en realidad quedan <b>${usd(r2(monto-parte))}</b>. Se factura completo.`;
   }
 
-  /* Buscador encima de un select largo: filtra las opciones por lo escrito (sin acentos ni mayúsculas); vacío = todas */
-  document.addEventListener('input', e=>{
-    const inp=e.target; if(!inp.classList||!inp.classList.contains('selq')) return;
-    const sel=$(inp.dataset.filtra); if(!sel) return;
-    if(!sel.__full) sel.__full=[...sel.options].map(o=>({value:o.value, text:o.textContent}));
-    const k=norm(inp.value), val=sel.value;
-    const ls=sel.__full.filter((o,i)=>!k || i===0 && !o.value || norm(o.text).includes(k));
-    sel.innerHTML=ls.map(o=>`<option value="${esc(o.value)}">${esc(o.text)}</option>`).join('')||'<option value="">Nada coincide</option>';
-    const primero=ls.find(o=>o.value); if(ls.some(o=>o.value===val) && !(k && !val && primero)) sel.value=val; else if(k && primero) sel.value=primero.value;
-    sel.dispatchEvent(new Event('change',{bubbles:true}));
-  });
-  function limpiarFiltros(sheet){ document.querySelectorAll(`${sheet} .selq`).forEach(i=>{ i.value=''; const sel=$(i.dataset.filtra); if(sel) sel.__full=null; }); }
-  function toast(msg){ const t=$('#toast'); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,2400); }
+  /* Lista con buscador en un solo control: si una lista tiene más de 8 opciones, el campo muestra lo elegido y, al tocarlo,
+     se escribe para filtrar (sin acentos ni mayúsculas) y se toca la opción. La lista original sigue oculta debajo y es la que guarda el valor. */
+  const COMBO_MIN=8;
+  function etiquetaSel(sel){ const o=sel.options[sel.selectedIndex]; return o?o.textContent:''; }
+  function comboSync(sel){
+    const c=sel.__combo; if(!c) return;
+    const largo=sel.options.length>COMBO_MIN;
+    c.wrap.hidden=!largo; sel.classList.toggle('combo-oculto', largo);
+    if(document.activeElement!==c.inp){ c.inp.value=etiquetaSel(sel); c.inp.disabled=sel.disabled; }
+  }
+  function comboLista(sel){
+    const c=sel.__combo, k=norm(c.inp.value);
+    const ops=[...sel.options].filter(o=>!o.disabled && (!k || norm(o.textContent).includes(k)));
+    c.list.innerHTML = ops.length ? ops.map(o=>`<button type="button" data-v="${esc(o.value)}" class="${o.value===sel.value?'on':''}">${esc(o.textContent)}</button>`).join('') : '<div class="combo-nada">Nada coincide</div>';
+    c.list.hidden=false;
+  }
+  function comboInit(sel){
+    if(sel.__combo) return;
+    const wrap=document.createElement('div'); wrap.className='combo';
+    const inp=document.createElement('input'); inp.type='text'; inp.className='combo-in'; inp.autocomplete='off'; inp.setAttribute('aria-label','Buscar en la lista'); inp.dataset.for=sel.id||'';
+    const list=document.createElement('div'); list.className='combo-list'; list.hidden=true;
+    wrap.append(inp, list); sel.parentNode.insertBefore(wrap, sel); sel.__combo={wrap, inp, list};
+    inp.addEventListener('focus', ()=>{ inp.placeholder=etiquetaSel(sel)||'Buscar…'; inp.value=''; comboLista(sel); });
+    inp.addEventListener('input', ()=>comboLista(sel));
+    inp.addEventListener('blur', ()=>setTimeout(()=>{ list.hidden=true; inp.placeholder=''; comboSync(sel); },150));
+    list.addEventListener('mousedown', e=>e.preventDefault());
+    list.addEventListener('click', e=>{ const b=e.target.closest('button[data-v]'); if(!b) return; sel.value=b.dataset.v; list.hidden=true; inp.blur(); sel.dispatchEvent(new Event('change',{bubbles:true})); comboSync(sel); });
+    inp.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); const b=list.querySelector('button[data-v]'); if(b) b.click(); } });
+    new MutationObserver(()=>comboSync(sel)).observe(sel,{childList:true, subtree:true, attributes:true, attributeFilter:['disabled']});
+    comboSync(sel);
+  }
+  function combosAll(){ document.querySelectorAll('select[data-combo]').forEach(x=>{ comboInit(x); comboSync(x); }); marcarTabs(); }
+  /* Pestañas que no caben: un degradado a la derecha avisa que hay más; desaparece al llegar al final */
+  function marcarTabs(){ document.querySelectorAll('.tabs').forEach(t=>t.classList.toggle('fin', t.scrollLeft+t.clientWidth>=t.scrollWidth-2)); }
+  document.addEventListener('scroll', e=>{ if(e.target.classList&&e.target.classList.contains('tabs')) marcarTabs(); }, true);
+  window.addEventListener('resize', ()=>marcarTabs());
+  new MutationObserver(()=>{ clearTimeout(combosAll._t); combosAll._t=setTimeout(combosAll,0); }).observe(document.body,{childList:true, subtree:true});
+  document.addEventListener('change', ()=>setTimeout(combosAll,0), true);
+  function limpiarFiltros(){ setTimeout(combosAll,0); }
+  function toast(msg, accion){ const t=$('#toast'); t.textContent=msg; if(accion){ const b=document.createElement('button'); b.type='button'; b.className='tact'; b.textContent=accion.label; b.onclick=()=>{ t.hidden=true; accion.fn(); }; t.appendChild(b); } t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true, accion?6000:2600); }
   function byClient(){ return docs.filter(d => !cliente || (d.cliente||'')===cliente); }
 
   function renderStats(){
@@ -1036,7 +1142,7 @@ textarea.share{min-height:38vh}
     /* Pendiente por cobrar = mismo total que el estado de cuenta: listos + con orden por ejecutar + ejecutados sin orden.
        Debajo, una barra por categoría (incluye lo por ejecutar sin orden y lo cobrado), todas a la escala del total registrado. */
     const sLf=sum(lf,saldo), sPo=sum(peOrden,saldo), sSo=sum(so,saldo), sPs=sum(peSin,saldo), total=sLf+sPo+sSo;
-    const cobUsd=sum(base,pagado), cobBs=sum(base,pagadoBs), reg=sum(base,d=>num(d.monto));
+    const cobUsd=sum(base,pagado), cobBs=sum(base,pagadoBs), reg=sum(base.filter(d=>!d.cancelado),d=>num(d.monto));
     /* Una barra segmentada (una sola pieza, partida en sus partes) y debajo una fila por parte con su cifra. Colores validados para daltonismo en claro y oscuro. */
     const partes=[
       {f:'listo',      c:'var(--c-lf)', lbl:'Listos para facturar',            n:lf.length,      v:sLf},
@@ -1045,7 +1151,9 @@ textarea.share{min-height:38vh}
       {f:'sinOrden',   c:'var(--c-ps)', lbl:'Sin orden, por ejecutar',         n:peSin.length,   v:sPs, extra:(k=>k?`${k} en ejecución`:'')(peSin.filter(enEjecucion).length)},
       {f:'cobrado',    c:'var(--c-co)', lbl:'Cobrado',                         n:null,           v:cobUsd, extra:`${cobBs>0?bs(cobBs)+' · ':''}${co.length} ${co.length===1?'trabajo completo':'trabajos completos'}`}];
     const fila=x=>`<button type="button" class="row" data-f="${x.f}"><i class="sw" style="background:${x.c}"></i><span class="nm">${x.lbl}${x.n!=null?`<em>${x.n}</em>`:''}</span><b>${usd(x.v)}</b>${x.extra?`<small>${x.extra}</small>`:''}</button>`;
-    $('#hero').innerHTML = `<div class="lbl">Pendiente por cobrar</div>
+    let pleg=true; try{ pleg=localStorage.getItem('heroAbierto')!=='1'; }catch(_){}
+    $('#hero').classList.toggle('plegado', pleg);
+    $('#hero').innerHTML = `<button type="button" class="heroTog" id="heroTog" aria-expanded="${!pleg}"><span class="lbl">Pendiente por cobrar</span><span class="chev">${pleg?'Ver desglose ▾':'Ocultar ▴'}</span></button>
       <div class="big num">${usdHtml(total)}</div>
       <div class="sub">Ejecutado o con orden de servicio</div>
       <div class="segbar" role="img" aria-label="Distribución de los trabajos registrados">${partes.filter(x=>x.v>0).map(x=>`<i style="flex:${x.v} 1 0;background:${x.c}"></i>`).join('')}</div>
@@ -1162,7 +1270,7 @@ textarea.share{min-height:38vh}
     const comoHost=crucesComoHost(d), comoDest=crucesComoDestino(d);
     if(e!=='cobrado' && pg>0 && !comoHost.length) extra.push(`${np} ${np===1?'pago':'pagos'}: ${usd(pg)} · Saldo <b>${usd(saldo(d))}</b>`);
     const notas=[...comoHost.map(textoHost), ...comoDest.map(x=>textoDestino(x,d))].filter(Boolean);
-    if(e==='cobrado'){ const f=(d.cobros||[]).map(c=>c.numFactura).filter(Boolean); const last=(d.cobros||[]).map(c=>c.fecha).filter(Boolean).sort().pop(); extra.push(`${f.length?'Factura N° '+esc(f.join(', ')):'Pagado'}${last?' · '+fdate(last):''}`); }
+    if(e==='cobrado'){ const f=(d.cobros||[]).map(c=>c.numFactura).filter(Boolean); const last=(d.cobros||[]).map(c=>c.fecha).filter(Boolean).sort().pop(); extra.push(`${f.length?'Factura N° '+esc([...new Set(f)].join(', ')):'Pagado'}${last?' · '+fdate(last):''}`); }
     if((d.cobros||[]).some(sinTasa)) extra.push('<span class="warn">Falta la tasa de un pago</span>');
     if(e==='cobrado' && !d.ejecutado) extra.push('<span class="warn">Cobrado, pero pendiente por ejecutar</span>');
     return `<button class="card${sel.has(d.id)?' sel':''}" type="button" data-id="${esc(d.id)}">
@@ -1226,7 +1334,7 @@ textarea.share{min-height:38vh}
       return `<button class="card" type="button" data-id="${esc(d.id)}"><div class="body">
         <div class="r1"><div class="desc">${esc(d.descripcion)}${d.unidad?' · '+esc(d.unidad):''}</div><div class="money num">${usdHtml(num(c.monto))}</div></div>
         <div class="meta num">${meta.map(m=>`<span>${m}</span>`).join('')}</div>
-        <div class="r3"><span class="pill ${completo?'co':d.ejecutado?'lf':'pe'}">${completo?'Cobrado completo':d.ejecutado?'Abono parcial':'Adelanto'}</span>${completo?'':`<span class="num">Quedan ${usd(saldo(d))} por cobrar</span>`}</div>
+        <div class="r3"><span class="pill ${completo?'co':d.ejecutado?'lf':'pe'}">${completo?'Cobrado completo':d.ejecutado?'Abono parcial':'Anticipo'}</span>${completo?'':`<span class="num">Quedan ${usd(saldo(d))} por cobrar</span>`}</div>
       </div></button>`; }).join('')}</div></section>`;
   }
   function renderTabs(){
@@ -1246,8 +1354,16 @@ textarea.share{min-height:38vh}
   function render(){ renderTabs(); renderStats(); renderList(); renderSelbar(); if(typeof renderGas==='function' && modulo==='gas') renderGas(); if(typeof renderRes==='function' && modulo==='res') renderRes(); }
 
   /* ---------- hojas ---------- */
-  function openSheet(id){ $('#scrim').hidden=false; $(id).hidden=false; document.body.style.overflow='hidden'; }
-  function closeSheets(){ ['#sheet','#bulkSheet','#shareSheet','#aiSheet','#wSheet','#adSheet','#mvSheet','#itSheet','#imSheet','#acSheet','#cqSheet'].forEach(s=>$(s).hidden=true); $('#scrim').hidden=true; document.body.style.overflow=''; draft=null; editingId=null; }
+  function openSheet(id){ $('#scrim').hidden=false; $(id).hidden=false; $(id).dataset.dirty=''; cierreArmado=0; $('#toast').hidden=true; document.body.style.overflow='hidden'; }
+  /* Lo escrito en una hoja no se pierde por un toque fuera: la primera vez avisa, la segunda descarta */
+  let cierreArmado=0;
+  document.addEventListener('input', e=>{ const sh=e.target.closest&&e.target.closest('section.sheet'); if(sh && sh.id!=='shareSheet' && !e.target.classList.contains('combo-in')) sh.dataset.dirty='1'; }, true);
+  function intentarCerrar(){
+    const sucia=[...document.querySelectorAll('section.sheet')].find(x=>!x.hidden && x.dataset.dirty==='1');
+    if(sucia && Date.now()-cierreArmado>4000){ cierreArmado=Date.now(); toast('Tienes datos sin guardar. Toca otra vez para descartarlos.'); return; }
+    cierreArmado=0; closeSheets();
+  }
+  function closeSheets(){ ['#sheet','#bulkSheet','#shareSheet','#aiSheet','#wSheet','#adSheet','#mvSheet','#itSheet','#imSheet','#acSheet','#cqSheet','#rcSheet'].forEach(s=>$(s).hidden=true); $('#scrim').hidden=true; document.body.style.overflow=''; draft=null; editingId=null; }
 
   function openEditor(id){
     const src = id ? docs.find(d=>d.id===id) : null;
@@ -1258,9 +1374,9 @@ textarea.share{min-height:38vh}
     $('#iOds').value=draft.ods||''; $('#iNota').value=draft.nota||'';
     $('#iMonto').value = draft.monto ? nf.format(num(draft.monto)) : '';
     $('#iFecha').value=draft.fecha||''; $('#iEjecutado').checked=!!draft.ejecutado; $('#iFechaEjec').value=draft.fechaEjecucion||'';
-    $('#iEnEjec').checked=!!draft.enEjecucion; $('#iFechaIni').value=draft.fechaInicio||''; { const auto=editingId&&!draft.ejecutado&&!draft.enEjecucion&&actividadDe(editingId); $('#enEjecTip').textContent = auto ? `Ya tiene ${auto}: se muestra como en ejecución aunque no marques la casilla.` : ''; }
+    $('#iCancelado').checked=!!draft.cancelado; $('#iEnEjec').checked=!!draft.enEjecucion; $('#iFechaIni').value=draft.fechaInicio||''; { const auto=editingId&&!draft.ejecutado&&!draft.enEjecucion&&actividadDe(editingId); $('#enEjecTip').textContent = auto ? `Ya tiene ${auto}: se muestra como en ejecución aunque no marques la casilla.` : ''; }
     resetPayForm();
-    $('#formErr').textContent=''; $('#btnDel').hidden=!src; $('#btnResumen').hidden=!src; $('#iAI').hidden=!!src||!sampleFn||!canWrite; disarmDel();
+    $('#formErr').textContent=''; $('#btnDel').hidden=!src; $('#btnResumen').hidden=!src; $('#btnDup').hidden=!src||!canWrite; $('#iAI').hidden=!!src||!sampleFn||!canWrite; disarmDel();
     syncEjec(); renderPagos();
     [...$('#form').elements].forEach(x=>{ x.disabled=!canWrite; });
     syncOds();
@@ -1269,14 +1385,14 @@ textarea.share{min-height:38vh}
   function syncEjec(){ const ej=$('#iEjecutado').checked; $('#ejecFields').hidden=!ej; $('#iEnEjec').closest('label').hidden=ej; $('#enEjecFields').hidden=ej||!$('#iEnEjec').checked; $('#enEjecTip').hidden=ej; }
   function syncOds(){
     const ok=!!$('#iOds').value.trim();
-    $('#odsHint').hidden=ok; $('#payFields').hidden=!ok; $('#payBtns').hidden=!ok; $('#pConv').hidden=!ok;
+    $('#odsHint').hidden=ok; $('#btnAddPago').textContent = ok ? 'Agregar factura y pago' : 'Agregar anticipo o pago';
   }
   function currentMonto(){ const n=parseNum($('#iMonto').value); return isNaN(n)?0:n; }
   function renderPagos(){
     $('#cobrosList').innerHTML = (draft.cobros||[]).map((c,i)=>{
-      const t=num(c.tasa), md=modoDe(c), det=[c.numFactura?'Factura N° '+esc(c.numFactura):'Sin número de factura', c.fecha?fdate(c.fecha):'', md!=='banco'?'cobrado '+comoCobro(c):(t>0?comoCobro(c):'<span class="warn">falta la tasa</span>'), c.ref?esc(c.ref):''].filter(Boolean).join(' · ');
+      const t=num(c.tasa), md=modoDe(c), det=[c.numFactura?'Factura N° '+esc(c.numFactura):(String($('#iOds').value||'').trim()?'Sin número de factura':'Anticipo, sin factura'), c.fecha?fdate(c.fecha):'', md!=='banco'?'cobrado '+comoCobro(c):(t>0?comoCobro(c):'<span class="warn">falta la tasa</span>'), c.ref?esc(c.ref):''].filter(Boolean).join(' · ');
       const comp = esCruce(c) ? `<small>Compensa: ${esc(c.compensa.map(id=>nombre(docs.find(x=>x.id===id))).join('; '))}</small>` : '';
-      return `<div class="cobro"><div><b class="num">${usd(num(c.monto))}</b><small class="num">${det}</small>${comp}</div>${canWrite?`<div class="acts"><button type="button" data-ed="${i}" style="color:var(--accent)">Editar</button><button type="button" data-rm="${i}">Quitar</button></div>`:''}</div>`;
+      return `<div class="cobro"><div><b class="num">${usd(num(c.monto))}</b>${c._nuevo?' <span class="pill so">sin guardar</span>':''}<small class="num">${det}</small>${comp}</div>${canWrite?`<div class="acts"><button type="button" data-ed="${i}" style="color:var(--accent)">Editar</button><button type="button" data-rm="${i}">Quitar</button></div>`:''}</div>`;
     }).join('') || '<div style="color:var(--muted);font-size:13.5px">Sin facturas ni pagos registrados.</div>';
     const pg=(draft.cobros||[]).reduce((s,c)=>s+num(c.monto),0);
     $('#saldoLine').innerHTML=`<span>Pagado <b class="num">${usd(pg)}</b></span><span>Saldo <b class="num">${usd(Math.max(0,r2(currentMonto()-pg)))}</b></span>`;
@@ -1290,19 +1406,23 @@ textarea.share{min-height:38vh}
   }
   function addPago(){
     const m=parseNum($('#pMonto').value), t=parseNum($('#pTasa').value);
-    if(!$('#iOds').value.trim()){ $('#formErr').textContent='Carga la orden de servicio antes de facturar.'; return; }
-    if(isNaN(m)||m<=0){ $('#formErr').textContent='Escribe el monto pagado en dólares (por ejemplo 1.250,00).'; return; }
+    if(isNaN(m)||m<=0){ $('#formErr').textContent='Escribe el monto pagado en dólares (por ejemplo 1.250,00).'; return false; }
     const md=$('#pModo').value;
-    if(md==='banco' && (isNaN(t)||t<=0)){ $('#formErr').textContent='Escribe la tasa acordada en bolívares por dólar.'; return; }
+    if(md==='banco' && (isNaN(t)||t<=0)){ $('#formErr').textContent='Escribe la tasa acordada en bolívares por dólar.'; return false; }
     const comp = $('#pComp').checked ? [...document.querySelectorAll('#pTgts input:checked')].map(x=>x.value) : [];
-    if($('#pComp').checked && !comp.length){ $('#formErr').textContent='Marca los trabajos que compensa este pago.'; return; }
+    if($('#pComp').checked && !comp.length){ $('#formErr').textContent='Marca los trabajos que compensa este pago.'; return false; }
+    /* Sin sobrepagos: un pago normal no pasa del saldo; uno que compensa otros trabajos no pasa del saldo de este más el de esos */
+    const pg=(draft.cobros||[]).reduce((s,c)=>s+num(c.monto),0), saldoAqui=Math.max(0,r2(currentMonto()-pg));
+    const tope = comp.length ? r2(saldoAqui + sum(comp.map(id=>docs.find(x=>x.id===id)).filter(Boolean), saldo)) : saldoAqui;
+    if(m>tope+0.005){ $('#formErr').textContent = tope>0 ? `El pago pasa de lo que queda por cobrar (${usd(tope)}). Revisa el monto${comp.length?'':' o marca que compensa otros trabajos'}.` : 'Este trabajo ya está pagado completo.'; return false; }
     draft.cobros=draft.cobros||[];
-    const p={monto:r2(m), tasa:md==='banco'?t:0, cuenta:md, numFactura:$('#pNum').value.trim(), fecha:$('#pFecha').value||today(), ref:$('#pRef').value.trim()};
+    const p={monto:r2(m), tasa:md==='banco'?t:0, cuenta:md, numFactura:$('#pNum').value.trim(), fecha:$('#pFecha').value||today(), ref:$('#pRef').value.trim(), _nuevo:true};
     if(comp.length) p.compensa=comp;
     draft.cobros.push(p);
-    resetPayForm(); if(md==='banco') $('#pTasa').value=nfT.format(t); $('#formErr').textContent='';
-    renderPagos();
+    resetPayForm(); if(md==='banco') $('#pTasa').value=nfT.format(t); $('#formErr').textContent=editingId?'Pago agregado: toca Guardar para registrarlo.':'';
+    renderPagos(); return true;
   }
+  const pagoPendiente = () => { const m=parseNum($('#pMonto').value); return !isNaN(m) && m>0; };
   /* Última tasa usada en cualquier factura registrada (se toma de los datos, así sale igual en el iPhone y en la computadora) */
   function ultimaTasa(){
     let best=null;
@@ -1348,11 +1468,12 @@ textarea.share{min-height:38vh}
     if(!cliSel || cliSel==='__nuevo'){ $('#formErr').textContent = cliSel==='__nuevo' ? 'Termina de agregar el cliente nuevo o elige uno de la lista.' : 'Elige el cliente.'; return; }
     if($('#iUnidad').value==='__nuevo'){ $('#formErr').textContent='Termina de agregar la unidad nueva o elige una de la lista.'; return; }
     if(isNaN(monto)||monto<=0){ $('#formErr').textContent='Escribe un monto mayor que cero (por ejemplo 1.435,00).'; return; }
+    if(pagoPendiente() && !addPago()) return;   // el pago escrito y no agregado se agrega solo; si tiene un error, no se guarda nada
     const ej=$('#iEjecutado').checked;
     const orden = editingId ? num(draft.orden) : docs.reduce((m,d)=>Math.max(m,num(d.orden)),0)+1;
     const body={ orden, descripcion:desc, cliente:$('#iCliente').value.trim(), unidad:$('#iUnidad').value.trim(),
       ods:$('#iOds').value.trim(), nota:$('#iNota').value.trim(), monto:r2(monto), moneda:'USD', fecha:$('#iFecha').value||'',
-      ejecutado:ej, fechaEjecucion: ej?($('#iFechaEjec').value||''):'', enEjecucion: !ej && $('#iEnEjec').checked, fechaInicio: $('#iEnEjec').checked?($('#iFechaIni').value||''):'',
+      ejecutado:ej, cancelado:$('#iCancelado').checked, fechaEjecucion: ej?($('#iFechaEjec').value||''):'', enEjecucion: !ej && $('#iEnEjec').checked, fechaInicio: $('#iEnEjec').checked?($('#iFechaIni').value||''):'',
       cobros:(draft.cobros||[]).map(c=>Object.assign({monto:num(c.monto), tasa:num(c.tasa), cuenta:modoDe(c), numFactura:c.numFactura||'', fecha:c.fecha||'', ref:c.ref||''}, esCruce(c)?{compensa:c.compensa.slice()}:{})),
       creado:draft.creado||new Date().toISOString(), actualizado:new Date().toISOString() };
     const btn=$('#btnSave'); btn.disabled=true; btn.textContent='Guardando…';
@@ -1364,9 +1485,11 @@ textarea.share{min-height:38vh}
 
   async function del(){
     const b=$('#btnDel');
-    if(!b.classList.contains('armed')){ b.classList.add('armed'); b.textContent='Toca otra vez para eliminar'; delTimer=setTimeout(disarmDel,4000); return; }
+    const id=editingId, dias=Object.values(asis||{}).filter(a=>Object.values(a.registros||{}).some(r=>r.trabajoId===id)).length, mats=invMovs.filter(m=>m.trabajoId===id).length, gs=movs.filter(m=>m.trabajoId===id).length;
+    const vinc=[dias?`${dias} ${dias===1?'día':'días'} de asistencia`:'', mats?`${mats} ${mats===1?'movimiento':'movimientos'} de material`:'', gs?`${gs} ${gs===1?'gasto':'gastos'}`:''].filter(Boolean);
+    if(!b.classList.contains('armed')){ b.classList.add('armed'); b.textContent='Toca otra vez para eliminar'; delTimer=setTimeout(disarmDel,vinc.length?9000:4000); if(vinc.length) $('#formErr').textContent=`Este trabajo tiene ${vinc.join(', ')}. Si el cliente desistió, marca «Cancelado» en vez de eliminarlo: así esos costos no pasan a las demás órdenes.`; return; }
     if(!coll||!editingId) return;
-    try{ await coll.doc(editingId).delete(); closeSheets(); toast('Trabajo eliminado'); }
+    try{ await coll.doc(editingId).delete(); closeSheets(); toast(vinc.length?'Trabajo eliminado · sus costos quedaron sin orden':'Trabajo eliminado'); }
     catch(err){ $('#formErr').textContent='No se pudo eliminar. Inténtalo otra vez.'; }
   }
 
@@ -1402,6 +1525,7 @@ textarea.share{min-height:38vh}
     const items=docs.filter(d=>sel.has(d.id));
     const btn=$('#bConfirm');
     if(bulkMode==='fact'){
+      const clis=[...new Set(items.map(d=>d.cliente||''))]; if(clis.length>1){ $('#bErr').textContent=`Una factura es para un solo cliente; la selección mezcla ${clis.map(c=>c||'sin cliente').join(', ')}.`; return; }
       const sinOrden=items.filter(d=>!tieneOrden(d));
       if(sinOrden.length){ $('#bErr').textContent=`No se puede facturar sin orden de servicio: ${sinOrden.map(d=>d.descripcion).join('; ')}. Quítalos de la selección o cárgales la orden.`; return; }
       const t=parseNum($('#bTasa').value);
@@ -1491,7 +1615,9 @@ textarea.share{min-height:38vh}
     const partes = d => { const p=[numero(d), C.unidad&&!ecF.unidad&&d.unidad, C.desc&&d.descripcion, C.estado&&estatusDe(d)].filter(Boolean);
       return p.length ? p : [[!ecF.unidad&&d.unidad, d.descripcion].filter(Boolean).join(' · ')]; };
     const linea = (d, monto, extra='') => `${partes(d).join(' · ')}${extra}${C.monto?`: ${usd(monto)}`:''}`;
-    const lineaPend = d => linea(d, saldo(d)) + (C.monto&&pagado(d)>0?' (saldo)':'');
+    /* Lo ya cobrado mediante la factura de otra orden: se dice en la línea para no cobrarlo dos veces */
+    const yaCruce = d => sum(crucesComoDestino(d), x=>reparto(x)[d.id]||0);
+    const lineaPend = d => { const cr=yaCruce(d); return linea(d, saldo(d)) + (C.monto&&pagado(d)>0?' (saldo)':'') + (cr>0?` (${usd(cr)} ya cobrados mediante la factura${(crucesComoDestino(d)[0]||{c:{}}).c.numFactura?' N° '+crucesComoDestino(d)[0].c.numFactura:''} de otra orden)`:''); };
     const grupos=[
       ['Facturable (con orden de servicio)', base.filter(d=>(sel('listo')&&pred('listo')(d)) || (sel('conOrdenSinEj')&&pred('conOrdenSinEj')(d)))],
       ['Ejecutados, pendientes de orden de servicio', sel('sinOrden')?base.filter(pred('sinOrden')):[]],
@@ -1502,6 +1628,7 @@ textarea.share{min-height:38vh}
       if(C.subt) grupos.forEach(([t,it])=>{ L.push(''); L.push(`*${t}*`); it.forEach(d=>L.push(lineaPend(d))); L.push(`*Subtotal: ${usd(sum(it,saldo))}*`); });
       else { L.push(''); L.push(grupos.some(g=>g[0].startsWith('Sin orden de servicio, por'))?'*Trabajos pendientes*':'*Facturable (con orden de servicio)*'); pend.forEach(d=>L.push(lineaPend(d))); }
       L.push(''); L.push(`*Total general pendiente: ${usd(general)}*`);
+      const crT=r2(sum(pend,yaCruce)); if(crT>0) L.push(`De ese total, ${usd(crT)} ya se cobraron mediante facturas de otras órdenes; esos trabajos se facturan completos solo para cerrarlos.`);
     }
     if(sel('cobrado')){ const it=base.filter(pred('cobrado')); if(it.length){ L.push(''); L.push('*Cobrados*'); it.forEach(d=>{ const f=(d.cobros||[]).map(c=>c.numFactura).filter(Boolean); L.push(linea(d, pagado(d), f.length?' · Factura N° '+f.join(', '):'')); }); L.push(`*Total cobrado: ${usd(sum(it,pagado))}*`); } }
     if(L.length===2){ L.push(''); L.push('No hay trabajos con estos filtros.'); }
@@ -1512,8 +1639,8 @@ textarea.share{min-height:38vh}
     if(ecF.unidad && !uns.includes(ecF.unidad)) ecF.unidad='';
     $('#ecFiltros').innerHTML = `
       <div class="grid">
-        <label class="f">Cliente<input class="selq" data-filtra="#ecCli" placeholder="Buscar cliente…" autocomplete="off" aria-label="Buscar cliente…"><select id="ecCli"><option value="">Todos</option>${cls.map(c=>`<option value="${esc(c)}"${c===ecF.cliente?' selected':''}>${esc(c)}</option>`).join('')}</select></label>
-        <label class="f">Unidad<input class="selq" data-filtra="#ecUni" placeholder="Buscar unidad…" autocomplete="off" aria-label="Buscar unidad…"><select id="ecUni"><option value="">Todas</option>${uns.map(u=>`<option value="${esc(u)}"${u===ecF.unidad?' selected':''}>${esc(u)}</option>`).join('')}</select></label>
+        <label class="f">Cliente<select data-combo id="ecCli"><option value="">Todos</option>${cls.map(c=>`<option value="${esc(c)}"${c===ecF.cliente?' selected':''}>${esc(c)}</option>`).join('')}</select></label>
+        <label class="f">Unidad<select data-combo id="ecUni"><option value="">Todas</option>${uns.map(u=>`<option value="${esc(u)}"${u===ecF.unidad?' selected':''}>${esc(u)}</option>`).join('')}</select></label>
       </div>
       <div class="seg ecfmt" role="group" aria-label="Formato" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px">${[['detallado','Detallado'],['corto','Corto']].map(([k,l])=>`<button type="button" data-fmt="${k}" class="${ecF.formato===k?'on':''}">${l}</button>`).join('')}</div>
       <div class="ecchips">${EC_SECS.map(([k,,lbl])=>`<label class="${ecF.etapas.includes(k)?'on':''}"><input type="checkbox" data-ec="${k}"${ecF.etapas.includes(k)?' checked':''}> ${lbl}</label>`).join('')}</div>
@@ -1547,11 +1674,12 @@ textarea.share{min-height:38vh}
   let shareMode='ec', costF={cliente:'', trabajo:'', soloConCosto:true, cobrados:true, formato:'corto', reparto:'dias'};
   const tieneTrabajo = id => !!id && docs.some(d=>d.id===id);
   /* Costo directo de un trabajo: mano de obra asignada en la asistencia + gastos con ese centro de costo */
-  function costoTrabajo(d, generales){
+  function costoTrabajo(d, generales){ const c=memo('ct', depsCostos(), ()=>new Map()); let m=c.get(generales); if(!m){ m=new Map(); c.set(generales,m); } if(!m.has(d)) m.set(d, costoTrabajoCalc(d, generales)); return m.get(d); }
+  function costoTrabajoCalc(d, generales){
     let mo=0, dias=0, horas=0; const porT={};
     Object.values(asis).forEach(a=>Object.entries(a.registros||{}).forEach(([id,r])=>{
-      if(r.trabajoId!==d.id) return; const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return;
-      const p=pagoDia(t,r,a.fecha), v=p.montoDias+p.montoExtra; if(v<=0) return;
+      const pt=partesReg(r).find(x=>x.tid===d.id); if(!pt) return; const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return;
+      const p0=pagoDia(t,r,a.fecha), p={dias:p0.dias*pt.f, horas:p0.horas*pt.f}, v=(p0.montoDias+p0.montoExtra)*pt.f; if(v<=0) return;
       mo+=v; dias+=p.dias; horas+=p.horas; const o=porT[t.nombre]||(porT[t.nombre]={v:0,dias:0,horas:0}); o.v=r2(o.v+v); o.dias+=p.dias; o.horas+=p.horas;
     }));
     const tasaRep=tasaSugerida();
@@ -1564,22 +1692,26 @@ textarea.share{min-height:38vh}
   function generalesPorSemana(){
     const por={}; const add=(w,k,v)=>{ const o=por[w]||(por[w]={gastos:0,mo:0,sup:0}); o[k]+=v; };
     const tasaRep=tasaSugerida();
-    movs.filter(m=>m.tipo==='gasto' && m.fecha && (m.aCargo||'Empresa')==='Empresa' && !m.inventario && !['Nómina','Sueldos de supervisores'].includes(m.categoria) && !tieneTrabajo(m.trabajoId)).forEach(m=>add(inicioSemana(m.fecha),'gastos',usdDe(m,tasaRep)));
+    movs.filter(m=>m.tipo==='gasto' && m.fecha && (m.aCargo||'Empresa')==='Empresa' && !m.inventario && !['Nómina','Sueldos de supervisores','Adelantos de nómina'].includes(m.categoria) && !tieneTrabajo(m.trabajoId)).forEach(m=>add(inicioSemana(m.fecha),'gastos',usdDe(m,tasaRep)));
     Object.entries(mermasPorSemana()).forEach(([w,v])=>add(w,'gastos',v));   // lo que faltó en los conteos de inventario
-    Object.values(asis).forEach(a=>Object.entries(a.registros||{}).forEach(([id,r])=>{ if(tieneTrabajo(r.trabajoId)) return; const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return; const p=pagoDia(t,r,a.fecha); const v=p.montoDias+p.montoExtra; if(v>0) add(inicioSemana(a.fecha),'mo',v); }));
+    Object.values(asis).forEach(a=>Object.entries(a.registros||{}).forEach(([id,r])=>{ const f=sum(partesReg(r).filter(x=>!tieneTrabajo(x.tid)),x=>x.f); if(!(f>0)) return; const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return; const p=pagoDia(t,r,a.fecha); const v=(p.montoDias+p.montoExtra)*f; if(v>0) add(inicioSemana(a.fecha),'mo',v); }));
     cortes.forEach(k=>(k.lineas||[]).forEach(l=>{ if(l.cargo!==SUP || !(num(l.sueldoFijo)>0)) return; const sem=Array.isArray(l.semanas)&&l.semanas.length?l.semanas:[inicioSemana(k.hasta)]; sem.forEach(w=>add(w,'sup',num(l.sueldoFijo)/sem.length)); }));
     return por;
   }
   /* Actividad por semana y trabajo: días-persona asignados (la hora extra cuenta como fracción de jornada); un gasto directo también cuenta como actividad */
   function actividadPorSemana(){
     const out={}; const jor=num(cfgN.horasJornada)||8.5;
-    Object.values(asis).forEach(a=>Object.entries(a.registros||{}).forEach(([id,r])=>{ if(!tieneTrabajo(r.trabajoId)) return; const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return; const p=pagoDia(t,r,a.fecha); if(!p.dias&&!p.horas) return; const w=inicioSemana(a.fecha), o=out[w]||(out[w]={}); o[r.trabajoId]=(o[r.trabajoId]||0)+p.dias+p.horas/jor; }));
+    Object.values(asis).forEach(a=>Object.entries(a.registros||{}).forEach(([id,r])=>{ const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return; const p=pagoDia(t,r,a.fecha); if(!p.dias&&!p.horas) return; partesReg(r).forEach(x=>{ if(!tieneTrabajo(x.tid)) return; const w=inicioSemana(a.fecha), o=out[w]||(out[w]={}); o[x.tid]=(o[x.tid]||0)+(p.dias+p.horas/jor)*x.f; }); }));
     movs.filter(m=>m.tipo==='gasto' && m.fecha && tieneTrabajo(m.trabajoId)).forEach(m=>{ const w=inicioSemana(m.fecha), o=out[w]||(out[w]={}); if(!(m.trabajoId in o)) o[m.trabajoId]=0; });
     invMovs.filter(m=>m.tipo==='salida' && m.fecha && tieneTrabajo(m.trabajoId)).forEach(m=>{ const w=inicioSemana(m.fecha), o=out[w]||(out[w]={}); if(!(m.trabajoId in o)) o[m.trabajoId]=0; });
     return out;
   }
   /* Reparto de los generales de cada semana entre los trabajos activos esa semana: según días trabajados o por igual */
-  function repartoGenerales(modo){
+  /* Recuerda un cálculo mientras no cambien las listas de las que depende (cada cambio en la base trae listas nuevas) */
+  function memo(nombre, deps, fn){ const c=memo[nombre]||(memo[nombre]={}); if(c.deps && c.deps.length===deps.length && c.deps.every((d,i)=>d===deps[i])) return c.val; c.deps=deps; c.val=fn(); return c.val; }
+  const depsCostos = () => [docs, asis, trabs, movs, invMovs, items, cortes, gcfg, cfgN];
+  function repartoGenerales(modo){ return memo('rep_'+modo, depsCostos(), ()=>repartoGeneralesCalc(modo)); }
+  function repartoGeneralesCalc(modo){
     const gen=generalesPorSemana(), act=actividadPorSemana(), porTrabajo={}; let sinRepartir=0, tot={gastos:0,mo:0,sup:0};
     Object.entries(gen).forEach(([w,g])=>{
       const t=g.gastos+g.mo+g.sup; tot.gastos+=g.gastos; tot.mo+=g.mo; tot.sup+=g.sup; if(t<=0) return;
@@ -1625,8 +1757,8 @@ textarea.share{min-height:38vh}
     const cls=listaClientes();
     const chip=(k,l,on)=>`<label class="${on?'on':''}"><input type="checkbox" data-cf="${k}"${on?' checked':''}> ${l}</label>`;
     $('#ecFiltros').innerHTML = `
-      <div class="grid"><label class="f full">Cliente<input class="selq" data-filtra="#cfCli" placeholder="Buscar cliente…" autocomplete="off" aria-label="Buscar cliente…"><select id="cfCli"><option value="">Todos</option>${cls.map(c=>`<option value="${esc(c)}"${c===costF.cliente?' selected':''}>${esc(c)}</option>`).join('')}</select></label>
-      <label class="f full">Orden o trabajo<input class="selq" data-filtra="#cfTrab" placeholder="Buscar trabajo, unidad u orden…" autocomplete="off" aria-label="Buscar trabajo"><select id="cfTrab"><option value="">Todos</option>${docs.filter(d=>!costF.cliente||(d.cliente||'')===costF.cliente).sort(byOrden).map(d=>`<option value="${esc(d.id)}"${d.id===costF.trabajo?' selected':''}>${esc(nombreTrabajo(d))}</option>`).join('')}</select></label></div>
+      <div class="grid"><label class="f full">Cliente<select data-combo id="cfCli"><option value="">Todos</option>${cls.map(c=>`<option value="${esc(c)}"${c===costF.cliente?' selected':''}>${esc(c)}</option>`).join('')}</select></label>
+      <label class="f full">Orden o trabajo<select data-combo id="cfTrab"><option value="">Todos</option>${docs.filter(d=>!costF.cliente||(d.cliente||'')===costF.cliente).sort(byOrden).map(d=>`<option value="${esc(d.id)}"${d.id===costF.trabajo?' selected':''}>${esc(nombreTrabajo(d))}</option>`).join('')}</select></label></div>
       <div class="seg" role="group" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px">${[['corto','Corto'],['detallado','Detallado']].map(([k,l])=>`<button type="button" data-cfmt="${k}" class="${costF.formato===k?'on':''}">${l}</button>`).join('')}</div>
       <div class="seg" role="group" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:8px">${[['dias','Generales según días trabajados'],['igual','Generales por igual']].map(([k,l])=>`<button type="button" data-crep="${k}" class="${costF.reparto===k?'on':''}">${l}</button>`).join('')}</div>
       <div class="ecchips">${chip('soloConCosto','Solo con costos registrados',costF.soloConCosto)}${chip('cobrados','Incluir cobrados',costF.cobrados)}</div>
@@ -1687,10 +1819,16 @@ textarea.share{min-height:38vh}
   }
 
   /* ---------- eventos ---------- */
+  /* Duplicar o dividir: un trabajo nuevo con el mismo cliente, unidad, requisición y fecha; el monto lo pones tú (y ajustas el del original) */
+  $('#btnDup').addEventListener('click', ()=>{ const d=docs.find(x=>x.id===editingId); if(!d) return; closeSheets(); openEditor(null);
+    draft={cliente:d.cliente||'', unidad:d.unidad||'', nota:d.nota||'', fecha:d.fecha||today(), ejecutado:false, cobros:[]};
+    $('#iDesc').value=(d.descripcion||'')+' (parte 2)'; fillClienteSelect(draft.cliente); fillUnidadSelect(draft.unidad); $('#iNota').value=draft.nota; $('#iFecha').value=draft.fecha; $('#iMonto').value=''; $('#iOds').value=''; syncOds(); renderPagos();
+    $('#formErr').textContent=`Copia de «${d.descripcion}». Pon el monto de esta parte y después baja el monto del original.`; $('#iMonto').focus(); });
   $('#btnResumen').addEventListener('click', ()=>{ const d=docs.find(x=>x.id===editingId); if(d) copiarTexto(buildResumen([d]), 'Resumen del trabajo', 'Resumen con formato de WhatsApp. Si hiciste cambios sin guardar, guárdalos primero.'); });
   $('#bRes').addEventListener('click', ()=>{ const ls=docs.filter(d=>sel.has(d.id)); if(ls.length) copiarTexto(buildResumen(ls), 'Resumen de trabajos', 'Resumen de los trabajos seleccionados, con formato de WhatsApp.'); });
   $('#tabs').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; filtro=b.dataset.f; render(); });
-  $('#hero').addEventListener('click', e=>{ const b=e.target.closest('.row[data-f]'); if(!b) return; filtro=b.dataset.f; render(); const l=$('#list'); if(l) l.scrollIntoView({behavior:'smooth', block:'start'}); });
+  $('#hero').addEventListener('click', e=>{ if(e.target.closest('#heroTog')){ const ab=$('#hero').classList.contains('plegado'); try{ localStorage.setItem('heroAbierto', ab?'1':'0'); }catch(_){} return renderStats(); }
+    const b=e.target.closest('.row[data-f]'); if(!b) return; filtro=b.dataset.f; render(); const l=$('#list'); if(l) l.scrollIntoView({behavior:'smooth', block:'start'}); });
   $('#fCliente').addEventListener('change', e=>{ cliente=e.target.value; render(); });
   $('#q').addEventListener('input', e=>{ query=e.target.value.trim(); renderList(); });
   $('#list').addEventListener('click', e=>{
@@ -1708,9 +1846,9 @@ textarea.share{min-height:38vh}
   $('#bModo').addEventListener('change', renderBulkTot);
   $('#fab').addEventListener('click', ()=>openEditor(null));
   $('#iAI').addEventListener('click', ()=>{ closeSheets(); abrirAI('cob'); });
-  $('#scrim').addEventListener('click', closeSheets);
-  document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', closeSheets));
-  document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeSheets(); });
+  $('#scrim').addEventListener('click', intentarCerrar);
+  document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', intentarCerrar));
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape') intentarCerrar(); });
   $('#iEjecutado').addEventListener('change', ()=>{ syncEjec(); if($('#iEjecutado').checked && !$('#iFechaEjec').value) $('#iFechaEjec').value=today(); });
   $('#iEnEjec').addEventListener('change', ()=>{ syncEjec(); if($('#iEnEjec').checked && !$('#iFechaIni').value) $('#iFechaIni').value=today(); });
   $('#iOds').addEventListener('input', syncOds);
@@ -1979,8 +2117,10 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
     for(const a of elegidas){
       if(a.tipo==='nuevo_trabajo'){
         const d=a.datos||{};
-        const cliIn=String(d.cliente||'').trim(), cliOk=clienteExacto(cliIn)||cliIn;
-        nuevos.push({orden:++maxOrden, descripcion:String(d.descripcion||'').trim(), cliente:cliOk, unidad:mapUnidad(d.unidad, cliOk), ods:String(d.orden_servicio||'').trim(), nota:String(d.referencia||'').trim(), monto:r2(num(d.monto_usd)), moneda:'USD', fecha:d.fecha||'', ejecutado:!!d.ejecutado, fechaEjecucion:d.ejecutado?(d.fecha_ejecucion||''):'', cobros:[], creado:new Date().toISOString(), actualizado:new Date().toISOString()});
+        const cliIn=String(d.cliente||'').trim(), cliOk=clienteExacto(cliIn, [...listaClientes(), ...nuevos.map(n=>n.cliente)])||cliIn;
+        /* Una unidad que ya vino en esta misma propuesta con otra escritura («Lupara 5» y «Lupara V») es la misma */
+        const uniIn=String(d.unidad||'').trim(), uniOk=uniIn ? (clienteExacto(uniIn, [...listaUnidades(cliOk), ...nuevos.filter(n=>n.cliente===cliOk).map(n=>n.unidad).filter(Boolean)])||uniIn) : '';
+        nuevos.push({orden:++maxOrden, descripcion:String(d.descripcion||'').trim(), cliente:cliOk, unidad:uniOk, ods:String(d.orden_servicio||'').trim(), nota:String(d.referencia||'').trim(), monto:r2(num(d.monto_usd)), moneda:'USD', fecha:d.fecha||'', ejecutado:!!d.ejecutado, fechaEjecucion:d.ejecutado?(d.fecha_ejecucion||''):'', cobros:[], creado:new Date().toISOString(), actualizado:new Date().toISOString()});
         continue;
       }
       const w=copia(a.id); if(!w){ fallas.push('un trabajo que ya no existe'); continue; }
@@ -2002,7 +2142,8 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
       for(const [id,body] of Object.entries(copias)){ await coll.doc(id).set(body); ok++; }
       for(const body of nuevos){ if(!body.descripcion||body.monto<=0){ fallas.push('un trabajo nuevo sin descripción o monto'); continue; } await coll.doc().set(body); ok++; }
       $('#aiRes').innerHTML=''; $('#aiApplyRow').hidden=true; $('#aiReplyBox').hidden=true; aiLast=null; aiActs=[]; $('#aiText').value=''; aiFiles=[]; renderChips();
-      $('#aiStat').textContent = `Guardado: ${ok} ${ok===1?'trabajo actualizado':'trabajos actualizados'}.` + (fallas.length?` No se aplicó: ${fallas.join('; ')}.`:'');
+      const nN=nuevos.filter(b=>b.descripcion&&b.monto>0).length, nA=ok-nN;
+      $('#aiStat').textContent = `Guardado: ${[nN?`${nN} ${nN===1?'trabajo nuevo':'trabajos nuevos'}`:'', nA>0?`${nA} ${nA===1?'trabajo actualizado':'trabajos actualizados'}`:''].filter(Boolean).join(' y ')||'nada'}.` + (fallas.length?` No se aplicó: ${fallas.join('; ')}.`:'');
       toast('Cambios guardados');
     }catch(err){ $('#aiStat').textContent=errMsg(err)+(ok?` Se alcanzaron a guardar ${ok}.`:''); }
     finally{ btn.disabled=false; btn.textContent='Guardar los cambios marcados'; }
@@ -2189,7 +2330,7 @@ Responde solo con un objeto JSON:
   function promptAsis(texto, textosArch, nImgs){
     const hoy=today(), ini=inicioSemana(hoy), ph=pagadoHasta();
     const ws=trabs.filter(t=>!esSup(t)).map(t=>({id:t.id, nombre:t.nombre, cargo:t.cargo||'', activo:t.activo!==false}));
-    const abiertos=docs.filter(d=>etapa(d)!=='cobrado').sort(byOrden).map(d=>({id:d.id, descripcion:d.descripcion||'', unidad:d.unidad||''}));
+    const abiertos=docs.filter(abiertoCosto).sort(byOrden).map(d=>({id:d.id, descripcion:d.descripcion||'', unidad:d.unidad||''}));
     const desdeCtx=sumarDias(hoy,-21), nomDe=id=>(trabs.find(t=>t.id===id)||{}).nombre||id;
     const reg=Object.keys(asis).filter(f=>f>=desdeCtx).sort().map(f=>({fecha:f, registros:Object.entries((asis[f]||{}).registros||{}).map(([id,r])=>({trabajador:nomDe(id), tipo:r.tipo, horas_extra:num(r.horasExtra)}))}));
     return `Eres el asistente de nómina de WORKPROCA (taller naval en Maracaibo, Venezuela). Del material que te paso (mensajes de WhatsApp, listas, fotos de la hoja de asistencia, notas o archivos), extrae la asistencia de cada trabajador por día y los adelantos de pago.
@@ -2306,24 +2447,85 @@ Responde solo con un objeto JSON:
      ===================================================================== */
   let modulo='cob';
   function setModulo(m){
-    modulo = ['nom','gas','inv','res'].includes(m) ? m : 'cob';
+    if(esRegistro() && !['reg','nom'].includes(m)) m='reg';
+    modulo = ['nom','gas','inv','res','reg'].includes(m) ? m : 'cob';
     document.querySelectorAll('#modTabs button').forEach(b=>b.setAttribute('aria-selected', String(b.dataset.m===modulo)));
     $('#modCob').hidden = modulo!=='cob'; $('#cobHead').hidden = modulo!=='cob'; $('#cobBtns').hidden = modulo!=='cob';
-    $('#modNom').hidden = modulo!=='nom'; $('#modGas').hidden = modulo!=='gas'; $('#modInv').hidden = modulo!=='inv'; $('#modRes').hidden = modulo!=='res';
-    $('#modTitle').textContent = modulo==='nom' ? 'Nómina' : modulo==='gas' ? 'Gastos y balance' : modulo==='inv' ? 'Inventario' : modulo==='res' ? 'Resumen general' : 'Cobranzas';
-    const hs = modulo==='nom'?'nomina':modulo==='gas'?'gastos':modulo==='inv'?'inventario':modulo==='res'?'resumen':'cobranzas';
+    $('#modNom').hidden = modulo!=='nom'; $('#modGas').hidden = modulo!=='gas'; $('#modInv').hidden = modulo!=='inv'; $('#modRes').hidden = modulo!=='res'; $('#modReg').hidden = modulo!=='reg';
+    $('#modTitle').textContent = modulo==='reg' ? 'Registrar' : modulo==='nom' && esRegistro() ? 'Asistencia del día' : modulo==='nom' ? 'Nómina' : modulo==='gas' ? 'Gastos y balance' : modulo==='inv' ? 'Inventario' : modulo==='res' ? 'Resumen general' : 'Cobranzas';
+    const hs = modulo==='reg'?'registro':modulo==='nom'?'nomina':modulo==='gas'?'gastos':modulo==='inv'?'inventario':modulo==='res'?'resumen':'cobranzas';
     try{ if(location.hash !== '#'+hs) history.replaceState(null,'','#'+hs); }catch(_){}
     if(modulo!=='cob'){ selMode=false; sel.clear(); }
     if(modulo==='nom') renderNom();
     if(modulo==='gas') renderGas();
     if(modulo==='inv') renderInv();
     if(modulo==='res') renderRes();
+    if(modulo==='reg') renderReg();
+    if(modulo==='nom' && esRegistro()){ nView='dia'; renderNom(); }
     renderSelbar();
   }
+  /* Modo registro: para quien solo registra (secretaria, supervisor). En la versión independiente lo pone el inicio de sesión
+     para las personas invitadas; aquí también se puede abrir con el enlace terminado en #registro. */
+  if(location.hash==='#registro' && !document.documentElement.dataset.rol) document.documentElement.dataset.rol='registro';
+  const esRegistro = () => document.documentElement.dataset.rol==='registro';
+  const esDueno = () => !esRegistro();
+  let solicitudes=[], accesos=[];
+  function renderReg(){
+    if(modulo!=='reg') return;
+    const mias=solicitudes.filter(x=>x.autor===(document.documentElement.dataset.user||'')).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))).slice(0,15);
+    $('#regMain').innerHTML = `<div class="tip" style="margin-top:12px">¿Qué vas a registrar?</div>
+      <div class="regBtns">
+        <button type="button" data-reg="asis"><b>Asistencia del día</b><span>Quién trabajó, horas extra y en qué orden</span></button>
+        <button type="button" data-reg="adel"><b>Adelanto a un trabajador</b><span>Dinero entregado antes del pago</span></button>
+        <button type="button" data-reg="gasto"><b>Gasto</b><span>Una compra o un pago de la empresa</span></button>
+        <button type="button" data-reg="retiro"><b>Retiro de material</b><span>Material que sale para una orden</span></button>
+        <button type="button" data-reg="conteo"><b>Conteo del inventario</b><span>Lo que hay físicamente en el almacén</span></button>
+        ${sampleFn&&canWrite?'<button type="button" data-reg="ai"><b>Dictar o pegar un mensaje</b><span>El asistente arma el registro del día y tú lo revisas</span></button>':''}
+      </div>
+      ${window.__standalone?`<div class="sech">Lo que enviaste</div>${mias.length?mias.map(x=>`<div class="solic"><b>${esc(x.resumen||'Registro')}</b><div class="tip" style="border:0;margin:2px 0 0">${fechaHora(x.fecha)} · ${x.estado==='aprobada'?'Aprobado':x.estado==='rechazada'?'Rechazado'+(x.motivo?': '+esc(x.motivo):''):'Esperando aprobación del dueño'}</div></div>`).join(''):'<div class="tip">Todavía no has enviado nada.</div>'}<div class="tip">Lo que registras queda pendiente hasta que el dueño lo apruebe.</div>`:''}
+      <div style="height:30px"></div>`;
+  }
+  $('#regMain').addEventListener('click', e=>{ const b=e.target.closest('[data-reg]'); if(!b) return; const k=b.dataset.reg;
+    if(k==='asis'){ nView='dia'; return setModulo('nom'); } if(k==='adel') return openAdelanto(); if(k==='gasto') return openMov('gasto', null);
+    if(k==='retiro') return openIMov('salida', null); if(k==='conteo') return openIMov('conteo', null); if(k==='ai'){ nView='dia'; setModulo('nom'); return abrirAI('asis'); } });
+  $('#btnVolverReg').addEventListener('click', ()=>setModulo('reg'));
+  /* Un registro enviado por una persona invitada (versión independiente): el puente avisa con este evento */
+  window.addEventListener('wk-solicitud', ()=>toast('Enviado: queda pendiente hasta que el dueño lo apruebe'));
+  /* Texto legible de una solicitud para el dueño */
+  function resumenSolicitud(x){
+    const d=x.datos||{}, op=x.op, c=x.col;
+    if(op==='delete') return `Eliminar ${c==='invMovs'?'un movimiento de inventario':c==='movimientos'?'un movimiento de caja':c==='adelantos'?'un adelanto':'un registro'} (${c})`;
+    if(c==='movimientos') return `${d.tipo==='ingreso'?'Ingreso':d.tipo==='cambio'?'Cambio entre cuentas':'Gasto'}: ${d.concepto||d.categoria||''} · ${cuentaDe(d.cuenta||d.cuentaOrigen).moneda==='VES'?bs(num(d.monto||d.montoOrigen)):usd(num(d.monto||d.montoOrigen))} (${cuentaDe(d.cuenta||d.cuentaOrigen).nombre}) · ${fdate(d.fecha)}`;
+    if(c==='adelantos') return `Adelanto a ${nombreT(d.trabajadorId)}: ${usd(num(d.monto))} desde ${cuentaDe(d.cuenta).nombre} · ${fdate(d.fecha)}`;
+    if(c==='asistencia'){ const regs=Object.entries(d.registros||{}).filter(([,r])=>r.tipo!=='no'||num(r.horasExtra)>0); return `Asistencia del ${fdate(d.fecha||x.id)}: ${regs.length} ${regs.length===1?'persona':'personas'} (${regs.map(([id,r])=>`${(nombreT(id)||'').split(' ')[0]} ${r.tipo==='medio'?'½':r.tipo==='completo'?'día':''}${num(r.horasExtra)?' +'+nf.format(num(r.horasExtra)).replace(/,00$/,'')+'h':''}`).join(', ')})`; }
+    if(c==='invMovs'){ const it=itemDe(d.itemId)||{nombre:'ítem',unidad:'und'}; const tj=d.trabajoId&&docs.find(z=>z.id===d.trabajoId); return `${TIPO_INV[d.tipo]||'Movimiento'} de inventario: ${d.tipo==='conteo'?'contado '+cant(d.contado,it.unidad):cant(d.cantidad,it.unidad)} ${it.nombre}${tj?' · '+nombreTrabajo(tj):''} · ${fdate(d.fecha)}`; }
+    if(c==='trabajadores') return `${op==='update'?'Cambio en':'Ficha de'} ${d.nombre||nombreT(x.id)}`;
+    if(c==='facturas') return `${op==='update'?'Cambio en':'Trabajo'} ${d.descripcion||((docs.find(z=>z.id===x.id)||{}).descripcion)||''}`;
+    return `${op==='update'?'Cambio':'Registro'} en ${c}`;
+  }
+  async function decidirSolicitud(id, aprobar){
+    const x=solicitudes.find(z=>z.id===id); if(!x||!gDb) return;
+    try{
+      if(aprobar){ const ref=gDb.collection(x.col).doc(x.docId);
+        if(x.op==='delete') await ref.delete(); else if(x.op==='update') await ref.update(x.datos||{}); else await ref.set(x.datos||{}); }
+      await gDb.collection('solicitudes').doc(id).update({estado:aprobar?'aprobada':'rechazada', decidido:new Date().toISOString()});
+      toast(aprobar?'Aprobado y registrado':'Rechazado');
+    }catch(e){ toast(aprobar&&e&&e.code==='not_found'?'Ese registro ya no existe: rechaza la solicitud.':errMsg(e)); }
+  }
+  function bloqueSolicitudes(){
+    const pend=solicitudes.filter(x=>x.estado==='pendiente').sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha)));
+    if(!window.__standalone || esRegistro() || !pend.length) return '';
+    return `<div class="hero" style="border-color:var(--so)"><div class="lbl">Por aprobar · ${pend.length}</div>${pend.map(x=>`<div class="solic"><b>${esc(x.resumen||resumenSolicitud(x))}</b><div class="tip" style="border:0;margin:2px 0 0">${esc(x.nombre||x.autor||'')} · ${fechaHora(x.fecha)}</div><div class="acts"><button type="button" class="btn pri" data-aprobar="${esc(x.id)}">Aprobar</button><button type="button" class="btn del" data-rechazar="${esc(x.id)}">Rechazar</button></div></div>`).join('')}${pend.length>1?`<div class="row-btns"><button type="button" class="btn sec" id="aprobarTodo">Aprobar todo</button></div>`:''}</div>`;
+  }
+  document.addEventListener('click', e=>{ const a=e.target.closest('[data-aprobar]'), r=e.target.closest('[data-rechazar]');
+    if(a) return decidirSolicitud(a.dataset.aprobar, true); if(r) return decidirSolicitud(r.dataset.rechazar, false);
+    if(e.target.closest('#aprobarTodo')) (async()=>{ for(const x of solicitudes.filter(z=>z.estado==='pendiente').sort((p,q)=>String(p.fecha).localeCompare(String(q.fecha)))) await decidirSolicitud(x.id,true); })(); });
+  /* Punto en la pestaña Resumen cuando hay registros por aprobar */
+  function avisarPendientes(){ const b=document.querySelector('#modTabs [data-m="res"]'); if(!b) return; const n=solicitudes.filter(x=>x.estado==='pendiente').length; b.textContent = n&&esDueno() ? `Resumen · ${n}` : 'Resumen'; }
   function medirNav(){ const n=$('#topnav'); if(n) document.documentElement.style.setProperty('--navh', n.offsetHeight+'px'); }
   medirNav(); window.addEventListener('resize', medirNav);
   $('#modTabs').addEventListener('click', e=>{ const b=e.target.closest('button'); if(b) setModulo(b.dataset.m); });
-  const modDeHash = () => location.hash==='#nomina'?'nom':location.hash==='#gastos'?'gas':location.hash==='#inventario'?'inv':location.hash==='#resumen'?'res':'cob';
+  const modDeHash = () => location.hash==='#registro'?'reg':location.hash==='#nomina'?'nom':location.hash==='#gastos'?'gas':location.hash==='#inventario'?'inv':location.hash==='#resumen'?'res':'cob';
   window.addEventListener('hashchange', ()=>setModulo(modDeHash()));
 
   /* =====================================================================
@@ -2337,6 +2539,7 @@ Responde solo con un objeto JSON:
   const SUP='Supervisor';
   let nDb=null, nFallo=false, nCfgRef=null, cfgN=JSON.parse(JSON.stringify(CFG_DEF));
   let trabs=[], asis={}, adels=[], cortes=[], nLoaded={t:false,a:false,d:false,c:false};
+  let corteCuenta='binance', corteFechaPago=today(); try{ corteCuenta=localStorage.getItem('corteCuenta')||'binance'; }catch(_){}
   let nView='dia', diaSel=today(), dayDraft=null, dayDirty=false, corteHasta=today(), corteTasa='', supMontos={}, wEditId=null, nDelArmed='';
 
   const esSup = t => t.cargo===SUP;
@@ -2389,6 +2592,8 @@ Responde solo con un objeto JSON:
   /* Filtros del corte: qué cargos entran (null = todos) y, para supervisores, qué semanas pendientes (null = todas) */
   let corteF={cargos:null, semanasSup:null};
   const TODOS_F={cargos:null, semanasSup:null};
+  /* Fecha de ingreso: la que se escribió en la ficha; si no, el día en que se creó la ficha */
+  const ingresoDe = t => String(t&&(t.fechaIngreso||t.creado)||'').slice(0,10);
   function calcCorte(hasta, F){
     F=F||corteF;
     const incl = t => !F.cargos || F.cargos.includes(t.cargo||'');
@@ -2401,7 +2606,7 @@ Responde solo con un objeto JSON:
         const t=trabs.find(x=>x.id===id); if(!t||esSup(t)||!incl(t)) return;
         const d0=desdeDe(id); if(a.fecha<d0) return;
         const p=pagoDia(t,reg,a.fecha); if(!p.dias && !p.horas) return;
-        const L=linea(id); L.desde=d0; if(!desdeMin||d0<desdeMin) desdeMin=d0;
+        const L=linea(id); if(!L.desde||a.fecha<L.desde) L.desde=a.fecha; if(!desdeMin||a.fecha<desdeMin) desdeMin=a.fecha;   // el período empieza en el primer día que de verdad se paga
         if(p.dias===1) L.completos++; else if(p.dias===0.5) L.medios++;
         L.horasExtra+=p.horas; L.montoDias+=p.montoDias; L.montoExtra+=p.montoExtra;
         if(p.especial) L.especiales[p.especial]=(L.especiales[p.especial]||0)+p.dias;
@@ -2410,14 +2615,16 @@ Responde solo con un objeto JSON:
     });
     const supPagados=[], semanasSupPend=new Set();
     trabs.filter(t=>esSup(t) && t.activo!==false && incl(t)).forEach(t=>{
-      const pag=semanasPagadasSup(t.id), creado=String(t.creado||'').slice(0,10);
-      const inicio = creado && creado>primeraAsis ? creado : primeraAsis;
-      const pend=semanasDe(inicioSemana(inicio),hasta).filter(w=>!pag.has(w) && (!creado || finSemana(w)>=creado));
+      const pag=semanasPagadasSup(t.id), creado=ingresoDe(t);
+      const inicio = t.fechaIngreso ? creado : (creado && creado>primeraAsis ? creado : primeraAsis);   // con fecha de ingreso escrita, se pagan también semanas anteriores a la primera asistencia
+      const pend=semanasDe(inicioSemana(inicio),hasta).filter(w=>!pag.has(w) && (!creado || finSemana(w)>=creado) && (!F.soloCerradas || finSemana(w)<=hasta));
       pend.forEach(w=>semanasSupPend.add(w));
       const sem=pend.filter(w=>!F.semanasSup || F.semanasSup.includes(w));
       if(!sem.length && supMontos[t.id]==null){ const w=inicioSemana(hasta); if(pag.has(w)) supPagados.push({nombre:t.nombre, fecha:pag.get(w)}); return; }
       const L=linea(t.id); L.semanas=sem; L.desde=sem[0]||''; if(sem[0]&&(!desdeMin||sem[0]<desdeMin)) desdeMin=sem[0];
-      L.sueldoFijo = supMontos[t.id]!=null ? num(supMontos[t.id]) : r2(sem.length*sueldoSup(t)); });
+      /* La semana en que entró se paga en proporción a los días desde su ingreso */
+      const frac = w => creado && creado>w ? Math.max(0, Math.min(1, (Math.round((new Date(finSemana(w)+'T12:00:00')-new Date(creado+'T12:00:00'))/864e5)+1)/7)) : 1;
+      L.sueldoFijo = supMontos[t.id]!=null ? num(supMontos[t.id]) : r2(sum(sem,w=>sueldoSup(t)*frac(w))); if(sem.some(w=>frac(w)<1)) L.proporcional=true; });
     adels.filter(a=>!a.corteId && a.fecha<=hasta).forEach(a=>{ const t=trabs.find(x=>x.id===a.trabajadorId); if(t && !incl(t)) return; const L=linea(a.trabajadorId); L.adelantos+=num(a.monto); L.adelantoIds.push(a.id); });
     const ls=Object.values(lineas).map(L=>{ L.bruto=r2(L.montoDias+L.montoExtra+L.sueldoFijo); L.totalUsd=r2(L.bruto-L.adelantos); return L; })
       .filter(L=>L.bruto>0 || L.adelantos>0 || (L.semanas&&L.semanas.length))
@@ -2514,7 +2721,7 @@ Responde solo con un objeto JSON:
     const tieneReg = id => { const r=dayDraft[id]; return !!r && (r.tipo==='completo' || r.tipo==='medio' || num(r.horasExtra)>0); };
     const lista=trabs.filter(t=>!esSup(t) && (t.activo!==false || tieneReg(t.id))).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
     const td=tipoDia(diaSel), bloqT = t => diaBloqueado(t, diaSel), bloqueado = lista.length>0 && lista.every(bloqT), algunosBloq = !bloqueado && lista.some(bloqT);
-    const trabajosAbiertos = docs.filter(d=>etapa(d)!=='cobrado').sort(byOrden);
+    const trabajosAbiertos = docs.filter(abiertoCosto).sort(byOrden);
     const inactivos=trabs.filter(t=>t.activo===false && !esSup(t) && !tieneReg(t.id)).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
     const bloqueInact = `<details class="inact"${!lista.length&&inactivos.length?' open':''}><summary>Trabajadores inactivos (${inactivos.length})</summary>
         ${inactivos.length?`<div class="lns">${inactivos.map(t=>`<div class="wcard off" style="align-items:center"><div class="l"><b>${esc(t.nombre)}</b><small class="num">${esc(t.cargo||'')} · ${usd(tarifaDe(t))}/día</small></div><button type="button" class="btn sec" data-activar="${esc(t.id)}">Activar</button></div>`).join('')}</div>`:'<div class="tip">No hay trabajadores inactivos.</div>'}
@@ -2523,8 +2730,10 @@ Responde solo con un objeto JSON:
     const btnAIDia = sampleFn&&canWrite ? '<button type="button" class="btn sec" id="dAI">Registrar con asistente</button>' : '';
     const navDia = `<div class="daynav"><button type="button" id="dPrev" aria-label="Día anterior">‹</button><input type="date" id="dFecha" value="${diaSel}"><button type="button" id="dNext" aria-label="Día siguiente">›</button></div>`;
     if(!lista.length){ dayDirty=hayCambiosDia(); el.innerHTML=`${navDia}<div class="empty"><b>No hay trabajadores activos</b>${inactivos.length?'Activa los que trabajan este día aquí abajo.':'Agrega el primero para empezar a registrar días.'}</div>${btnAIDia&&trabs.some(t=>!esSup(t))?`<div class="row-btns">${btnAIDia}</div>`:''}${bloqueInact}${dayDirty&&!bloqueado?'<div class="nsum"><div class="row-btns" style="margin-top:0"><button type="button" class="btn pri" id="dSave">Guardar día</button></div></div>':''}`; return; }
+    const ayer=sumarDias(today(),-1), proponerAyer = diaSel===today() && !asis[today()] && !asis[ayer] && !dayDirty && new Date(ayer+'T12:00:00').getDay()!==0;
     el.innerHTML = `
       ${navDia}
+      ${proponerAyer?`<div class="lock" style="margin-top:10px">Ayer no tiene registro. <button type="button" class="lnk" id="dIrAyer">¿Vas a registrar ayer, ${DIAS[new Date(ayer+'T12:00:00').getDay()]} ${fdate(ayer).slice(0,5)}?</button></div>`:''}
       <div class="daytag"><b style="color:var(--ink);text-transform:capitalize">${DIAS[td.dow]} ${fdate(diaSel)}</b>${td.factor!==1?`<span class="pill so">${td.lbl} · ${nf.format(td.factor)} veces</span>`:td.lbl?`<span class="pill pe">${td.lbl}</span>`:''}${asis[diaSel]?'<span class="pill co">Registrado</span>':''}</div>
       ${bloqueado?`<div class="lock">Este día ya se pagó en un corte. Para cambiarlo, anula primero ese corte en la pestaña “Corte”.</div>`:algunosBloq?`<div class="lock">${esc(lista.filter(bloqT).map(t=>t.nombre.split(' ')[0]).join(', '))}: este día ya se les pagó en un corte, así que no se puede cambiar.</div>`:''}
       ${!bloqueado?`<div class="panel" style="padding:10px 12px;margin-top:10px">
@@ -2533,11 +2742,12 @@ Responde solo con un objeto JSON:
           return `<div class="seg" role="group" aria-label="Asistencia de todos"><button type="button" id="dTodos" class="${tipoC==='completo'?'on':''}">Día completo</button><button type="button" id="dMedio" class="${tipoC==='medio'?'on':''}">Medio día</button><button type="button" id="dNinguno" class="${tipoC==='no'?'on':''}">No trabajó</button></div>
         <div class="wex" style="margin-top:8px">
           <label>Horas extra para todos<input type="text" inputmode="decimal" id="dTodosHx" value="${hxC!=null&&num(hxC)?nf.format(num(hxC)).replace(/,00$/,''):''}" placeholder="${hxC==null?'varían':'0'}"></label>
-          <label>Orden o trabajo para todos<input class="selq" data-filtra="#dTodosTrab" placeholder="Buscar trabajo…" autocomplete="off" aria-label="Buscar trabajo…"><select id="dTodosTrab"><option value="">${tjC==null?'Varían…':'Elige…'}</option>${trabajosAbiertos.map(d=>`<option value="${esc(d.id)}"${tjC===d.id?' selected':''}>${esc(d.descripcion)}${d.unidad?' · '+esc(d.unidad):''}${tieneOrden(d)?' · '+esc(d.ods):''}</option>`).join('')}<option value="__ninguno"${tjC===''?' selected':''}>Sin asignar</option></select></label>
+          <label>Orden o trabajo para todos<select data-combo id="dTodosTrab"><option value="">${tjC==null?'Varían…':'Elige…'}</option>${trabajosAbiertos.map(d=>`<option value="${esc(d.id)}"${tjC===d.id?' selected':''}>${esc(d.descripcion)}${d.unidad?' · '+esc(d.unidad):''}${tieneOrden(d)?' · '+esc(d.ods):''}</option>`).join('')}<option value="__ninguno"${tjC===''?' selected':''}>Sin asignar</option></select></label>
         </div>`; })()}
         <div class="tip" style="margin-top:6px">Se aplica a todos; después ajustas el que sea distinto en su fila.</div>
       </div>`:''}
-      ${btnAIDia?`<div class="row-btns">${btnAIDia}</div>`:''}
+      <div class="row-btns">${btnAIDia}${canWrite?'<button type="button" class="btn sec" id="dAdelanto">Registrar adelanto</button>':''}</div>
+      <div class="tip" style="margin-top:6px">Los supervisores no aparecen aquí: cobran sueldo semanal en el corte.</div>
       <div class="wlist">${lista.map(t=>{
         const r=dayDraft[t.id]||defReg(t.id);
         const bq=bloqT(t);
@@ -2548,6 +2758,8 @@ Responde solo con un objeto JSON:
             <label>Horas extra<input type="text" inputmode="decimal" data-hx value="${num(r.horasExtra)?nf.format(num(r.horasExtra)).replace(/,00$/,''):''}" placeholder="0"${bq?' disabled':''}></label>
             <label>Orden o trabajo (centro de costo)<select data-tj${bq?' disabled':''}><option value="">Sin asignar</option>${trabajosAbiertos.map(d=>`<option value="${esc(d.id)}"${r.trabajoId===d.id?' selected':''}>${esc(d.descripcion)}${d.unidad?' · '+esc(d.unidad):''}${tieneOrden(d)?' · '+esc(d.ods):''}</option>`).join('')}</select></label>
           </div>
+          ${r.trabajoId2!=null&&r.trabajoId2!==undefined&&r.dividir?`<div class="wex"><label style="grid-column:1/-1">La otra mitad del día (y de las horas extra) en<select data-tj2${bq?' disabled':''}><option value="">Elige la otra orden…</option>${trabajosAbiertos.filter(d=>d.id!==r.trabajoId).map(d=>`<option value="${esc(d.id)}"${r.trabajoId2===d.id?' selected':''}>${esc(d.descripcion)}${d.unidad?' · '+esc(d.unidad):''}${tieneOrden(d)?' · '+esc(d.ods):''}</option>`).join('')}</select></label></div>`:''}
+          <div class="wacts">${!bq&&r.trabajoId&&!r.dividir?`<button type="button" class="lnk" data-dividir="${esc(t.id)}">Dividir el día entre dos órdenes</button>`:''}${!bq&&r.dividir?`<button type="button" class="lnk" data-nodividir="${esc(t.id)}">Todo el día en una orden</button>`:''}${canWrite?`<button type="button" class="lnk" data-adelanto="${esc(t.id)}">Adelanto</button>`:''}</div>
         </div>`;}).join('')}</div>
       ${bloqueInact}
       <div class="nsum"><div class="t num" id="dSum"></div>${!bloqueado?`<div class="row-btns" style="margin-top:0"><button type="button" class="btn pri" id="dSave">Guardar día</button></div>`:''}</div>`;
@@ -2576,7 +2788,7 @@ Responde solo con un objeto JSON:
   let salidaArmada=false;
   function confirmarSalida(){ if(salidaArmada){ salidaArmada=false; return true; } salidaArmada=true; toast('Tienes cambios sin guardar. Toca otra vez para salir sin guardar.'); setTimeout(()=>salidaArmada=false,4000); return false; }
   /* Registros que valen la pena guardar, y comparación con lo ya guardado */
-  function regsDe(o){ const regs={}; Object.keys(o||{}).sort().forEach(id=>{ const r=o[id]; if(r && (r.tipo!=='no' || num(r.horasExtra)>0)) regs[id]={tipo:r.tipo||'no', horasExtra:num(r.horasExtra), trabajoId:r.trabajoId||''}; }); return regs; }
+  function regsDe(o){ const regs={}; Object.keys(o||{}).sort().forEach(id=>{ const r=o[id]; if(r && (r.tipo!=='no' || num(r.horasExtra)>0)) regs[id]={tipo:r.tipo||'no', horasExtra:num(r.horasExtra), trabajoId:r.trabajoId||''}; if(r.dividir&&r.trabajoId2&&r.trabajoId2!==r.trabajoId){ regs[id].trabajoId2=r.trabajoId2; regs[id].dividir=true; } }); return regs; }
   const hayCambiosDia = () => JSON.stringify(regsDe(dayDraft)) !== JSON.stringify(regsDe((asis[diaSel]||{}).registros));
   /* Quita a un trabajador de este día y lo guarda de una vez, sin tocar los demás cambios pendientes */
   async function quitarDelDia(id){
@@ -2632,7 +2844,15 @@ Responde solo con un objeto JSON:
         <label class="f">Desde<input type="date" value="${c.desde}" disabled></label>
         <label class="f">Hasta<input type="date" id="cHasta" value="${corteHasta}"></label>
         <label class="f full">Tasa del pago (Bs. por USD)<input id="cTasa" inputmode="decimal" value="${esc(corteTasa)}" placeholder="0,00"></label>
+        <label class="f">Fecha del pago<input type="date" id="cFechaPago" value="${corteFechaPago}"></label>
+        <label class="f">Se paga desde<select id="cCuenta"><option value="binance"${corteCuenta==='binance'?' selected':''}>Binance (vendiendo USDT)</option><option value="banco"${corteCuenta==='banco'?' selected':''}>Banco (bolívares)</option><option value="efectivo"${corteCuenta==='efectivo'?' selected':''}>Efectivo (dólares)</option></select></label>
       </div>
+      ${(()=>{ const avisos=[]; const ult=(()=>{ const u=ultimoCorte(); return u&&num(u.tasa)>0?num(u.tasa):(tasaSugerida()||0); })();
+        if(tasaOk && ult>0 && Math.abs(tasa-ult)/ult>0.2) avisos.push(`La tasa ${nfT.format(tasa)} se aleja mucho de la última usada (${nfT.format(ult)}). Revísala.`);
+        if(tasaOk && totUsd>0){ const disp = corteCuenta==='binance' ? saldoCuenta('binance',corteFechaPago) : corteCuenta==='banco' ? saldoCuenta('banco',corteFechaPago) : saldoCuenta('efectivo',corteFechaPago);
+          const hace = corteCuenta==='banco' ? totBs : totUsd, enBs=corteCuenta==='banco';
+          if(disp < hace-0.005) avisos.push(`${cuentaDe(corteCuenta).nombre} tiene ${enBs?bs(disp):usd(disp)} al ${fdate(corteFechaPago)} y el pago necesita ${enBs?bs(hace):usd(hace)}: la cuenta quedaría en negativo.`); }
+        return avisos.length?`<div class="lock" style="margin-top:8px">${avisos.map(esc).join('<br>')}</div>`:''; })()}
       ${(()=>{ const cargos=[...new Set([...cfgN.cargos.map(g=>g.nombre), SUP].filter(cg=>trabs.some(t=>t.activo!==false&&(t.cargo||'')===cg)))];
         const on=cg=>!corteF.cargos||corteF.cargos.includes(cg);
         const semChips = (!corteF.cargos||corteF.cargos.includes(SUP)) && c.semanasSupPend.length ? `<div class="tip" style="border:0;margin:6px 0 0">Semanas de supervisores que entran</div><div class="ecchips" style="margin-top:4px">${c.semanasSupPend.map(w=>{ const o=!corteF.semanasSup||corteF.semanasSup.includes(w); return `<label class="${o?'on':''}"><input type="checkbox" data-csem="${w}"${o?' checked':''}> ${fdate(w).slice(0,5)} al ${fdate(finSemana(w)).slice(0,5)}${w===inicioSemana(today())?' (esta)':finSemana(w)<today()?' (pasada)':''}</label>`; }).join('')}</div>` : '';
@@ -2648,7 +2868,7 @@ Responde solo con un objeto JSON:
         return `<div class="ln" data-l="${esc(l.trabajadorId)}">
           <div class="h"><b>${esc(nombreT(l.trabajadorId))}</b><span class="money num">${tasaOk?`<small>Bs.</small>${nf.format(l.totalBs)}`:`<small>USD</small>${nf.format(Math.max(0,l.totalUsd))}`}</span></div>
           <div class="d num">${esc(t?t.cargo:'')}${detalleLinea(l)?' · '+detalleLinea(l):''}<br>Devengado <b>${usd(l.bruto)}</b>${l.adelantos?` · Adelantos <b>− ${usd(l.adelantos)}</b>`:''} · A pagar <b>${usd(Math.max(0,l.totalUsd))}</b>${l.totalUsd<0?` <span class="warn">(el adelanto supera lo devengado por ${usd(-l.totalUsd)}; ese resto pasa al próximo corte)</span>`:''}</div>
-          ${t&&esSup(t)?`<div class="sup">Sueldo de este corte (USD)<input data-sup="${esc(t.id)}" inputmode="decimal" value="${nf.format(l.sueldoFijo)}"></div>`:''}
+          ${t&&esSup(t)?`<div class="sup">Sueldo de este corte (USD)<input data-sup="${esc(t.id)}" inputmode="decimal" value="${nf.format(l.sueldoFijo)}"></div>${l.proporcional?`<div class="tip" style="margin:4px 0 0">Entró el ${fdate(ingresoDe(t))}: su primera semana va en proporción a los días.</div>`:''}`:''}
           ${detalleDias(l)?`<details class="ddet"><summary>Ver detalle por día</summary>${detalleDias(l)}</details>`:''}
           <div class="acts">${okB&&tasaOk?`<button type="button" class="btn sec" data-bank="${esc(l.trabajadorId)}">Copiar para el banco</button>`:okB?'<span class="warn">Escribe la tasa para copiar el pago.</span>':'<span class="warn">Faltan datos de pago móvil: complétalos en “Trabajadores”.</span>'}<button type="button" class="btn sec" data-recibo="${esc(l.trabajadorId)}">Copiar recibo para él</button></div>
         </div>`;}).join(''):`<div class="empty"><b>Nada que pagar en este período</b>Registra los días trabajados en “Registro del día”.</div>`}</div>
@@ -2658,29 +2878,32 @@ Responde solo con un objeto JSON:
       ${historialCortes()}
       <div style="height:20px"></div>`;
   }
+  /* Se puede anular un corte si ninguna de sus personas tiene un corte posterior */
+  function anulable(k){ const ids=new Set((k.lineas||[]).map(l=>l.trabajadorId)), clave=x=>String(x.hasta)+'|'+String(x.creado||'');
+    return !cortes.some(o=>o.id!==k.id && clave(o)>clave(k) && (o.lineas||[]).some(l=>ids.has(l.trabajadorId))); }
   function historialCortes(){
     return `<div class="sech">Cortes pagados</div>
       ${cortes.length?`<div class="hist">${cortes.slice().sort((a,b)=>String(b.hasta).localeCompare(String(a.hasta))).map((k,i)=>`<details${nDelArmed==='co:'+k.id?' open':''}><summary><span style="color:var(--ink);font-weight:600;font-size:14.5px">Corte del ${fdate(k.fecha)}</span><span class="num">${bs(num(k.totalBs))}</span></summary>
-        <div class="d num" style="font-size:13px;color:var(--muted);margin-top:6px">Período ${fdate(k.desde)} al ${fdate(k.hasta)} · tasa ${nfT.format(num(k.tasa))} · ${usd(num(k.totalUsd))}</div>
+        <div class="d num" style="font-size:13px;color:var(--muted);margin-top:6px">Período ${fdate(k.desde)} al ${fdate(k.hasta)} · tasa ${nfT.format(num(k.tasa))} · ${usd(num(k.totalUsd))} · pagado desde ${esc(cuentaDe(k.cuenta||'binance').nombre)}</div>
         <div class="lns">${(k.lineas||[]).map(l=>`<div class="ln"><div class="h"><b>${esc(l.nombre)}</b><span class="money num"><small>Bs.</small>${nf.format(num(l.totalBs))}</span></div><div class="d num">${esc(l.cargo||'')} · ${detalleLinea(l)} · ${usd(Math.max(0,num(l.totalUsd)))}</div>${detalleDias(l)?`<details class="ddet"><summary>Ver detalle por día</summary>${detalleDias(l)}</details>`:''}<div class="acts">${l.telefono&&l.cedula&&l.banco?`<button type="button" class="btn sec" data-hbank="${esc(k.id)}|${esc(l.trabajadorId)}">Copiar para el banco</button>`:''}<button type="button" class="btn sec" data-hrecibo="${esc(k.id)}|${esc(l.trabajadorId)}">Copiar recibo para él</button></div></div>`).join('')}</div>
-        <div class="row-btns"><button type="button" class="btn sec" data-hres="${esc(k.id)}">Copiar resumen</button>${i===0?`<button type="button" class="btn del" data-anular="${esc(k.id)}">${nDelArmed==='co:'+k.id?'Toca otra vez para anular':'Anular corte'}</button>`:''}</div></details>`).join('')}</div>`:'<div class="tip">Todavía no hay cortes pagados.</div>'}`;
+        <div class="row-btns"><button type="button" class="btn sec" data-hres="${esc(k.id)}">Copiar resumen</button>${anulable(k)?`<button type="button" class="btn del" data-anular="${esc(k.id)}">${nDelArmed==='co:'+k.id?'Toca otra vez para anular':'Anular corte'}</button>`:''}</div></details>`).join('')}</div>`:'<div class="tip">Todavía no hay cortes pagados.</div>'}`;
   }
   async function marcarPagado(){
     const tasa=parseNum(corteTasa); if(!(tasa>0)) return;
     const c=calcCorte(corteHasta), ls=conBs(c.lineas,tasa); if(!ls.length) return;
-    const btn=$('#cPagar'); if(!btn.dataset.armed){ btn.dataset.armed='1'; btn.textContent=`Confirmar pago de ${bs(sum(ls,l=>l.totalBs))}`; setTimeout(()=>{ if(btn.isConnected){ delete btn.dataset.armed; btn.textContent='Marcar pagado'; } },5000); return; }
+    const btn=$('#cPagar'); if(!btn.dataset.armed){ btn.dataset.armed='1'; btn.textContent=`Confirmar pago de ${corteCuenta==='efectivo'?usd(sum(ls,l=>Math.max(0,l.totalUsd))):bs(sum(ls,l=>l.totalBs))} a ${nfT.format(tasa)} desde ${cuentaDe(corteCuenta).nombre}`; setTimeout(()=>{ if(btn.isConnected){ delete btn.dataset.armed; btn.textContent='Marcar pagado'; } },5000); return; }
     btn.disabled=true; btn.textContent='Guardando…';
     const lineas=ls.map(l=>{ const t=trabs.find(x=>x.id===l.trabajadorId)||{}; const pm=pmDe(t); return {trabajadorId:l.trabajadorId, nombre:t.nombre||'', cargo:t.cargo||'', cedula:String(pm.cedula||''), telefono:String(pm.telefono||''), banco:pm.banco||'', titular:pm.titular||'', completos:l.completos, medios:l.medios, horasExtra:r2(l.horasExtra), especiales:l.especiales, montoDias:r2(l.montoDias), montoExtra:r2(l.montoExtra), sueldoFijo:r2(l.sueldoFijo), semanas:l.semanas||[], dias:l.dias||[], adelantos:r2(l.adelantos), bruto:l.bruto, totalUsd:l.totalUsd, totalBs:l.totalBs}; });
     const adIds=ls.flatMap(l=>l.adelantoIds);
-    const body={fecha:today(), desde:c.desde, hasta:c.hasta, tasa, lineas, adelantoIds:adIds, totalUsd:r2(sum(ls,l=>Math.max(0,l.totalUsd))), totalBs:r2(sum(ls,l=>l.totalBs)), creado:new Date().toISOString()};
+    const body={fecha:corteFechaPago||today(), cuenta:corteCuenta, desde:c.desde, hasta:c.hasta, tasa, lineas, adelantoIds:adIds, totalUsd:r2(sum(ls,l=>Math.max(0,l.totalUsd))), totalBs:r2(sum(ls,l=>l.totalBs)), creado:new Date().toISOString()};
     try{
       const ref=nDb.collection('cortes').doc();
       await ref.set(body);
       for(const id of adIds) await nDb.collection('adelantos').doc(id).update({corteId:ref.id});
       /* Si a alguien el adelanto le superó lo devengado, el resto queda como adelanto pendiente para el próximo corte */
       let arrastres=0;
-      for(const l of ls){ if(l.totalUsd<-0.004){ await nDb.collection('adelantos').doc().set({trabajadorId:l.trabajadorId, fecha:sumarDias(c.hasta,1), monto:r2(-l.totalUsd), nota:`Resto del adelanto no descontado en el corte del ${fdate(today())}`, corteId:'', creado:new Date().toISOString()}); arrastres++; } }
-      supMontos={}; corteF={cargos:null, semanasSup:null}; corteHasta=today(); toast(arrastres?`Corte guardado como pagado · ${arrastres} ${arrastres===1?'adelanto pasa':'adelantos pasan'} al próximo corte`:'Corte guardado como pagado'); renderNom();
+      for(const l of ls){ if(l.totalUsd<-0.004){ await nDb.collection('adelantos').doc().set({trabajadorId:l.trabajadorId, fecha:sumarDias(c.hasta,1), monto:r2(-l.totalUsd), nota:`Resto del adelanto no descontado en el corte del ${fdate(body.fecha)}`, corteId:'', creado:new Date().toISOString()}); arrastres++; } }
+      supMontos={}; corteF={cargos:null, semanasSup:null}; corteHasta=today(); corteFechaPago=today(); toast(arrastres?`Corte guardado como pagado · ${arrastres} ${arrastres===1?'adelanto pasa':'adelantos pasan'} al próximo corte`:'Corte guardado como pagado'); renderNom();
     }catch(err){ toast(errMsg(err)); btn.disabled=false; btn.textContent='Marcar pagado'; }
   }
   async function anularCorte(id){
@@ -2708,10 +2931,10 @@ Responde solo con un objeto JSON:
     $('#wTarifa').value=t&&num(t.tarifa)>0?nf.format(num(t.tarifa)):''; $('#wHx').value=t&&num(t.horaExtra)>0?nf.format(num(t.horaExtra)):'';
     [['#wFSab','factorSabado'],['#wFDom','factorDomingo'],['#wFFer','factorFeriado']].forEach(([sel,k])=>{ $(sel).value=t&&num(t[k])>0?nf.format(num(t[k])):''; $(sel).placeholder=nf.format(num(cfgN[k])||1); });
     $('#wSueldo').value=t&&num(t.sueldoSemanal)>0?nf.format(num(t.sueldoSemanal)):nf.format(num(cfgN.sueldoSupervisor));
-    $('#wActivo').checked=!t||t.activo!==false;
+    $('#wActivo').checked=!t||t.activo!==false; $('#wIngreso').value = t ? ingresoDe(t) : today();
     $('#wMismo').checked = pm.mismo!==false; $('#wPmTit').value = pm.mismo===false ? pm.titular : ''; $('#wPmCed').value = pm.mismo===false ? pm.cedula : '';
     $('#wPmTel').value = pm.telefono||''; setBanco($('#wBanco'), pm.banco||'');
-    $('#wErr').textContent=''; $('#wDel').hidden=!t; $('#wDel').textContent='Eliminar'; delete $('#wDel').dataset.armed;
+    $('#wErr').textContent=''; $('#wDel').hidden=!t; $('#wAdel').hidden=!t; $('#wDel').textContent='Eliminar'; delete $('#wDel').dataset.armed;
     syncCargo(); syncMismo(); openSheet('#wSheet');
   }
   function syncCargo(){
@@ -2719,7 +2942,7 @@ Responde solo con un objeto JSON:
     if(!s){ const tar=parseNum($('#wTarifa').value), cg=cfgN.cargos.find(c=>c.nombre===$('#wCargo').value), base=tar>0?tar:num((cg||{}).tarifa), gen=r2(base/(num(cfgN.horasJornada)||8.5)*(num(cfgN.factorHoraExtra)||1)), prop=parseNum($('#wHx').value);
       $('#wHxInfo').innerHTML = prop>0 ? `Hora extra propia: <b>${usd(prop)}</b> (la general sería ${usd(gen)}).` : `Si lo dejas vacío, la hora extra vale <b>${usd(gen)}</b>: tarifa del día ${usd(base)} ÷ ${nf.format(num(cfgN.horasJornada))} h × ${nf.format(num(cfgN.factorHoraExtra))}.`; }
   }
-  function syncMismo(){ const m=$('#wMismo').checked; $('#wPmTitL').hidden=m; $('#wPmCedL').hidden=m; }
+  function syncMismo(){ const m=$('#wMismo').checked; $('#wPmTitL').hidden=m; $('#wPmCedL').hidden=m; if(m && !$('#wPmTel').value.trim() && $('#wTel').value.trim()) $('#wPmTel').value=$('#wTel').value.trim(); }
   async function guardarTrab(){
     const nombre=$('#wNombre').value.trim().replace(/\s+/g,' '), ced=soloDig($('#wCedula').value), tel=normTel($('#wTel').value);
     const mismo=$('#wMismo').checked, pmTel=normTel($('#wPmTel').value), pmCed=mismo?ced:soloDig($('#wPmCed').value), pmTit=mismo?nombre:$('#wPmTit').value.trim().replace(/\s+/g,' '), pmBanco=$('#wBanco').dataset.code||'';
@@ -2733,7 +2956,7 @@ Responde solo con un objeto JSON:
     const body={nombre, cedula:ced, telefono:tel, cargo, tarifa: cargo!==SUP && tar>0 ? r2(tar) : 0, horaExtra: cargo!==SUP && hx>0 ? r2(hx) : 0,
       ...Object.fromEntries([['factorSabado','#wFSab'],['factorDomingo','#wFDom'],['factorFeriado','#wFFer']].map(([k,sel])=>{ const v=parseNum($(sel).value); return [k, cargo!==SUP && v>0 ? r2(v) : 0]; })), sueldoSemanal: cargo===SUP && sue>0 && Math.abs(sue-num(cfgN.sueldoSupervisor))>0.004 ? r2(sue) : 0, activo:$('#wActivo').checked,
       pmMismo:mismo, pmTitular:pmTit, pmCedula:pmCed, pmTelefono:pmTel, pmBanco, actualizado:new Date().toISOString()};
-    const old=wEditId?trabs.find(x=>x.id===wEditId):null; body.creado = old&&old.creado || new Date().toISOString();
+    const old=wEditId?trabs.find(x=>x.id===wEditId):null; body.creado = old&&old.creado || new Date().toISOString(); body.fechaIngreso=$('#wIngreso').value||'';
     try{ await (wEditId?nDb.collection('trabajadores').doc(wEditId):nDb.collection('trabajadores').doc()).set(body); closeSheets(); setTimeout(renderNom,50); toast(pmOk({telefono:pmTel,cedula:pmCed,banco:pmBanco})?'Trabajador guardado':'Guardado; faltan datos de pago móvil'); }
     catch(err){ $('#wErr').textContent=errMsg(err); }
   }
@@ -2744,21 +2967,26 @@ Responde solo con un objeto JSON:
     if(!b.dataset.armed){ b.dataset.armed='1'; b.textContent='Toca otra vez para eliminar'; return; }
     try{ await nDb.collection('trabajadores').doc(wEditId).delete(); closeSheets(); toast('Trabajador eliminado'); }catch(err){ $('#wErr').textContent=errMsg(err); }
   }
-  function openAdelanto(){
+  function openAdelanto(tid){
     /* Todos los trabajadores, también los que no están activos hoy: un adelanto se descuenta en su próximo corte */
     const porNombre=(a,b)=>a.nombre.localeCompare(b.nombre,'es');
     const ls=[...trabs.filter(t=>t.activo!==false).sort(porNombre), ...trabs.filter(t=>t.activo===false).sort(porNombre)];
     if(!ls.length){ toast('Primero agrega trabajadores'); return; }
     $('#adTrab').innerHTML=ls.map(t=>`<option value="${esc(t.id)}">${esc(t.nombre)}${t.activo===false?' (inactivo)':''}</option>`).join('');
     $('#adFecha').value=today(); $('#adMonto').value=''; $('#adNota').value=''; $('#adErr').textContent='';
+    if(tid && ls.some(t=>t.id===tid)) $('#adTrab').value=tid;
+    let ult=''; try{ ult=localStorage.getItem('adCuenta')||''; }catch(_){} $('#adCuenta').value=ult; $('#adTasa').value=tasaSugerida()?nfT.format(tasaSugerida()):''; $('#adTasaL').hidden=$('#adCuenta').value!=='banco';
     limpiarFiltros('#adSheet'); openSheet('#adSheet');
   }
   async function guardarAdelanto(){
     const m=parseNum($('#adMonto').value);
     if(!(m>0)){ $('#adErr').textContent='Escribe el monto en dólares.'; return; }
-    const f=$('#adFecha').value||today();
+    const f=$('#adFecha').value||today(), cta=$('#adCuenta').value, tA=parseNum($('#adTasa').value);
+    if(!cta){ $('#adErr').textContent='Elige de qué cuenta sale el dinero.'; return; }
+    if(cta==='banco' && !(tA>0)){ $('#adErr').textContent='Escribe la tasa para llevar el adelanto a bolívares.'; return; }
+    try{ localStorage.setItem('adCuenta',cta); }catch(_){}
     { const h=pagadoHastaDe($('#adTrab').value); if(h && f<=h){ $('#adErr').textContent=`A esa persona ya se le pagó hasta el ${fdate(h)}. Usa una fecha posterior.`; return; } }
-    try{ await nDb.collection('adelantos').doc().set({trabajadorId:$('#adTrab').value, fecha:f, monto:r2(m), nota:$('#adNota').value.trim(), corteId:'', creado:new Date().toISOString()}); closeSheets(); toast('Adelanto registrado'); }
+    try{ await nDb.collection('adelantos').doc().set({trabajadorId:$('#adTrab').value, fecha:f, monto:r2(m), cuenta:cta, tasa:cta==='banco'?tA:0, nota:$('#adNota').value.trim(), corteId:'', creado:new Date().toISOString()}); closeSheets(); toast('Adelanto registrado'); }
     catch(err){ $('#adErr').textContent=errMsg(err); }
   }
 
@@ -2811,12 +3039,18 @@ Responde solo con un objeto JSON:
     if(t.closest('#dSave')) return guardarDia();
     if(t.closest('#dAI')) return abrirAI('asis');
     if(t.closest('#dNuevoT')) return openTrab(null);
+    if(t.closest('#dIrAyer')) return cambiarDia(sumarDias(today(),-1));
+    if(t.closest('#dAdelanto')) return openAdelanto();
+    const dv=t.closest('[data-dividir]'); if(dv){ const id=dv.dataset.dividir; dayDraft[id]={...(dayDraft[id]||defReg(id)), dividir:true, trabajoId2:''}; dayDirty=true; return renderNom(); }
+    const ndv=t.closest('[data-nodividir]'); if(ndv){ const id=ndv.dataset.nodividir; const r={...(dayDraft[id]||defReg(id))}; delete r.dividir; delete r.trabajoId2; dayDraft[id]=r; dayDirty=true; return renderNom(); }
+    const adl=t.closest('[data-adelanto]'); if(adl) return openAdelanto(adl.dataset.adelanto);
     const des=t.closest('[data-desactivar]'); if(des){
       const w=trabs.find(x=>x.id===des.dataset.desactivar); if(!w) return;
+      /* Dos toques, y lo ya registrado se conserva: desactivar solo lo saca de los días siguientes */
+      if(!des.dataset.armed){ des.dataset.armed='1'; des.textContent='¿Desactivar? Toca otra vez'; setTimeout(()=>{ if(des.isConnected){ delete des.dataset.armed; des.textContent='Desactivar'; } },4000); return; }
       des.disabled=true;
-      const teniaReg = !!dayDraft[w.id] && (dayDraft[w.id].tipo!=='no' || num(dayDraft[w.id].horasExtra)>0);
       nDb.collection('trabajadores').doc(w.id).update({activo:false, actualizado:new Date().toISOString()})
-        .then(async()=>{ w.activo=false; const q=teniaReg ? await quitarDelDia(w.id) : false; renderNom(); toast(q?`${w.nombre} desactivado y quitado de este día`:`${w.nombre} desactivado`); })
+        .then(()=>{ w.activo=false; renderNom(); toast(`${w.nombre} desactivado: ya no sale en los días siguientes`, {label:'Deshacer', fn:()=>nDb.collection('trabajadores').doc(w.id).update({activo:true, actualizado:new Date().toISOString()}).then(()=>{ w.activo=true; renderNom(); toast(`${w.nombre} activo otra vez`); })}); })
         .catch(err=>{ des.disabled=false; toast(errMsg(err)); });
       return;
     }
@@ -2853,15 +3087,19 @@ Responde solo con un objeto JSON:
     const t=e.target;
     if(t.matches('[data-hx]')){ const id=t.closest('[data-w]').dataset.w; const v=parseNum(t.value); dayDraft[id]={...(dayDraft[id]||defReg(id)), horasExtra:isNaN(v)?0:v}; dayDirty=true; renderDiaSum(); sincronizarTodos(); }
     if(t.id==='dTodosHx'){ const v=parseNum(t.value), hx=isNaN(v)?0:Math.max(0,v); document.querySelectorAll('.wrow[data-w]:not([data-bloq])').forEach(w=>{ const id=w.dataset.w; dayDraft[id]={...(dayDraft[id]||defReg(id)), horasExtra:hx}; const i=w.querySelector('[data-hx]'); if(i) i.value=hx?nf.format(hx).replace(/,00$/,''):''; }); dayDirty=true; renderDiaSum(); }
+    if(t.id==='cFechaPago'){ corteFechaPago=t.value||today(); return; }
     if(t.id==='cTasa'){ corteTasa=t.value; clearTimeout(renderCorte._t); renderCorte._t=setTimeout(()=>{ const pos=t.selectionStart; renderNom(); const n=$('#cTasa'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(_){} } },600); }
     if(t.matches('[data-sup]')){ supMontos[t.dataset.sup]=parseNum(t.value)||0; clearTimeout(renderCorte._s); renderCorte._s=setTimeout(()=>{ renderNom(); },900); }
   });
   $('#nMain').addEventListener('change', e=>{
     const t=e.target;
     if(t.id==='dFecha' && t.value) return cambiarDia(t.value);
+    if(t.id==='cCuenta'){ corteCuenta=t.value; try{ localStorage.setItem('corteCuenta',corteCuenta); }catch(_){} return renderNom(); }
+    if(t.id==='cFechaPago'){ corteFechaPago=t.value||today(); return renderNom(); }
     if(t.dataset.ccargo!=null){ const cargos=[...new Set([...cfgN.cargos.map(g=>g.nombre), SUP])]; let sel=corteF.cargos?corteF.cargos.slice():cargos.slice(); sel = t.checked ? [...new Set([...sel,t.dataset.ccargo])] : sel.filter(x=>x!==t.dataset.ccargo); corteF.cargos = sel.length===cargos.length ? null : sel; supMontos={}; return renderNom(); }
     if(t.dataset.csem){ const c=calcCorte(corteHasta,{cargos:corteF.cargos, semanasSup:null}); let sel=corteF.semanasSup?corteF.semanasSup.slice():c.semanasSupPend.slice(); sel = t.checked ? [...new Set([...sel,t.dataset.csem])].sort() : sel.filter(x=>x!==t.dataset.csem); corteF.semanasSup = sel.length===c.semanasSupPend.length ? null : sel; supMontos={}; return renderNom(); }
     if(t.matches('[data-tj]')){ const id=t.closest('[data-w]').dataset.w; dayDraft[id]={...(dayDraft[id]||defReg(id)), trabajoId:t.value}; dayDirty=true; renderDiaSum(); sincronizarTodos(); }
+    if(t.matches('[data-tj2]')){ const id=t.closest('[data-w]').dataset.w; dayDraft[id]={...(dayDraft[id]||defReg(id)), trabajoId2:t.value, dividir:true}; dayDirty=true; renderDiaSum(); }
     if(t.id==='dTodosTrab' && t.value){ const v=t.value==='__ninguno'?'':t.value; document.querySelectorAll('.wrow[data-w]:not([data-bloq])').forEach(w=>{ const id=w.dataset.w; dayDraft[id]={...(dayDraft[id]||defReg(id)), trabajoId:v}; }); dayDirty=true; renderNom(); toast(v?'Orden asignada a todos los de este día':'Orden quitada a todos'); }
     if(t.id==='cHasta' && t.value){ corteHasta=t.value; renderNom(); }
   });
@@ -2869,8 +3107,10 @@ Responde solo con un objeto JSON:
   ['#wTarifa','#wHx'].forEach(sel=>$(sel).addEventListener('input', syncCargo));
   $('#wMismo').addEventListener('change', syncMismo);
   $('#wSave').addEventListener('click', guardarTrab);
+  $('#wAdel').addEventListener('click', ()=>{ const id=wEditId; closeSheets(); openAdelanto(id); });
   $('#wDel').addEventListener('click', eliminarTrab);
   $('#adSave').addEventListener('click', guardarAdelanto);
+  $('#adCuenta').addEventListener('change', ()=>{ $('#adTasaL').hidden=$('#adCuenta').value!=='banco'; });
 
   function iniciarNomina(db){
     nDb=db; nCfgRef=db.doc('config/nomina');
@@ -2927,8 +3167,10 @@ Responde solo con un objeto JSON:
   const enMoneda = (n, mon) => mon==='VES' ? mBs(n) : m$(n);
   function inicioSemana(f){ const d=new Date(f+'T12:00:00'); const dow=d.getDay(); return sumarDias(f, -((dow+1)%7)); }   // sábado
   const finSemana = ini => sumarDias(ini, 6);   // viernes
-  if(!gSemana) gSemana=inicioSemana(today());
-  balF.semana=inicioSemana(today());
+  /* Semana que se muestra por defecto: del sábado al lunes, la que acaba de cerrar (la nueva casi no tiene datos) */
+  function semanaPorDefecto(){ const h=today(), dow=new Date(h+'T12:00:00').getDay(), w=inicioSemana(h); return [6,0,1].includes(dow) ? sumarDias(w,-7) : w; }
+  if(!gSemana) gSemana=inicioSemana(today());   // la lista de movimientos abre en la semana actual, para ver lo que se acaba de registrar
+  balF.semana=semanaPorDefecto();
 
   /* Movimientos que salen solos de Cobranzas y Nómina (no se guardan dos veces) */
   function movsAuto(){
@@ -2940,11 +3182,16 @@ Responde solo con un objeto JSON:
         concepto:`Cobro${c.numFactura?' factura N° '+c.numFactura:''} · ${d.descripcion}${d.unidad?' ('+d.unidad+')':''}`,
         cuenta: modoDe(c), monto: cuentaDe(modoDe(c)).moneda==='VES'?r2(u*t):u, tasa:t, usd:u});
     }));
+    /* Adelantos a trabajadores: salen de la cuenta elegida el día del adelanto */
+    adels.forEach(a=>{ if(!a.cuenta||!a.fecha||!(num(a.monto)>0)) return; const enBs=cuentaDe(a.cuenta).moneda==='VES', t=num(a.tasa);
+      out.push({id:`auto-adel-${a.id}`, auto:'Nómina', tipo:'gasto', fecha:a.fecha, categoria:'Adelantos de nómina', aCargo:'Empresa', concepto:`Adelanto a ${nombreT(a.trabajadorId)}${a.nota?' · '+a.nota:''}`, cuenta:a.cuenta, monto:enBs?r2(num(a.monto)*t):r2(num(a.monto)), tasa:enBs?t:0, usd:r2(num(a.monto)), creado:a.creado||''}); });
     cortes.forEach(k=>{
-      const ls=k.lineas||[], sup=ls.filter(l=>l.cargo===SUP), resto=ls.filter(l=>l.cargo!==SUP), t=num(k.tasa);
+      const ls=k.lineas||[], sup=ls.filter(l=>l.cargo===SUP), resto=ls.filter(l=>l.cargo!==SUP), t=num(k.tasa), cta=k.cuenta||'binance';
       const totBs=r2(sum(ls,l=>num(l.totalBs))), totU=r2(sum(ls,l=>Math.max(0,num(l.totalUsd))));
-      if(totBs>0 && totU>0) out.push({id:`auto-nom-${k.id}-venta`, auto:'Nómina', tipo:'cambio', fecha:k.fecha, cuentaOrigen:'binance', montoOrigen:totU, cuentaDestino:'banco', montoDestino:totBs, tasa:t, concepto:`Venta de USDT para la nómina del ${fdate(k.desde)} al ${fdate(k.hasta)}`, creado:(k.creado||'')+'0'});
-      const mk=(lin,cat,txt)=>{ const bsT=r2(sum(lin,l=>num(l.totalBs))); if(bsT<=0) return; out.push({id:`auto-nom-${k.id}-${cat}`, auto:'Nómina', tipo:'gasto', fecha:k.fecha, categoria:cat, aCargo:'Empresa', concepto:`${txt} ${fdate(k.desde)} al ${fdate(k.hasta)}`, cuenta:'banco', monto:bsT, tasa:t, usd:r2(sum(lin,l=>Math.max(0,num(l.totalUsd))))}); };
+      /* Desde Binance se venden USDT y los bolívares salen del banco; desde el banco solo salen los bolívares; en efectivo salen dólares */
+      if(cta==='binance' && totBs>0 && totU>0) out.push({id:`auto-nom-${k.id}-venta`, auto:'Nómina', tipo:'cambio', fecha:k.fecha, cuentaOrigen:'binance', montoOrigen:totU, cuentaDestino:'banco', montoDestino:totBs, tasa:t, concepto:`Venta de USDT para la nómina del ${fdate(k.desde)} al ${fdate(k.hasta)}`, creado:(k.creado||'')+'0'});
+      const mk=(lin,cat,txt)=>{ const bsT=r2(sum(lin,l=>num(l.totalBs))), uT=r2(sum(lin,l=>Math.max(0,num(l.totalUsd)))); if(bsT<=0&&uT<=0) return; const enUsd=cta==='efectivo';
+        out.push({id:`auto-nom-${k.id}-${cat}`, auto:'Nómina', tipo:'gasto', fecha:k.fecha, categoria:cat, aCargo:'Empresa', concepto:`${txt} ${fdate(k.desde)} al ${fdate(k.hasta)}`, cuenta:enUsd?'efectivo':'banco', monto:enUsd?uT:bsT, tasa:enUsd?0:t, usd:uT}); };
       mk(resto,'Nómina','Nómina, corte del'); mk(sup,'Sueldos de supervisores','Sueldos de supervisores, corte del');
     });
     return out;
@@ -3016,7 +3263,7 @@ Responde solo con un objeto JSON:
     const sal=saldoCuenta('banco', hasta||today()); if(!(sal>0)) return tasaSugerida();
     const o=tasaOrdenLlegada(sumarDias(hasta||today(),1), sal); return o.tasa>0 ? o.tasa : tasaSugerida();
   }
-  function tasaSugerida(){ const ms=movs.filter(m=>num(m.tasa)>0).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)) || String(b.actualizado||b.creado||'').localeCompare(String(a.actualizado||a.creado||''))); if(ms[0]) return num(ms[0].tasa); const u=ultimoCorte(); if(u&&num(u.tasa)>0) return num(u.tasa); const ut=ultimaTasa(); return ut?ut.tasa:0; }
+  function tasaSugerida(){ const ms=movs.filter(m=>num(m.tasa)>0).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)) || String(b.actualizado||b.creado||'').localeCompare(String(a.actualizado||a.creado||''))); if(ms[0]) return num(ms[0].tasa); const u=ultimoCorte(); if(u&&num(u.tasa)>0) return num(u.tasa); const ut=ultimaTasa(); if(ut) return ut.tasa; return num(((gcfg.saldos||{}).banco||{}).tasa)||0; }
 
   function renderMov(el){
     const hoy=today(), sinSaldos=!gcfg.cuentas.some(c=>((gcfg.saldos||{})[c.id]||{}).fecha);
@@ -3030,7 +3277,7 @@ Responde solo con un objeto JSON:
       ${(()=>{ const sal={}; gcfg.cuentas.forEach(c=>sal[c.id]=saldoCuenta(c.id,hoy)); const tasaB=tasaSaldoBanco(hoy); const tot=totalUsdCuentas(sal,tasaB);
         return `<div class="hero"><div class="lbl">Disponible hoy</div><div class="big num"><small>USD</small>${nf.format(r2(tot))}</div>
           <div class="brk num" style="margin-top:8px">${gcfg.cuentas.map(c=>`<div><span>${esc(c.nombre)}</span><b>${c.moneda==='VES'?mBs(sal[c.id])+(tasaB?' = '+m$(r2(sal[c.id]/tasaB)):''):m$(sal[c.id])}</b></div>`).join('')}</div>
-          ${tasa?`<div class="tip">Bolívares llevados a dólares a ${nfT.format(tasa)}, la última tasa usada.</div>`:''}</div>`; })()}
+          ${tasaB?`<div class="tip">Bolívares llevados a dólares a ${nfT.format(r2(tasaB))}, la tasa a la que entraron al banco. La misma cifra sale en el Balance y en el Resumen.</div>`:''}</div>`; })()}
       <div class="row-btns">
         <button type="button" class="btn pri" data-nuevo="gasto">+ Gasto</button>
         <button type="button" class="btn sec" data-nuevo="ingreso">+ Ingreso</button>
@@ -3072,6 +3319,11 @@ Responde solo con un objeto JSON:
       <label class="f full">Crédito comprado en la Consola (USD, total acumulado)<input id="iaCredito" inputmode="decimal" value="${esc(($('#iaCredito')||{}).value??(iaCfg.credito?nf.format(iaCfg.credito):''))}" placeholder="Por ejemplo 10"></label></div>
       <div class="row-btns"><button type="button" class="btn sec" id="iaProbar">Probar el asistente</button><button type="button" class="btn sec" id="iaReset">Reiniciar contador de uso</button></div><div class="tip" id="iaEstado"></div>
       <div class="tip" id="iaUso">${textoUsoIA()}</div>`:''}
+      ${window.__standalone&&esDueno()?`<div class="sech">Personas con acceso</div>
+      <div class="tip">Cada persona entra con su cuenta de Google y ve solo el modo registro: asistencia, adelantos, gastos, retiros y conteos. Lo que registra te llega a Resumen › Por aprobar y no cuenta hasta que lo apruebes.</div>
+      ${accesos.length?accesos.map(a=>`<div class="solic"><b>${esc(a.nombre||a.id)}</b><div class="tip" style="border:0;margin:2px 0 0">${esc(a.id)} · ${a.activo===false?'sin acceso por ahora':'puede registrar'}</div><div class="acts"><button type="button" class="btn sec" data-accact="${esc(a.id)}">${a.activo===false?'Dar acceso':'Quitar acceso'}</button><button type="button" class="btn del" data-accdel="${esc(a.id)}">Eliminar</button></div></div>`).join(''):'<div class="tip">Nadie más tiene acceso todavía.</div>'}
+      <div class="cfg"><label class="f full">Correo de Google<input id="accEmail" inputmode="email" autocapitalize="off" autocomplete="off" placeholder="Ej.: secretaria@gmail.com"></label><label class="f full">Nombre<input id="accNombre" autocomplete="off" placeholder="Ej.: María (secretaria)"></label></div>
+      <div class="row-btns"><button type="button" class="btn sec" id="accAdd">Dar acceso</button></div>`:''}
       ${window.__cerrarSesion?`<div class="sech">Sesión</div><div class="row-btns"><button type="button" class="btn sec" id="gSalir">Cerrar sesión</button></div>`:''}
       <div class="err" id="gAjErr"></div>
       <div class="nsum"><div class="row-btns" style="margin-top:0"><button type="button" class="btn pri" id="gAjSave">Guardar ajustes</button></div></div>`;
@@ -3135,7 +3387,7 @@ Responde solo con un objeto JSON:
       add('Herramientas', activos.slice().sort((a,b)=>String(a.nombre).localeCompare(String(b.nombre),'es')).map(a=>({Nombre:a.nombre, Código:a.codigo||'', Estado:a.estado||'Bueno', Responsable:respNombre(a.responsableId), Ubicación:a.ubicacion||'', 'Fecha de compra':a.fechaCompra||'', 'Costo USD':num(a.costo)||'', Nota:a.nota||''})));
       const bin=X.write(wb, {bookType:'xlsx', type:'array'});
       if(await guardarArchivo(`Respaldo Workproca ${today()}.xlsx`, new Blob([bin]))) toast('Respaldo descargado');
-    }catch(e){ toast('No se pudo generar el respaldo. Revisa la conexión e inténtalo otra vez.'); }
+    }catch(e){ const sin=!window.XLSX; toast(sin?'Para el Excel hace falta conexión a internet. El respaldo completo (JSON) sí funciona sin conexión: Gastos › Ajustes.':'No se pudo generar el Excel. Inténtalo otra vez.', sin?{label:'Respaldo JSON', fn:()=>descargarJSON()}:null); }
     finally{ if(btn){ btn.disabled=false; btn.textContent=lbl; } }
   }
   function leerGAj(){
@@ -3162,12 +3414,12 @@ Responde solo con un objeto JSON:
   function fillMvSelects(){
     const opts=gcfg.cuentas.map(c=>`<option value="${esc(c.id)}">${esc(c.nombre)} (${c.moneda==='VES'?'Bs.':'USD'})</option>`).join('');
     ['#mvCuenta','#mvOrig','#mvDest'].forEach(s=>{ const v=$(s).value; $(s).innerHTML=opts; if(v) $(s).value=v; });
-    const ts=docs.filter(d=>etapa(d)!=='cobrado').sort(byOrden);
+    const ts=docs.filter(abiertoCosto).sort(byOrden);
     const v=$('#mvTrab').value; $('#mvTrab').innerHTML='<option value="">Ninguno (gasto general)</option>'+ts.map(d=>`<option value="${esc(d.id)}">${esc(d.descripcion)}${d.unidad?' · '+esc(d.unidad):''}${tieneOrden(d)?' · '+esc(d.ods):''}</option>`).join(''); $('#mvTrab').value=v||'';
   }
   function fillCats(sel){
     const ls=catsPara(mvTipo, $('#mvACargo').value);
-    $('#mvCat').innerHTML=ls.map(c=>`<option value="${esc(c)}">${c===COBRO_FACT?'Pago de un trabajo (factura, abono o adelanto)':esc(c)}</option>`).join('');
+    $('#mvCat').innerHTML=(mvTipo==='gasto'&&!sel?'<option value="">Elige la categoría…</option>':'')+ls.filter(c=>c!=='Nómina'&&c!=='Sueldos de supervisores'||sel===c).map(c=>`<option value="${esc(c)}">${c===COBRO_FACT?'Cobro a cliente (factura, abono o anticipo)':esc(c)}</option>`).join('');
     if(sel && !ls.includes(sel)) $('#mvCat').insertAdjacentHTML('afterbegin', `<option value="${esc(sel)}">${esc(sel)}</option>`);
     if(sel) $('#mvCat').value=sel;
   }
@@ -3206,7 +3458,7 @@ Responde solo con un objeto JSON:
       if(mvTipo==='gasto' && c.moneda==='VES' && m>0 && !$('#mvTasa').dataset.manual){
         const f=tasaOrdenLlegada($('#mvFecha').value||today(), m, mvEditId);
         if(f.tasa>0){ $('#mvTasa').value=nfT.format(f.tasa); const de=[...new Set(f.partes.filter(x=>x.tasa>0).map(x=>x.de==='saldo inicial'?'el saldo inicial':`«${esc(x.de)}»`))].slice(0,2).join(' y ');
-          txt=`Equivale a <b>${m$(f.usd)}</b> a la tasa de ${de||'la última factura'}${f.partes.length>1?' (orden de llegada)':''}${f.completa?'':'; una parte sin tasa conocida se llevó a la última tasa usada'}. Puedes cambiar la tasa si quieres.`; }
+          txt=`Equivale a <b>${m$(f.usd)}</b> a la tasa ${de?(de.startsWith('el ')?'d'+de:'de '+de):'de la última factura'}${f.partes.length>1?' (orden de llegada)':''}${f.completa?'':'; una parte sin tasa conocida se llevó a la última tasa usada'}. Puedes cambiar la tasa si quieres.`; }
       }
       if(txt){}
       else if(esCobroFact()){ const md=$('#mvModo').value; if(md!=='banco'){ if(m>0) txt=`Entran <b>${m$(r2(m))}</b> a ${esc(cuentaDe(md).nombre)} y el trabajo se actualiza en Cobranzas.`; } else if(m>0 && t>0) txt=`Monto de la factura: <b>${mBs(r2(m*t))}</b> = ${m$(r2(m))} a la tasa del cliente. Entra al banco y el trabajo se actualiza en Cobranzas.`; }
@@ -3258,6 +3510,7 @@ Responde solo con un objeto JSON:
     } else {
       const concepto=$('#mvConcepto').value.trim(), m=parseNum($('#mvMonto').value), cta=$('#mvCuenta').value;
       if(!concepto) return err('Escribe el concepto.');
+      if(!$('#mvCat').value) return err('Elige la categoría del gasto.');
       if(!(m>0)) return err('Escribe el monto.');
       if(cuentaDe(cta).moneda==='VES' && !(t>0)) return err('Escribe la tasa para llevar los bolívares a dólares.');
       Object.assign(body,{concepto, categoria:$('#mvCat').value, aCargo: mvTipo==='gasto'?$('#mvACargo').value:'Empresa', cuenta:cta, monto:r2(m), tasa:t>0?t:0, trabajoId: mvTipo==='gasto'&&$('#mvACargo').value==='Empresa'?$('#mvTrab').value:''});
@@ -3319,7 +3572,7 @@ Responde solo con un objeto JSON:
   function buildBalance(){
     const [desde,hasta]=periodoBal(), tasa=parseNum(balF.tasa)||0, corto=balF.formato==='corto';
     const B=calcBalance(desde,hasta,tasa), L=[];
-    const per=`Del ${fdate(desde)} al ${fdate(hasta)}${tasa>0?(balF.tasaModo==='unica'?` · Todo a tasa ${nfT.format(tasa)} Bs/$`:` · Bolívares a la tasa de cada cobro; saldos a ${nfT.format(tasa)} Bs/$`):''}`;
+    const per=`Del ${fdate(desde)} al ${fdate(hasta)}${tasa>0?(balF.tasaModo==='unica'?` · Todo a tasa ${nfT.format(tasa)} Bs/$`:` · Bolívares a la tasa de cada movimiento; saldos a la tasa a la que entraron`):''}`;
     const totIng=sum(B.ing,B.u);
     if(!balF.partes.includes('general')){
       const P=balF.partes, emp=P.includes('empresa');
@@ -3350,7 +3603,9 @@ Responde solo con un objeto JSON:
     }
     // General
     L.push('*BALANCE GENERAL*'); L.push(`_${per}_`);
-    const usdIni=r2(totalUsdCuentas(B.ini,tasa)), usdFin=r2(totalUsdCuentas(B.fin,tasa)), totGas=sum([...B.gEmp,...B.gPapa,...B.gFran],B.u);
+    /* Saldos: con la tasa a la que entraron los bolívares (igual que en Gastos y Resumen); con «tasa única», a la tasa del reporte */
+    const unica=balF.tasaModo==='unica', tIni=unica?tasa:tasaSaldoBanco(sumarDias(desde,-1)), tFin=unica?tasa:tasaSaldoBanco(hasta);
+    const usdIni=r2(totalUsdCuentas(B.ini,tIni)), usdFin=r2(totalUsdCuentas(B.fin,tFin)), totGas=sum([...B.gEmp,...B.gPapa,...B.gFran],B.u);
     const difT=r2(usdFin-(usdIni+totIng-totGas));
     const lineaDif = Math.abs(difT)>=0.01 ? `🔄 Diferencia cambiaria: ${difT<0?'− ':''}${m$(Math.abs(difT))}` : '';
     if(corto){
@@ -3365,7 +3620,7 @@ Responde solo con un objeto JSON:
       L.push(gcfg.cuentas.map(c=>`${c.nombre} ${c.moneda==='VES'?mBs(B.fin[c.id]||0):m$(B.fin[c.id]||0)}`).join(' · '));
       return L.join('\n');
     }
-    saldosTxt(L,'Saldo inicial',B.ini,tasa,'💼');
+    saldosTxt(L,'Saldo inicial',B.ini,tIni,'💼');
     L.push(''); L.push('💰 *Ingresos*');
     if(B.ing.length) B.ing.forEach(m=>L.push(lineaMov(m,B,tasa))); else L.push('• Sin ingresos');
     L.push(`*Total ingresos: ${m$(totIng)}*`);
@@ -3374,7 +3629,7 @@ Responde solo con un objeto JSON:
     bloqueGastos(L,'Gastos de Fran',B.gFran,B,tasa,false);
     if(B.cam.length){ L.push(''); L.push('🔁 *Cambios entre cuentas*'); B.cam.forEach(m=>{ const o=cuentaDe(m.cuentaOrigen), d=cuentaDe(m.cuentaDestino); L.push(`• ${fdate(m.fecha).slice(0,5)} ${o.nombre} → ${d.nombre}: ${enMoneda(num(m.montoOrigen),o.moneda)} → ${enMoneda(num(m.montoDestino),d.moneda)}${num(m.tasa)?' (tasa '+nfT.format(num(m.tasa))+')':''}`); }); }
     if(lineaDif){ L.push(''); L.push(lineaDif); }
-    saldosTxt(L,'DISPONIBLE',B.fin,tasa,'✅');
+    saldosTxt(L,'DISPONIBLE',B.fin,tFin,'✅');
     return L.join('\n');
   }
   function renderBal(el){
@@ -3386,12 +3641,14 @@ Responde solo con un objeto JSON:
       ${balF.modo==='semana'
         ? `<div class="daynav"><button type="button" id="bPrev" aria-label="Semana anterior">‹</button><div class="panel num" style="flex:1;text-align:center;padding:10px">Del ${fdate(desde)} al ${fdate(hasta)}</div><button type="button" id="bNext" aria-label="Semana siguiente">›</button></div>`
         : `<div class="cfg"><label class="f">Desde<input type="date" id="bDesde" value="${balF.desde||desde}"></label><label class="f">Hasta<input type="date" id="bHasta" value="${balF.hasta||hasta}"></label></div>`}
+      <details class="opcRep"${balOpcAbiertas?' open':''}><summary>Opciones del reporte · ${esc([balF.partes.map(k=>({general:'General',empresa:'Empresa',papa:'Papá',fran:'Fran'}[k])).join(' + '), balF.formato==='corto'?'Corto':'Detallado', balF.tasaModo==='unica'?'Tasa única':'Tasa de cada movimiento'].join(' · '))}</summary>
       <div class="cfg"><label class="f full">Tasa para llevar a dólares (Bs. por USD)<input id="balTasa" inputmode="decimal" value="${esc(balF.tasa)}" placeholder="0,00"></label></div>
       <div class="ecchips">${[['general','General'],['empresa','Empresa'],['papa','Gastos de papá'],['fran','Gastos de Fran']].map(([k,l])=>{ const on=balF.partes.includes(k); return `<label class="${on?'on':''}"><input type="checkbox" data-btipo="${k}"${on?' checked':''}> ${l}</label>`; }).join('')}</div>
       <div class="tip" style="border:0;margin-top:4px">Puedes marcar varios para combinarlos. General incluye todo con los saldos de las cuentas.</div>
       ${seg('bfmt',[['detallado','Detallado'],['corto','Corto']],balF.formato)}
       ${seg('btasa',[['propia','Tasa del cliente'],['unica','Tasa Binance (única)']],balF.tasaModo)}
       <div class="tip" style="border:0;margin-top:4px">${balF.tasaModo==='unica'?'Todo lo que está en bolívares se lleva a dólares a la tasa de arriba: lo que vale hoy en dólares reales.':'Cada cobro y cada gasto en bolívares se lleva a dólares a la tasa a la que se cobró al cliente. La tasa de arriba solo se usa para los saldos de las cuentas y lo que no tenga tasa propia.'}</div>
+      </details>
       <div class="ctot">
         <div class="stat s-co"><div class="lbl"><i></i>Ingresos</div><div class="amt num"><small>USD</small>${nf.format(sum(B.ing,B.u))}</div></div>
         <div class="stat s-pe"><div class="lbl"><i></i>Gastos de la empresa</div><div class="amt num"><small>USD</small>${nf.format(sum(B.gEmp,B.u))}</div><div class="cnt num">Papá ${m$(sum(B.gPapa,B.u))} · Fran ${m$(sum(B.gFran,B.u))}</div></div>
@@ -3402,6 +3659,8 @@ Responde solo con un objeto JSON:
       <div style="height:24px"></div>`;
   }
 
+  let balOpcAbiertas=false;
+  document.addEventListener('toggle', e=>{ if(e.target.classList&&e.target.classList.contains('opcRep')) balOpcAbiertas=e.target.open; }, true);
   /* ---------- eventos de gastos ---------- */
   $('#gTabs').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; gView=b.dataset.v; renderGas(); });
   $('#gMain').addEventListener('click', e=>{
@@ -3420,6 +3679,9 @@ Responde solo con un objeto JSON:
     if(t.closest('#gJson')) return descargarJSON();
     if(t.closest('#iaProbar')) return probarIA();
     if(t.closest('#iaReset')) return reiniciarUsoIA();
+    if(t.closest('#accAdd')){ const em=String(($('#accEmail')||{}).value||'').trim().toLowerCase(), nm=String(($('#accNombre')||{}).value||'').trim(); if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){ $('#gAjErr').textContent='Escribe un correo válido.'; return; } return gDb.collection('acceso').doc(em).set({rol:'registro', nombre:nm||em, activo:true, creado:new Date().toISOString()}).then(()=>{ toast('Acceso dado a '+(nm||em)); renderGas(); }, e=>{ $('#gAjErr').textContent=errMsg(e); }); }
+    const aa=t.closest('[data-accact]'); if(aa){ const a=accesos.find(x=>x.id===aa.dataset.accact); if(a) return gDb.collection('acceso').doc(a.id).update({activo:a.activo===false}).then(()=>toast(a.activo===false?'Acceso dado':'Acceso quitado'), e=>toast(errMsg(e))); }
+    const ad=t.closest('[data-accdel]'); if(ad){ if(!ad.dataset.armed){ ad.dataset.armed='1'; ad.textContent='Toca otra vez'; return; } return gDb.collection('acceso').doc(ad.dataset.accdel).delete().then(()=>toast('Eliminado'), e=>toast(errMsg(e))); }
     if(t.closest('#gSalir') && window.__cerrarSesion) return window.__cerrarSesion();
     const bm=t.closest('[data-bmodo]'); if(bm){ balF.modo=bm.dataset.bmodo; return renderGas(); }
     const bf=t.closest('[data-bfmt]'); if(bf){ balF.formato=bf.dataset.bfmt; return renderGas(); }
@@ -3472,6 +3734,8 @@ Responde solo con un objeto JSON:
   function iniciarGastos(db){
     gDb=db; gCfgRef=db.doc('config/gastos');
     gCfgRef.onSnapshot(s=>{ const d=s.exists?s.data():null; gcfg = d ? {...JSON.parse(JSON.stringify(GCFG_DEF)), ...d, saldos:{...GCFG_DEF.saldos, ...(d.saldos||{})}} : JSON.parse(JSON.stringify(GCFG_DEF)); gLoaded.c=true; if(gView!=='aj') renderGas(); }, ()=>{ gLoaded.c=true; renderGas(); });
+    if(window.__standalone) db.collection('acceso').onSnapshot(s=>{ accesos=s.docs.map(d=>Object.assign({id:d.id}, d.data())).sort((a,b)=>String(a.nombre||a.id).localeCompare(String(b.nombre||b.id),'es')); if(modulo==='gas'&&gView==='aj'&&!$('#iaClave')) renderGas(); }, ()=>{});
+    if(window.__standalone) db.collection('solicitudes').onSnapshot(s=>{ solicitudes=s.docs.map(d=>Object.assign({id:d.id}, d.data())); if(modulo==='res') renderRes(); if(modulo==='reg') renderReg(); avisarPendientes(); }, ()=>{});
     db.collection('movimientos').onSnapshot(s=>{ movs=s.docs.map(d=>Object.assign({id:d.id}, d.data())); gLoaded.m=true; renderGas(); }, ()=>{ gLoaded.m=true; renderGas(); });
     if(window.__standalone) db.doc('config/ia').onSnapshot(s=>{ const d=s.exists?(s.data()||{}):{}, u=d.uso&&typeof d.uso==='object'?d.uso:null;
       iaCfg={clave:String(d.clave||'').trim(), modelo:String(d.modelo||'').trim(), credito:num(d.credito), uso: u ? {llamadas:num(u.llamadas), entrada:num(u.entrada), salida:num(u.salida), costo:num(u.costo), ultimo:String(u.ultimo||''), ultimoCosto:num(u.ultimoCosto), ultimoModelo:String(u.ultimoModelo||'')} : null};
@@ -3538,7 +3802,7 @@ Responde solo con un objeto JSON:
         const ac=ACARGO.includes(x.a_cargo)?x.a_cargo:'Empresa', cats=x.tipo==='ingreso'?gcfg.catIngreso:(ac==='Empresa'?gcfg.catEmpresa:gcfg.catPersonal);
         const cat=cats.find(c=>norm(c)===norm(x.categoria)) || (cats.includes('Otros')?'Otros':cats[cats.length-1]);
         const cta=gcfg.cuentas.some(c=>c.id===x.cuenta)?x.cuenta:(x.moneda==='VES'?'banco':'binance');
-        const tasa=num(x.tasa)||(cuentaDe(cta).moneda==='VES'?ts:0);
+        const tasa=num(x.tasa)||(cuentaDe(cta).moneda==='VES'?(x.tipo==='gasto'&&num(x.monto)>0?(tasaOrdenLlegada(x.fecha||today(), num(x.monto)).tasa||ts):ts):0);
         return `<div class="act tr"><input type="checkbox" data-gchk="${i}" checked aria-label="Incluir"><div style="min-width:0;flex:1"><span class="tag">${x.tipo==='gasto'?'Gasto':'Ingreso'}</span>
           <div class="g">
             <label style="grid-column:1/-1">Concepto<input data-gi="${i}" data-k="concepto" value="${esc(x.concepto||'')}"></label>
@@ -3557,7 +3821,7 @@ Responde solo con un objeto JSON:
   $('#aiRes').addEventListener('change', e=>{
     const t=e.target; if(!(t.dataset.gi!=null && t.dataset.k==='a_cargo')) return;
     const i=t.dataset.gi, sel=document.querySelector(`[data-gi="${i}"][data-k="categoria"]`); const cats=t.value==='Empresa'?gcfg.catEmpresa:gcfg.catPersonal;
-    sel.innerHTML=cats.map(c=>`<option>${esc(c)}</option>`).join(''); sel.value=cats.includes('Otros')?'Otros':cats[0];
+    const antes=sel.value; sel.innerHTML=cats.map(c=>`<option>${esc(c)}</option>`).join(''); sel.value=cats.includes(antes)?antes:(cats.includes('Otros')?'Otros':cats[0]);
   });
   async function aplicarAIGas(){
     if(!gDb) return;
@@ -3615,12 +3879,13 @@ Responde solo con un objeto JSON:
   const quienRegistra = () => document.documentElement.dataset.user||'';
   const byFechaCreado = (a,b) => String(a.fecha).localeCompare(String(b.fecha)) || String(a.creado||'').localeCompare(String(b.creado||''));
   const nombreTrabajo = d => `${d.descripcion}${d.unidad?' · '+d.unidad:''}${tieneOrden(d)?' · '+d.ods:d.nota?' · '+d.nota:''}`;
-  const trabajosActivos = () => docs.filter(d=>etapa(d)!=='cobrado').sort(byOrden);
+  const trabajosActivos = () => docs.filter(abiertoCosto).sort(byOrden);
   const itemsActivos = () => items.filter(it=>it.activo!==false).sort((a,b)=>String(a.categoria||'').localeCompare(String(b.categoria||''),'es') || String(a.nombre).localeCompare(String(b.nombre),'es'));
 
   /* Estado de un ítem reproduciendo sus movimientos en orden: cada entrada es un lote con su costo; cada salida consume el lote
      más viejo y se lleva ese costo; un conteo ajusta la existencia (lo que falta es merma, lo que sobra entra al costo promedio). */
-  function estadoItem(id, hasta){
+  function estadoItem(id, hasta){ if(hasta) return estadoItemCalc(id, hasta); const c=memo('est', [invMovs, items, movs, cortes, docs, gcfg], ()=>({})); return c[id] || (c[id]=estadoItemCalc(id)); }
+  function estadoItemCalc(id, hasta){
     const ms=invMovs.filter(m=>m.itemId===id && (!hasta||m.fecha<=hasta)).sort(byFechaCreado);
     const lotes=[], det={}; let exist=0, ultimoCU=0, sinCosto=0; const tRef=tasaSugerida()||0, ref=num((itemDe(id)||{}).precioRef);   // precio de referencia del ítem: vale para toda entrada que no traiga costo
     const promedio=()=>{ const q=sum(lotes,l=>l.q), v=sum(lotes,l=>l.q*l.cu); return q>0 ? v/q : ultimoCU; };
@@ -3629,9 +3894,9 @@ Responde solo con un objeto JSON:
     const consumir=q=>{ let r=q, c=0; for(const l of lotes){ if(r<=0) break; if(l.q<=0) continue; const u=Math.min(l.q,r); l.q=r2q(l.q-u); r=r2q(r-u); c+=u*l.cu; } if(r>0) c+=r*promedio(); return c; };
     for(const m of ms){
       const q=num(m.cantidad);
-      if(m.tipo==='entrada'||m.tipo==='devolucion'){ const propio=num(m.costoUnit)>0; const sc=m.tipo==='entrada'&&!propio&&!(ref>0); const cu=sc?0:(propio?num(m.costoUnit):(m.tipo==='entrada'?ref:promedio())); const cuBs=sc?0:(m.tipo==='entrada'&&num(m.costoUnitBs)>0?num(m.costoUnitBs):(m.tipo==='entrada'||propio?cu*tRef:promedioBs())); lotes.push({q, cu, cuBs, fecha:m.fecha, id:m.id, sc}); exist=r2q(exist+q); if(m.tipo==='entrada'&&cu>0) ultimoCU=cu; det[m.id]={costo:r2(q*cu), cu:r2(cu), sinCosto:sc, deReferencia:m.tipo==='entrada'&&!propio&&ref>0}; }
+      if(m.tipo==='entrada'||m.tipo==='devolucion'){ const propio=num(m.costoUnit)>0, deBs=m.tipo==='entrada'&&!propio&&num(m.costoUnitBs)>0&&tRef>0; const sc=m.tipo==='entrada'&&!propio&&!deBs&&!(ref>0); const cu=sc?0:(propio?num(m.costoUnit):deBs?num(m.costoUnitBs)/tRef:(m.tipo==='entrada'?ref:promedio())); const cuBs=sc?0:(m.tipo==='entrada'&&num(m.costoUnitBs)>0?num(m.costoUnitBs):(m.tipo==='entrada'||propio?cu*tRef:promedioBs())); lotes.push({q, cu, cuBs, fecha:m.fecha, id:m.id, sc}); exist=r2q(exist+q); if(m.tipo==='entrada'&&cu>0) ultimoCU=cu; det[m.id]={costo:r2(q*cu), cu:r2(cu), sinCosto:sc, deReferencia:m.tipo==='entrada'&&!propio&&ref>0}; }
       else if(m.tipo==='salida'){ const c=consumir(q); exist=r2q(exist-q); det[m.id]={costo:r2(c), cu:q>0?r2(c/q):0}; }
-      else if(m.tipo==='conteo'){ const d=r2q(num(m.contado)-exist); let c=0; if(d<0) c=-consumir(-d); else if(d>0){ const cu=promedio(); lotes.push({q:d, cu, cuBs:promedioBs(), fecha:m.fecha, id:m.id}); c=d*cu; } exist=r2q(num(m.contado)); det[m.id]={costo:r2(c), diferencia:d, cu:d!==0?r2(Math.abs(c/d)):0}; }
+      else if(m.tipo==='conteo'){ const d=r2q(num(m.contado)-exist); let c=0; if(d<0) c=-consumir(-d); else if(d>0){ const cu=promedio()||ref; lotes.push({q:d, cu, cuBs:promedioBs()||cu*tRef, fecha:m.fecha, id:m.id, sc:!(cu>0)}); c=d*cu; } exist=r2q(num(m.contado)); det[m.id]={costo:r2(c), diferencia:d, cu:d!==0?r2(Math.abs(c/d)):0}; }
     }
     const vivos=lotes.filter(l=>l.q>0.0001);
     return {existencia:exist, lotes:vivos, valor:r2(sum(vivos,l=>l.q*l.cu)), valorBs:r2(sum(vivos,l=>l.q*l.cuBs)), promedio:r2(promedio()), promedioBs:r2(promedioBs()), ultimoCU:r2(ultimoCU), sinCosto:r2q(sum(vivos.filter(l=>l.sc),l=>l.q)), det};
@@ -3682,7 +3947,8 @@ Responde solo con un objeto JSON:
         <button type="button" class="btn sec" data-inuevo="devolucion">Devolución</button>
       </div>
       <div class="ibtns" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:6px">
-        ${sampleFn&&canWrite?'<button type="button" class="btn sec" id="iAI">Cargar con asistente</button>':''}
+        ${canWrite?'<button type="button" class="btn pri" id="iCompra">Registrar compra</button>':''}
+        ${sampleFn&&canWrite?'<button type="button" class="btn sec" id="iAIinv">Cargar con asistente</button>':''}
         <button type="button" class="btn sec" id="iRep">Reportes</button>
       </div>`;
   function tarjetaItem(it){
@@ -3739,7 +4005,7 @@ Responde solo con un objeto JSON:
       <div class="ncrow" style="margin-top:8px"><input data-inew="${k}" placeholder="${k==='categorias'?'Nueva categoría':'Nueva ubicación'}" autocomplete="off"><button type="button" class="btn sec" data-iadd="${k}">Agregar</button></div>`;
     const q=norm(iQ), ls=items.slice().sort((a,b)=>(a.activo===false)-(b.activo===false) || String(a.categoria||'').localeCompare(String(b.categoria||''),'es') || String(a.nombre).localeCompare(String(b.nombre),'es')).filter(it=>!q||norm(it.nombre).includes(q)||norm(it.categoria).includes(q));
     el.innerHTML = `
-      <div class="sech">Catálogo <span class="hbtns">${sampleFn&&canWrite?'<button type="button" class="btn sec" id="iAI">Cargar con asistente</button>':''}<button type="button" class="btn pri" id="itNew">Agregar ítem</button></span></div>
+      <div class="sech">Catálogo <span class="hbtns">${sampleFn&&canWrite?'<button type="button" class="btn sec" id="iAIinv">Cargar con asistente</button>':''}<button type="button" class="btn pri" id="itNew">Agregar ítem</button></span></div>
       <div class="tip">Cada ítem que se lleva en inventario, con su unidad, mínimo y ubicación. Lo que no vale la pena contar (tornillería, menudencias) se queda como gasto directo y no va aquí.</div>
       <div class="filters" style="margin-top:10px"><input id="iQ" type="search" placeholder="Buscar en el catálogo" aria-label="Buscar" value="${esc(iQ)}" style="grid-column:1/-1"></div>
       <div class="lns" id="iList">${ls.length?ls.map(tarjetaItem).join(''):'<div class="empty"><b>Sin ítems</b>Agrega el primero o carga el conteo inicial con el asistente.</div>'}</div>
@@ -3860,7 +4126,9 @@ Responde solo con un objeto JSON:
     $('#imCostoU').value = m&&num(m.costoUnit)>0 ? nf.format(num(m.costoUnit)) : ''; $('#imCostoU').placeholder='0,00';
     $('#imCostoT').value = (!m && pre && num(pre.total)>0) ? nf.format(num(pre.total)) : ''; $('#imBs').value=''; $('#imTasa').value='';
     $('#imProv').value = m ? m.proveedor||'' : (pre&&pre.proveedor)||''; $('#imRef').value = m ? m.referencia||'' : (pre&&pre.referencia)||'';
-    $('#imTrab').value = m ? m.trabajoId||'' : ''; $('#imQuien').value = m ? m.quienId||'' : ''; $('#imNota').value = m ? m.nota||'' : (pre&&pre.nota)||'';
+    let ultT='', ultQ=''; try{ ultT=localStorage.getItem('imUltTrab')||''; ultQ=localStorage.getItem('imUltQuien')||''; }catch(_){}
+    $('#imTrab').value = m ? m.trabajoId||'' : ((pre&&pre.trabajoId) || (docs.some(d=>d.id===ultT&&abiertoCosto(d))?ultT:'')); $('#imQuien').value = m ? m.quienId||'' : (trabs.some(t=>t.id===ultQ&&t.activo!==false)?ultQ:'');
+    if(!m) proponerOrdenSalida(false); $('#imNota').value = m ? m.nota||'' : (pre&&pre.nota)||'';
     $('#imGasto').checked=false; $('#imGastoCampos').hidden=true; $('#imGTasa').value=tasaSugerida()?nfT.format(tasaSugerida()):''; $('#imCuenta').value='binance';
     $('#imErr').textContent=''; $('#imDel').hidden=!m; $('#imDel').textContent='Eliminar'; delete $('#imDel').dataset.armed;
     $('#imCuadrar').hidden = !(m && m.tipo==='entrada' && (m.proveedor||m.referencia) && canWrite);
@@ -3879,24 +4147,26 @@ Responde solo con un objeto JSON:
       if(!(cu>0) && ct>0) cu=ct/q;
       if(!(cu>0) && tb>0){ if(!(tt>0)) tt=tasaParaBs(f, tb, $('#imGasto').checked?$('#imCuenta').value:'').tasa; if(tt>0) cu=tb/tt/q; }
       Object.assign(body,{costoUnit:cu>0?r4(cu):0, sinCosto:!(cu>0), proveedor:proveedorNormalizado($('#imProv').value), referencia:$('#imRef').value.trim(), movId:old&&old.movId||(imPre&&imPre.movId)||''});
-      if(tb>0 && tt>0) Object.assign(body,{costoUnitBs:r2(tb/q), tasa:tt});
+      if(tb>0) Object.assign(body,{costoUnitBs:r4(tb/q), totalBs:r2(tb), tasa:tt>0?tt:0});   // el precio de lista en bolívares se guarda aunque falte la tasa
     } else if(imTipo==='salida'||imTipo==='devolucion'){
       body.trabajoId=$('#imTrab').value||''; if(imTipo==='salida') body.quienId=$('#imQuien').value||'';
+      try{ localStorage.setItem('imUltTrab', body.trabajoId); if(body.quienId) localStorage.setItem('imUltQuien', body.quienId); }catch(_){}
       if(imTipo==='salida'){ const e=estadoItem(it.id); const base=old&&old.itemId===it.id&&old.tipo==='salida'?e.existencia+num(old.cantidad):e.existencia; if(q>base+0.0005) return err(`Solo hay ${cant(base,it.unidad)}. Haz un conteo primero si salió más.`); }
     }
     try{
-      if(imTipo==='entrada' && !imEditId && $('#imGasto').checked && !body.movId && body.costoUnit>0){
+      if(imTipo==='entrada' && !imEditId && $('#imGasto').checked && !body.movId && (body.costoUnit>0 || body.totalBs>0)){
+        if(!(body.costoUnit>0)){ const tg=parseNum($('#imGTasa').value)||0; if(!(tg>0)) return err('Escribe la tasa del pago para registrar el gasto.'); body.costoUnit=r4(body.totalBs/tg/q); body.sinCosto=false; body.tasa=tg; }
         const cta=cuentaDe($('#imCuenta').value), tot=r2(body.costoUnit*q); let gt=parseNum($('#imGTasa').value)||0;
         if(cta.moneda==='VES' && !(gt>0)) gt=body.tasa||tasaParaBs(f, tot*(tasaSugerida()||1), 'banco').tasa;
         if(cta.moneda==='VES' && !(gt>0)) return err('Escribe la tasa del pago en bolívares.');
         const gref=gDb.collection('movimientos').doc();
-        await gref.set({tipo:'gasto', fecha:f, concepto:`Compra: ${it.nombre} (${cant(q,it.unidad)})`, categoria:CAT_GASTO_INV[it.categoria]||'Materiales', aCargo:'Empresa', cuenta:cta.id, monto:cta.moneda==='VES'?r2(tot*gt):tot, tasa:cta.moneda==='VES'?gt:0, trabajoId:'', referencia:body.referencia||'', inventario:true, creado:body.creado, actualizado:body.actualizado});
+        await gref.set({tipo:'gasto', fecha:f, concepto:`Compra: ${it.nombre} (${cant(q,it.unidad)})`, categoria:CAT_GASTO_INV[it.categoria]||'Materiales', aCargo:'Empresa', cuenta:cta.id, monto:cta.moneda==='VES'?(body.totalBs>0?body.totalBs:r2(tot*gt)):tot, tasa:cta.moneda==='VES'?(body.totalBs>0?r4(body.totalBs/tot):gt):0, trabajoId:'', referencia:body.referencia||'', inventario:true, creado:body.creado, actualizado:body.actualizado});
         body.movId=gref.id;
       }
       const ref=imEditId?iDb.collection('invMovs').doc(imEditId):iDb.collection('invMovs').doc();
       await ref.set(body);
       if(body.movId && imPre && imPre.movId && !old){ try{ await gDb.collection('movimientos').doc(body.movId).update({inventario:true, actualizado:new Date().toISOString()}); }catch(_){} }
-      closeSheets(); toast(TIPO_INV[imTipo]+' registrada');
+      closeSheets(); toast(`${TIPO_INV[imTipo]} ${imTipo==='conteo'?'registrado':'registrada'}`);
     }catch(e){ err(errMsg(e)); }
   }
   async function eliminarIMov(){
@@ -3942,7 +4212,7 @@ Responde solo con un objeto JSON:
     const hoy=today();
     if(invRep.periodo==='mes') return [hoy.slice(0,8)+'01', hoy];
     if(invRep.periodo==='todo') return ['0000-00-00', hoy];
-    const w=inicioSemana(hoy); return [w, finSemana(w)];
+    const w=semanaPorDefecto(); return [w, finSemana(w)];
   }
   function buildInv(){
     const hoy=today(), L=[], det=detallesInv();
@@ -4011,9 +4281,10 @@ Responde solo con un objeto JSON:
   $('#iMain').addEventListener('click', e=>{
     const t=e.target;
     const nv=t.closest('[data-inuevo]'); if(nv) return openIMov(nv.dataset.inuevo, null);
-    if(t.closest('#iAI')) return abrirAI('inv');
+    if(t.closest('#iAIinv')) return abrirAI('inv');
     if(t.closest('#iRep')) return abrirRepInv();
     if(t.closest('#iCuadrar')) return openCuadrar();
+    if(t.closest('#iCompra')) return openCompra();
     if(t.closest('#iPrev')){ iSemana=sumarDias(iSemana,-7); return renderInv(); }
     if(t.closest('#iNext')){ iSemana=sumarDias(iSemana,7); return renderInv(); }
     if(t.closest('#itNew')) return openItem(null);
@@ -4034,6 +4305,12 @@ Responde solo con un objeto JSON:
   $('#itSalida').addEventListener('click', ()=>{ const id=itEditId; closeSheets(); openIMov('salida', null, {itemId:id}); });
   $('#imTipo').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b||imEditId) return; imTipo=b.dataset.t; syncIMTipo(); });
   $('#imItem').addEventListener('change', syncIMItem);
+  /* La orden de un retiro: la que tiene asignada en la asistencia de ese día quien retira; si no, la del último retiro */
+  function proponerOrdenSalida(forzar){
+    const q=$('#imQuien').value, f=$('#imFecha').value||today(), r=q&&asis[f]&&(asis[f].registros||{})[q];
+    if(r && r.trabajoId && docs.some(d=>d.id===r.trabajoId) && (forzar || !$('#imTrab').value)) $('#imTrab').value=r.trabajoId;
+  }
+  $('#imQuien').addEventListener('change', ()=>proponerOrdenSalida(true));
   ['#imCant','#imCostoU','#imCostoT','#imBs','#imTasa','#imGTasa'].forEach(s=>$(s).addEventListener('input', ()=>{ if(s==='#imBs'||s==='#imTasa'){ const tb=parseNum($('#imBs').value)||0, tt=parseNum($('#imTasa').value)||0; if(tb>0&&tt>0){ $('#imCostoT').value=nf.format(r2(tb/tt)); $('#imCostoU').value=''; } } renderIMConv(); }));
   ['#imGasto','#imCuenta'].forEach(s=>$(s).addEventListener('change', renderIMConv));
   $('#imSave').addEventListener('click', guardarIMov);
@@ -4044,6 +4321,83 @@ Responde solo con un objeto JSON:
   $('#cqPagado').addEventListener('input', recalcCuadrar);
   $('#cqLineas').addEventListener('input', e=>{ if(e.target.dataset.cqbs!=null) recalcCuadrar(); });
   $('#cqSave').addEventListener('click', guardarCuadrar);
+
+  /* ---------- registrar compra: una factura completa con varias líneas ---------- */
+  let rcLineas=[], rcMon='bs';
+  function openCompra(){
+    fillItemSelects(); pintarProveedores();
+    rcLineas=[{itemId:'', nuevo:'', unidad:'und', categoria:icfg.categorias[0]||'Materiales', cant:'', precio:''}]; rcMon='bs';
+    $('#rcProv').value=''; $('#rcRef').value=''; $('#rcFecha').value=today(); $('#rcCuenta').value='binance'; $('#rcPagado').value=''; $('#rcTasa').value=tasaSugerida()?nfT.format(tasaSugerida()):''; $('#rcErr').textContent='';
+    pintarLineasCompra(); recalcCompra(); openSheet('#rcSheet');
+  }
+  function pintarLineasCompra(){
+    document.querySelectorAll('#rcMon button').forEach(b=>b.classList.toggle('on', b.dataset.m===rcMon));
+    const its=items.filter(it=>it.activo!==false).sort((a,b)=>String(a.nombre).localeCompare(String(b.nombre),'es'));
+    $('#rcLineas').innerHTML = rcLineas.map((l,i)=>`<div class="panel" style="padding:10px;margin-top:8px" data-rcl="${i}">
+      <div class="grid">
+        <label class="f full">Ítem<select data-rc="itemId"><option value="">Elige el ítem…</option><option value="__nuevo"${l.itemId==='__nuevo'?' selected':''}>＋ Ítem nuevo</option>${its.map(it=>`<option value="${esc(it.id)}"${l.itemId===it.id?' selected':''}>${esc(it.nombre)} (${esc(uni(it.unidad))})</option>`).join('')}</select></label>
+        ${l.itemId==='__nuevo'?`<label class="f full">Nombre del ítem nuevo<input data-rc="nuevo" value="${esc(l.nuevo)}" autocomplete="off" placeholder="Ej.: Tubo de aluminio 1½ pulgadas"></label>
+        <label class="f">Unidad<select data-rc="unidad">${UNIDADES.map(([k,lb])=>`<option value="${k}"${l.unidad===k?' selected':''}>${lb}</option>`).join('')}</select></label>
+        <label class="f">Categoría<select data-rc="categoria">${icfg.categorias.map(c=>`<option${l.categoria===c?' selected':''}>${esc(c)}</option>`).join('')}</select></label>`:''}
+        <label class="f">Cantidad<input data-rc="cant" inputmode="decimal" value="${esc(l.cant)}" placeholder="0"></label>
+        <label class="f">Precio por unidad (${rcMon==='bs'?'Bs.':'USD'})<input data-rc="precio" inputmode="decimal" value="${esc(l.precio)}" placeholder="0,00"></label>
+      </div>
+      <div class="num" style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;font-size:13px;color:var(--muted)"><span data-rcsub="${i}"></span>${rcLineas.length>1?`<button type="button" class="lnk" data-rcdel="${i}">Quitar línea</button>`:''}</div>
+    </div>`).join('');
+  }
+  function datosCompra(){
+    const tot=sum(rcLineas,l=>(parseNum(l.cant)||0)*(parseNum(l.precio)||0)), cta=$('#rcCuenta').value, pag=parseNum($('#rcPagado').value)||0, t=parseNum($('#rcTasa').value)||0;
+    const enBs=rcMon==='bs';
+    /* Lo pagado en dólares: lo que salió de una cuenta en dólares, o los bolívares del banco a la tasa escrita; sin pago, la lista a la tasa */
+    const pagUsd = cta && cuentaDe(cta).moneda!=='VES' ? (pag>0?pag:(enBs?(t>0?tot/t:0):tot)) : cta==='banco' ? (pag>0 ? pag/(t>0?t:NaN) : (enBs ? tot/(t>0?t:NaN) : tot)) : (enBs?(t>0?tot/t:0):tot);
+    return {tot, cta, pag, t, enBs, pagUsd: isFinite(pagUsd)?r2(pagUsd):0};
+  }
+  function recalcCompra(){
+    const D=datosCompra();
+    $('#rcPagadoL').hidden=!D.cta; $('#rcPagadoL').firstChild.textContent = D.cta ? `Monto pagado (${cuentaDe(D.cta).moneda==='VES'?'Bs.':'USD'})` : '';
+    $('#rcTasaL').hidden = !(D.enBs || D.cta==='banco');
+    rcLineas.forEach((l,i)=>{ const e=document.querySelector(`[data-rcsub="${i}"]`); if(!e) return; const st=(parseNum(l.cant)||0)*(parseNum(l.precio)||0); e.textContent = st>0 ? `${D.enBs?bs(r2(st)):usd(r2(st))}${D.tot>0&&D.pagUsd>0?' → '+usd(r2(st/D.tot*D.pagUsd)):''}` : ''; });
+    const imp = D.enBs && D.pagUsd>0 && D.tot>0 ? D.tot/D.pagUsd : 0, tR=tasaSugerida();
+    $('#rcTot').textContent = D.tot>0 ? `Total de la factura: ${D.enBs?bs(r2(D.tot)):usd(r2(D.tot))}${D.pagUsd>0?` · Costo en dólares: ${usd(D.pagUsd)}`:''}${imp>0?` · Tasa implícita ${nfT.format(r4(imp))}`:''}${imp>0&&tR>0&&D.tot/tR>D.pagUsd+0.005?` · Ahorro frente a ${nfT.format(tR)}: ${usd(r2(D.tot/tR-D.pagUsd))}`:''}` : 'Agrega las líneas de la factura.';
+  }
+  $('#rcLineas').addEventListener('input', e=>{ const el=e.target, k=el.dataset.rc, i=+(el.closest('[data-rcl]')||{dataset:{}}).dataset.rcl; if(!k||isNaN(i)) return; rcLineas[i][k]=el.value; recalcCompra(); });
+  $('#rcLineas').addEventListener('change', e=>{ const el=e.target, k=el.dataset.rc, i=+(el.closest('[data-rcl]')||{dataset:{}}).dataset.rcl; if(!k||isNaN(i)) return; rcLineas[i][k]=el.value; if(k==='itemId'){ pintarLineasCompra(); } recalcCompra(); });
+  $('#rcLineas').addEventListener('click', e=>{ const b=e.target.closest('[data-rcdel]'); if(!b) return; rcLineas.splice(+b.dataset.rcdel,1); pintarLineasCompra(); recalcCompra(); });
+  $('#rcAdd').addEventListener('click', ()=>{ rcLineas.push({itemId:'', nuevo:'', unidad:'und', categoria:icfg.categorias[0]||'Materiales', cant:'', precio:''}); pintarLineasCompra(); recalcCompra(); });
+  $('#rcMon').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; rcMon=b.dataset.m; pintarLineasCompra(); recalcCompra(); });
+  ['#rcCuenta','#rcPagado','#rcTasa'].forEach(x=>$(x).addEventListener(x==='#rcCuenta'?'change':'input', ()=>{ if(x==='#rcCuenta'&&$('#rcCuenta').value==='banco'&&!$('#rcTasa').value) $('#rcTasa').value=tasaSugerida()?nfT.format(tasaSugerida()):''; recalcCompra(); }));
+  $('#rcSave').addEventListener('click', guardarCompra);
+  async function guardarCompra(){
+    const err=x=>{ $('#rcErr').textContent=x; }, D=datosCompra(), f=$('#rcFecha').value||today(), prov=proveedorNormalizado($('#rcProv').value), ref=$('#rcRef').value.trim();
+    const ls=rcLineas.map(l=>({...l, q:parseNum(l.cant)||0, p:parseNum(l.precio)||0})).filter(l=>l.itemId||l.q||l.p);
+    if(!ls.length) return err('Agrega al menos una línea.');
+    for(const l of ls){ if(!l.itemId) return err('Elige el ítem de cada línea.'); if(l.itemId==='__nuevo'&&!String(l.nuevo).trim()) return err('Escribe el nombre del ítem nuevo.'); if(!(l.q>0)) return err('Escribe la cantidad de cada línea.'); }
+    if(D.cta && !(D.pag>0) && !(D.tot>0)) return err('Escribe los precios o el monto pagado.');
+    if((D.enBs||D.cta==='banco') && !(D.t>0) && !(D.cta&&cuentaDe(D.cta).moneda!=='VES'&&D.pag>0)) return err('Escribe la tasa para llevar los bolívares a dólares.');
+    if(!(D.pagUsd>0) && D.tot>0) return err('No se pudo calcular el costo en dólares: revisa el monto pagado y la tasa.');
+    const btn=$('#rcSave'); btn.disabled=true; btn.textContent='Guardando…';
+    try{
+      const ahora=new Date().toISOString(), totL=D.tot;
+      /* 1) ítems nuevos */
+      for(const l of ls){ if(l.itemId!=='__nuevo') continue; const nom=String(l.nuevo).trim().replace(/\s+/g,' '); const ya=items.find(x=>norm(x.nombre)===norm(nom));
+        if(ya){ l.itemId=ya.id; continue; } const r=iDb.collection('inventario').doc(); await r.set({nombre:nom, categoria:l.categoria, unidad:l.unidad, minimo:0, ubicacion:'', proveedor:prov, activo:true, precioRef:0, creado:ahora, actualizado:ahora}); l.itemId=r.id; }
+      /* 2) el gasto (si se pagó) */
+      let movId='';
+      if(D.cta){ const c=cuentaDe(D.cta), catCnt={}; ls.forEach(l=>{ const it=itemDe(l.itemId)||{categoria:l.categoria}; const k=CAT_GASTO_INV[it.categoria]||'Materiales'; catCnt[k]=(catCnt[k]||0)+1; });
+        const cat=Object.entries(catCnt).sort((a,b)=>b[1]-a[1])[0][0];
+        const montoCta = c.moneda==='VES' ? (D.pag>0?D.pag:r2(D.pagUsd*D.t)) : r2(D.pagUsd);
+        const g=gDb.collection('movimientos').doc(); await g.set({tipo:'gasto', fecha:f, concepto:`Compra ${prov||'de materiales'}${ref?' · factura N° '+ref:''} (${ls.length} ${ls.length===1?'ítem':'ítems'})`, categoria:cat, aCargo:'Empresa', cuenta:c.id, monto:montoCta, tasa:c.moneda==='VES'?r4(montoCta/D.pagUsd):0, trabajoId:'', referencia:ref, inventario:true, creado:ahora, actualizado:ahora}); movId=g.id; }
+      /* 3) las entradas, con el costo repartido según el precio de cada línea */
+      let acum=0; const filas=ls.map(l=>({l, sub:l.q*l.p}));
+      for(let i=0;i<filas.length;i++){ const {l,sub}=filas[i];
+        let cu = totL>0 ? r4(sub/totL*D.pagUsd/l.q) : 0; if(i===filas.length-1 && totL>0) cu=r4((D.pagUsd-acum)/l.q); acum=r2(acum+cu*l.q);
+        const body={tipo:'entrada', fecha:f, itemId:l.itemId, cantidad:r2q(l.q), costoUnit:cu>0?cu:0, sinCosto:!(cu>0), proveedor:prov, referencia:ref, movId, nota:'', registradoPor:quienRegistra(), creado:ahora, actualizado:ahora};
+        if(D.enBs && l.p>0) Object.assign(body,{costoUnitBs:r4(l.p), totalBs:r2(sub), tasa:D.pagUsd>0?r4(totL/D.pagUsd):D.t});
+        await iDb.collection('invMovs').doc().set(body); }
+      closeSheets(); toast(`Compra registrada: ${ls.length} ${ls.length===1?'línea':'líneas'} · ${usd(D.pagUsd)}${movId?'':' · sin gasto (todavía no se paga)'}`);
+    }catch(e){ err(errMsg(e)); }
+    finally{ btn.disabled=false; btn.textContent='Guardar compra'; }
+  }
 
   /* ---------- cuadrar una compra con lo pagado ----------
      Facturas en bolívares pagadas en dólares (a una tasa efectiva distinta de la del día): lo pagado se reparte entre las entradas
@@ -4081,9 +4435,10 @@ Responde solo con un objeto JSON:
     const filas=g.ms.map(m=>{ const inp=document.querySelector(`[data-cqbs="${m.id}"]`); const bs=inp?parseNum(inp.value)||0:0; return {m, bs, tot:bs*num(m.cantidad)}; });
     const totalBs=sum(filas,f=>f.tot), tasa=pagado>0&&totalBs>0?totalBs/pagado:0, sinBs=filas.filter(f=>!(f.bs>0)), tRef=tasaSugerida();
     filas.forEach(f=>{ const el=document.querySelector(`[data-cqusd="${f.m.id}"]`); if(el) el.textContent = f.bs>0&&tasa>0 ? `→ ${usd(r2(f.bs/tasa))} c/u · ${usd(r2(f.tot/tasa))}` : (f.bs>0?'':'Sin precio: ponle uno estimado o quedará sin costo'); });
-    $('#cqTot').textContent = totalBs>0
+    const gSel=movs.find(m=>m.id===$('#cqGasto').value), avisoG = gSel && Math.abs(usdDe(gSel,tasaSugerida())-pagado)>0.005 && pagado>0 ? ` · El gasto enlazado dice ${usd(usdDe(gSel,tasaSugerida()))}: al guardar se corrige a ${usd(pagado)}` : '';
+    $('#cqTot').textContent = (totalBs>0
       ? `Lista: ${bs(r2(totalBs))}${pagado>0?` · Pagado: ${usd(pagado)} · Tasa implícita: ${nfT.format(r4(tasa))} Bs/USD${tRef>0&&totalBs/tRef>pagado+0.005?` · Ahorro frente a la última tasa (${nfT.format(tRef)}): ${usd(r2(totalBs/tRef-pagado))}`:''}`:' · Falta el total pagado'}${sinBs.length?` · ${sinBs.length} sin precio`:''}`
-      : 'Escribe los precios de lista en bolívares.';
+      : 'Escribe los precios de lista en bolívares.') + avisoG;
     return {filas, totalBs, tasa, sinBs};
   }
   async function guardarCuadrar(){
@@ -4097,8 +4452,12 @@ Responde solo con un objeto JSON:
     const ahora=new Date().toISOString();
     try{
       for(const f of con) await iDb.collection('invMovs').doc(f.m.id).update({costoUnit:f.cu, costoUnitBs:r2(f.bs), tasa:r4(tasa), sinCosto:false, movId:gasto?gasto.id:(f.m.movId||''), actualizado:ahora});
-      if(gasto && !gasto.inventario) await gDb.collection('movimientos').doc(gasto.id).update({inventario:true, actualizado:ahora});
-      closeSheets(); toast(`Compra cuadrada: ${con.length} ${con.length===1?'ítem':'ítems'} a ${nfT.format(r4(tasa))} Bs/USD`);
+      let ajusteG='';
+      if(gasto){ const upd={inventario:true, actualizado:ahora}, uG=usdDe(gasto,tasaSugerida());
+        /* Si lo pagado que escribiste no coincide con el gasto, el gasto se corrige para que gasto e inventario digan lo mismo */
+        if(Math.abs(uG-pagado)>0.005){ if(cuentaDe(gasto.cuenta).moneda==='VES') upd.tasa=r4(num(gasto.monto)/pagado); else upd.monto=r2(pagado); ajusteG=` · el gasto pasó de ${usd(uG)} a ${usd(pagado)}`; }
+        if(!gasto.inventario || ajusteG) await gDb.collection('movimientos').doc(gasto.id).update(upd); }
+      closeSheets(); toast(`Compra cuadrada: ${con.length} ${con.length===1?'ítem':'ítems'} a ${nfT.format(r4(tasa))} Bs/USD${ajusteG}`);
     }catch(e){ err(errMsg(e)); }
   }
   $('#acSave').addEventListener('click', guardarActivo);
@@ -4329,15 +4688,15 @@ Responde solo con un objeto JSON:
     const sal={}; gcfg.cuentas.forEach(c=>sal[c.id]=saldoCuenta(c.id,hoy)); const disponible=r2(totalUsdCuentas(sal,tasaBs));
     const lf=docs.filter(d=>etapa(d)==='listo'), po=docs.filter(d=>etapa(d)==='porEjecutar'&&tieneOrden(d)), so=docs.filter(d=>etapa(d)==='sinOrden'), ps=docs.filter(d=>etapa(d)==='porEjecutar'&&!tieneOrden(d));
     const facturable=r2(sum(lf,saldo)+sum(po,saldo)), sinOrdenEj=r2(sum(so,saldo)), pend=r2(facturable+sinOrdenEj), porEjecSin=r2(sum(ps,saldo));
-    const nomPend = r2(sum(calcCorte(hoy, TODOS_F).lineas,l=>Math.max(0,l.totalUsd)));
+    const nomPend = r2(sum(calcCorte(hoy, {...TODOS_F, soloCerradas:true}).lineas,l=>Math.max(0,l.totalUsd)));
     const adelPend=r2(sum(adels.filter(a=>!a.corteId),a=>num(a.monto)));
-    const wIni=inicioSemana(hoy), per = resF.periodo==='mes' ? [hoy.slice(0,8)+'01', hoy] : [wIni, finSemana(wIni)];
-    const B=calcBalance(per[0],per[1],tasa);
+    const wIni=semanaPorDefecto(), per = resF.periodo==='mes' ? [hoy.slice(0,8)+'01', hoy] : [wIni, finSemana(wIni)];
+    const modoB=balF.tasaModo; balF.tasaModo='propia'; const B=calcBalance(per[0],per[1],tasa); balF.tasaModo=modoB;
     const ing=r2(sum(B.ing,B.u)), gEmp=r2(sum(B.gEmp,B.u)), gPapa=r2(sum(B.gPapa,B.u)), gFran=r2(sum(B.gFran,B.u));
     const rep=repartoGenerales(costF.reparto), cs=docs.map(d=>({d,c:costoTrabajo(d,rep.porTrabajo)})).filter(x=>x.c.costo>0);
-    const costoTot=r2(sum(cs,x=>x.c.costo)), cobTot=r2(sum(docs,pagado)), montoTot=r2(sum(docs,d=>num(d.monto)));
+    const costoTot=r2(sum(cs,x=>x.c.costo)), cobTot=r2(sum(docs,pagado)), montoTot=r2(sum(docs.filter(d=>!d.cancelado),d=>num(d.monto))), montoConCosto=r2(sum(cs,x=>x.c.monto)), sinCostos=docs.filter(d=>!d.cancelado&&!cs.some(x=>x.d.id===d.id)).length;
     const porRecuperar=r2(sum(cs,x=>x.c.porRecuperar)), invValor=valorInventario(), invBajos=itemsActivos().filter(bajoMinimo).length;
-    return {tasa, tasaBs, hoy, sal, disponible, invValor, invBajos, lf, po, so, ps, facturable, sinOrdenEj, pend, porEjecSin, nomPend, adelPend, per, ing, gEmp, gPapa, gFran, costoTot, cobTot, montoTot, cs, porRecuperar, posicion:r2(disponible+invValor+pend-nomPend), sinRepartir:rep.sinRepartir};
+    return {tasa, tasaBs, hoy, sal, disponible, invValor, invBajos, lf, po, so, ps, facturable, sinOrdenEj, pend, porEjecSin, nomPend, adelPend, per, ing, gEmp, gPapa, gFran, costoTot, cobTot, montoTot, cs, montoConCosto, sinCostos, porRecuperar, posicion:r2(disponible+invValor+pend-nomPend), sinRepartir:rep.sinRepartir};
   }
   const usdNeg = v => v<0 ? '− '+usd(-v) : usd(v), bsNeg = v => v<0 ? '− '+bs(-v) : bs(v);
   function renderRes(){
@@ -4349,13 +4708,13 @@ Responde solo con un objeto JSON:
     const card=(lbl,big,sub,rows)=>`<div class="hero"><div class="lbl">${lbl}</div>${big!=null?`<div class="big num">${usdHtml(big)}</div>`:''}${sub?`<div class="sub">${sub}</div>`:''}<div class="rows num">${rows}</div></div>`;
     const perLbl = resF.periodo==='mes' ? `Del 01/${R.hoy.slice(5,7)} al ${fdate(R.hoy)}` : `Semana del ${fdate(R.per[0])} al ${fdate(R.per[1])}`;
     const sinSaldos=!gcfg.cuentas.some(c=>((gcfg.saldos||{})[c.id]||{}).fecha);
-    el.innerHTML = `
+    el.innerHTML = `${bloqueSolicitudes()}
       <div class="row-btns" style="margin-top:12px"><button type="button" class="btn sec" id="rExcel">Exportar todo a Excel</button><button type="button" class="btn sec" id="rCopy">Copiar resumen</button></div>
       ${sinSaldos?`<div class="lock" style="margin-top:14px">Las cuentas arrancan en cero el ${fdate(inicioCaja())} porque no tienen saldo inicial: la caja solo muestra los movimientos desde esa fecha. Pon el saldo real en <button type="button" class="lnk" id="rIrAj">Gastos → Ajustes</button>.</div>`:''}
       ${card('Caja hoy', R.disponible, `Bolívares a ${nfT.format(R.tasaBs||0)} Bs/$, la tasa a la que entraron`,
         gcfg.cuentas.map(c=>fila(c.nombre, 0, {raw: c.moneda==='VES' ? `${bsNeg(R.sal[c.id]||0)}${R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''}` : usdNeg(R.sal[c.id]||0), neg:(R.sal[c.id]||0)<0})).join('')
         + fila('Nómina por pagar hoy', R.nomPend, {neg:R.nomPend>0, raw:R.nomPend>0?'− '+usd(R.nomPend):usd(0), extra:R.nomPend>0?'Lo trabajado desde el último corte, más supervisores':'Nada pendiente desde el último corte'})
-        + (R.adelPend>0?fila('Adelantos por descontar', R.adelPend):''))}
+        + (R.adelPend>0?fila('Adelantos por descontar', R.adelPend, {extra:'Ya salieron de la caja; se descuentan en el próximo corte'}):''))}
       ${(()=>{ const s=saldoIA(); if(!s||(!s.tieneCredito&&!s.llamadas)) return '';
         return card('Claude IA · asistentes', s.tieneCredito?s.saldo:null, s.tieneCredito?'Saldo estimado del crédito de la API, a precios de lista':'Gastado en consultas a la API, a precios de lista',
           (s.tieneCredito?fila('Crédito registrado', s.credito):fila('Crédito registrado', 0, {raw:'Sin registrar', extra:'Ponlo en Gastos → Ajustes → Asistente de Claude'}))
@@ -4367,7 +4726,7 @@ Responde solo con un objeto JSON:
       <div class="hero"><div class="lbl">Posición</div><div class="big num">${usdHtml(R.posicion)}</div><div class="sub">Caja + inventario + pendiente por cobrar − nómina por pagar. Lo que quedaría si cobras todo lo pendiente y pagas la nómina de hoy.</div>
         <div class="rows num">${fila('Caja hoy', R.disponible)}${fila('Inventario valorado', R.invValor, {extra:R.invBajos?`${R.invBajos} ${R.invBajos===1?'ítem':'ítems'} bajo mínimo`:'Materiales y consumibles al costo de los lotes que quedan'})}${fila('Pendiente por cobrar', R.pend)}${fila('Nómina por pagar', R.nomPend, {neg:R.nomPend>0, raw:R.nomPend>0?'− '+usd(R.nomPend):usd(0)})}</div></div>
       <div class="hero"><div class="lbl">Movimiento del período</div>
-        <div class="seg" role="group" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:8px">${[['semana','Esta semana'],['mes','Este mes']].map(([k,l])=>`<button type="button" data-rper="${k}" class="${resF.periodo===k?'on':''}">${l}</button>`).join('')}</div>
+        <div class="seg" role="group" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:8px">${[['semana',semanaPorDefecto()===inicioSemana(today())?'Esta semana':'Semana que cerró'],['mes','Este mes']].map(([k,l])=>`<button type="button" data-rper="${k}" class="${resF.periodo===k?'on':''}">${l}</button>`).join('')}</div>
         <div class="sub">${perLbl}</div>
         <div class="rows num">
           ${fila('Ingresos cobrados', R.ing, {c:'var(--c-co)'})}
@@ -4381,7 +4740,7 @@ Responde solo con un objeto JSON:
           ${fila('Monto de todas las órdenes', R.montoTot, {n:docs.length})}
           ${fila('Cobrado hasta hoy', R.cobTot, {c:'var(--c-co)'})}
           ${fila('Costo registrado', R.costoTot, {c:'var(--c-so)', raw:'− '+usd(R.costoTot), extra:`Mano de obra, materiales, gastos directos y generales de ${R.cs.length} ${R.cs.length===1?'orden':'órdenes'} con costos${R.sinRepartir>0?' · sin repartir '+usd(R.sinRepartir):''}`})}
-          ${fila('Margen esperado al cobrar todo', R.montoTot-R.costoTot, {neg:R.montoTot-R.costoTot<0, raw:usd(r2(R.montoTot-R.costoTot))+(R.montoTot>0?` (${nf.format(r2((R.montoTot-R.costoTot)/R.montoTot*100)).replace(/,00$/,'')} %)`:'')})}
+          ${fila('Margen de las órdenes con costos', R.montoConCosto-R.costoTot, {neg:R.montoConCosto-R.costoTot<0, raw:usd(r2(R.montoConCosto-R.costoTot))+(R.montoConCosto>0?` (${nf.format(r2((R.montoConCosto-R.costoTot)/R.montoConCosto*100)).replace(/,00$/,'')} %)`:''), extra:`Monto de esas órdenes ${usd(R.montoConCosto)}${R.sinCostos?` · ${R.sinCostos} ${R.sinCostos===1?'orden':'órdenes'} sin costos registrados no ${R.sinCostos===1?'entra':'entran'}`:''}`})}
           ${R.porRecuperar>0?fila('Gastado y aún no cobrado', R.porRecuperar, {extra:'Órdenes con más costo que cobros: lo están financiando los cobros de otras'}):''}
         </div></div>
       <div style="height:24px"></div>`;
@@ -4391,18 +4750,18 @@ Responde solo con un objeto JSON:
     L.push(`💼 *Caja hoy: ${usd(R.disponible)}*`);
     gcfg.cuentas.forEach(c=>L.push(`• ${c.nombre}: ${c.moneda==='VES'?bsNeg(R.sal[c.id]||0)+(R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''):usdNeg(R.sal[c.id]||0)}`));
     if(R.nomPend>0) L.push(`• Nómina por pagar hoy: − ${usd(R.nomPend)}`);
-    if(R.adelPend>0) L.push(`• Adelantos por descontar: ${usd(R.adelPend)}`);
+    if(R.adelPend>0) L.push(`• Adelantos entregados por descontar en el próximo corte: ${usd(R.adelPend)}`);
     const sIA=saldoIA(); if(sIA&&sIA.tieneCredito) L.push(`• Crédito de Claude IA para los asistentes: ${usd(sIA.saldo)} (estimado)`);
     L.push(''); L.push(`📄 *Pendiente por cobrar: ${usd(R.pend)}*`);
     L.push(`• Facturable ahora (con orden): ${usd(R.facturable)}`); L.push(`• Ejecutado sin orden de servicio: ${usd(R.sinOrdenEj)}`); L.push(`• Sin orden, por ejecutar (no incluido): ${usd(R.porEjecSin)}`);
     L.push(''); L.push(`🧭 *Posición: ${usd(R.posicion)}* (caja + inventario + pendiente por cobrar − nómina por pagar)`);
     if(R.invValor>0) L.push(`• Inventario valorado: ${usd(R.invValor)}${R.invBajos?` · ${R.invBajos} ${R.invBajos===1?'ítem':'ítems'} bajo mínimo`:''}`);
-    L.push(''); L.push(`📊 *${resF.periodo==='mes'?'Este mes':'Esta semana'} (${fdate(R.per[0])} al ${fdate(R.per[1])})*`);
+    L.push(''); L.push(`📊 *${resF.periodo==='mes'?'Este mes':R.per[0]===inicioSemana(R.hoy)?'Esta semana':'Semana que cerró'} (${fdate(R.per[0])} al ${fdate(R.per[1])})*`);
     L.push(`• Ingresos cobrados: ${usd(R.ing)}`); L.push(`• Gastos de la empresa: − ${usd(R.gEmp)}`); L.push(`• *Resultado de la empresa: ${usd(r2(R.ing-R.gEmp))}*`);
     if(R.gPapa>0||R.gFran>0) L.push(`• Gastos personales: papá ${usd(R.gPapa)} · Fran ${usd(R.gFran)}`);
     L.push(''); L.push(`🔧 *Órdenes de trabajo (acumulado)*`);
     L.push(`• Monto de todas las órdenes: ${usd(R.montoTot)}`); L.push(`• Cobrado hasta hoy: ${usd(R.cobTot)}`); L.push(`• Costo registrado: ${usd(R.costoTot)}`);
-    L.push(`• *Margen esperado al cobrar todo: ${usd(r2(R.montoTot-R.costoTot))}${R.montoTot>0?' ('+nf.format(r2((R.montoTot-R.costoTot)/R.montoTot*100)).replace(/,00$/,'')+' %)':''}*`);
+    L.push(`• *Margen de las órdenes con costos: ${usd(r2(R.montoConCosto-R.costoTot))}${R.montoConCosto>0?' ('+nf.format(r2((R.montoConCosto-R.costoTot)/R.montoConCosto*100)).replace(/,00$/,'')+' %)':''}*`);
     if(R.porRecuperar>0) L.push(`• Gastado y aún no cobrado: ${usd(R.porRecuperar)}`);
     return L.join('\n');
   }
@@ -4422,6 +4781,7 @@ Responde solo con un objeto JSON:
     const db = c&&c.use ? await c.use('db') : null;
     if(!db){ failed='Abre esta página desde tu cuenta de Claude para ver y editar los trabajos.'; canWrite=false; nFallo=true; render(); renderNom(); return; }
     coll=db.collection('facturas');
+    if(esRegistro() && !['reg','nom'].includes(modulo)) setModulo('reg');
     iniciarNomina(db);
     iniciarGastos(db);
     iniciarInventario(db);

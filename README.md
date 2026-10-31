@@ -59,6 +59,16 @@ Todo se hace desde el teléfono o la computadora, una sola vez. Son unos 15 minu
 - Desde que empieces a usar esta versión, usa solo esta. Si registras cosas en las dos, los datos se separan.
 - Respaldo: **Gastos → Ajustes → Descargar respaldo completo (JSON)** de vez en cuando; con ese archivo se restaura todo en cualquier momento.
 
+## Personas con acceso (secretaria, supervisor)
+
+Pueden registrar asistencia, adelantos, gastos, retiros de material y conteos, pero **nada cambia hasta que tú lo apruebes**.
+
+1. **Una sola vez:** Firebase › Firestore Database › **Reglas** → borra todo, pega el contenido nuevo de `firestore.rules` → **Publicar**. Sin este paso la persona invitada no puede entrar.
+2. En la app: **Gastos → Ajustes → Personas con acceso** → escribe su correo de Google y su nombre → **Dar acceso**.
+3. Ella abre **https://sk-30u.github.io/workproca-admin/** y entra con ese correo. Ve solo la pantalla **Registrar**: no ve Cobranzas, caja, balance, costos ni la clave del asistente.
+4. Lo que envíe aparece en **Resumen → Por aprobar** (la pestaña dice "Resumen · 2" cuando hay pendientes). Tocas **Aprobar**, **Rechazar** o **Aprobar todo**.
+5. Para quitarle el acceso: **Gastos → Ajustes → Personas con acceso → Quitar acceso** (o **Eliminar**).
+
 ## Actualizaciones
 
 Cuando haya una versión nueva de `index.html`, se reemplaza el archivo en el repositorio y listo: la app se actualiza sola la próxima vez que se abra con señal.
