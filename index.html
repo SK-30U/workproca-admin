@@ -43,7 +43,7 @@ window.__standalone = true;
   window.claude = { use: async n => n === 'db' ? dbReady : n === 'user' ? { can: async () => true } : null };
   const ov = document.getElementById('login'), msg = document.getElementById('loginMsg'), btn = document.getElementById('loginBtn');
   const limpiar = o => JSON.parse(JSON.stringify(o));
-  if (!cfg.apiKey || !cfg.projectId) { msg.textContent = 'Falta la configuración de Firebase: pega las claves de tu proyecto en firebase-config.js (ver INSTRUCCIONES.md).'; btn.hidden = true; return; }
+  if (!cfg.apiKey || !cfg.projectId) { msg.textContent = 'Falta la configuración de Firebase: pega las claves de tu proyecto en firebase-config.js (ver README.md).'; btn.hidden = true; return; }
   if (typeof firebase === 'undefined') { msg.textContent = 'No se pudo cargar Firebase. Revisa la conexión y recarga.'; btn.hidden = true; return; }
   firebase.initializeApp(cfg);
   const auth = firebase.auth(), fs = firebase.firestore();
@@ -58,7 +58,7 @@ window.__standalone = true;
     msg.textContent = 'Verificando acceso…'; btn.hidden = true;
     try { await fs.collection('config').doc('nomina').get(); }
     catch (e) {
-      if (e && e.code === 'permission-denied') { msg.innerHTML = `La cuenta <b>${u.email}</b> no tiene acceso. Agrega ese correo en las reglas de Firestore (ver INSTRUCCIONES.md) o entra con otra cuenta.`; btn.hidden = false; btn.textContent = 'Entrar con otra cuenta'; btn.onclick = () => auth.signOut().then(() => location.reload()); return; }
+      if (e && e.code === 'permission-denied') { msg.innerHTML = `La cuenta <b>${u.email}</b> no tiene acceso. Agrega ese correo en las reglas de Firestore (ver README.md) o entra con otra cuenta.`; btn.hidden = false; btn.textContent = 'Entrar con otra cuenta'; btn.onclick = () => auth.signOut().then(() => location.reload()); return; }
     }
     ov.hidden = true; document.documentElement.dataset.user = u.email || '';
     if (!entregado) { entregado = true; resolveDb(adapter); }
