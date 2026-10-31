@@ -1532,7 +1532,7 @@ textarea.share{min-height:38vh}
     const b=e.target.closest('[data-fmt]'); if(!b) return; ecF.formato=b.dataset.fmt; renderEcFiltros(); $('#shareText').value=buildShare(); });
   $('#ecFiltros').addEventListener('change', e=>{
     const t=e.target;
-    if(shareMode==='cost'){ if(t.id==='cfCli') costF.cliente=t.value; if(t.dataset.cf) costF[t.dataset.cf]=t.checked; renderCostFiltros(); $('#shareText').value=buildCostos(); return; }
+    if(shareMode==='cost'){ if(t.id==='cfCli'){ costF.cliente=t.value; costF.trabajo=''; } if(t.id==='cfTrab') costF.trabajo=t.value; if(t.dataset.cf) costF[t.dataset.cf]=t.checked; renderCostFiltros(); $('#shareText').value=buildCostos(); return; }
     if(t.id==='ecCli'){ ecF.cliente=t.value; ecF.unidad=''; }
     if(t.id==='ecUni') ecF.unidad=t.value;
     if(t.dataset.ec){ const k=t.dataset.ec; ecF.etapas = t.checked ? [...new Set([...ecF.etapas,k])] : ecF.etapas.filter(x=>x!==k); }
@@ -1541,7 +1541,7 @@ textarea.share{min-height:38vh}
   });
 
   /* ---------- costo por trabajo: mano de obra (asistencia asignada) + gastos asignados, contra el monto ---------- */
-  let shareMode='ec', costF={cliente:'', soloConCosto:true, cobrados:true, formato:'corto', reparto:'dias'};
+  let shareMode='ec', costF={cliente:'', trabajo:'', soloConCosto:true, cobrados:true, formato:'corto', reparto:'dias'};
   const tieneTrabajo = id => !!id && docs.some(d=>d.id===id);
   /* Costo directo de un trabajo: mano de obra asignada en la asistencia + gastos con ese centro de costo */
   function costoTrabajo(d, generales){
@@ -1589,9 +1589,9 @@ textarea.share{min-height:38vh}
   const pctTxt = v => `${nf.format(v).replace(/,00$/,'')} %`;
   function buildCostos(){
     const rep=repartoGenerales(costF.reparto);
-    const base=docs.filter(d=>(!costF.cliente||(d.cliente||'')===costF.cliente) && (costF.cobrados || etapa(d)!=='cobrado')).sort(byOrden)
-      .map(d=>({d, c:costoTrabajo(d, rep.porTrabajo)})).filter(x=>!costF.soloConCosto || x.c.costo>0);
-    const L=[`*WORKPROCA · Costo por orden de trabajo${costF.cliente?' · '+costF.cliente:''}*`, fdate(today())];
+    const base=docs.filter(d=>(!costF.cliente||(d.cliente||'')===costF.cliente) && (!costF.trabajo||d.id===costF.trabajo) && (costF.cobrados || etapa(d)!=='cobrado')).sort(byOrden)
+      .map(d=>({d, c:costoTrabajo(d, rep.porTrabajo)})).filter(x=>!costF.trabajo && costF.soloConCosto ? x.c.costo>0 : true);
+    const L=[`*WORKPROCA · Costo por orden de trabajo${costF.cliente?' · '+costF.cliente:''}${costF.trabajo&&docs.find(d=>d.id===costF.trabajo)?' · '+nombreTrabajo(docs.find(d=>d.id===costF.trabajo)):''}*`, fdate(today())];
     if(!base.length){ L.push(''); L.push('Ningún trabajo tiene mano de obra ni gastos asignados todavía. Asigna la orden en el registro del día y en cada gasto.'); return L.join('\n'); }
     base.forEach(({d,c})=>{
       L.push(''); L.push(`*${d.descripcion}${d.unidad?' · '+d.unidad:''}${tieneOrden(d)?' · '+d.ods:d.nota?' · '+d.nota:''}*`);
@@ -1619,7 +1619,8 @@ textarea.share{min-height:38vh}
     const cls=listaClientes();
     const chip=(k,l,on)=>`<label class="${on?'on':''}"><input type="checkbox" data-cf="${k}"${on?' checked':''}> ${l}</label>`;
     $('#ecFiltros').innerHTML = `
-      <div class="grid"><label class="f full">Cliente<input class="selq" data-filtra="#cfCli" placeholder="Buscar cliente…" autocomplete="off" aria-label="Buscar cliente…"><select id="cfCli"><option value="">Todos</option>${cls.map(c=>`<option value="${esc(c)}"${c===costF.cliente?' selected':''}>${esc(c)}</option>`).join('')}</select></label></div>
+      <div class="grid"><label class="f full">Cliente<input class="selq" data-filtra="#cfCli" placeholder="Buscar cliente…" autocomplete="off" aria-label="Buscar cliente…"><select id="cfCli"><option value="">Todos</option>${cls.map(c=>`<option value="${esc(c)}"${c===costF.cliente?' selected':''}>${esc(c)}</option>`).join('')}</select></label>
+      <label class="f full">Orden o trabajo<input class="selq" data-filtra="#cfTrab" placeholder="Buscar trabajo, unidad u orden…" autocomplete="off" aria-label="Buscar trabajo"><select id="cfTrab"><option value="">Todos</option>${docs.filter(d=>!costF.cliente||(d.cliente||'')===costF.cliente).sort(byOrden).map(d=>`<option value="${esc(d.id)}"${d.id===costF.trabajo?' selected':''}>${esc(nombreTrabajo(d))}</option>`).join('')}</select></label></div>
       <div class="seg" role="group" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px">${[['corto','Corto'],['detallado','Detallado']].map(([k,l])=>`<button type="button" data-cfmt="${k}" class="${costF.formato===k?'on':''}">${l}</button>`).join('')}</div>
       <div class="seg" role="group" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:8px">${[['dias','Generales según días trabajados'],['igual','Generales por igual']].map(([k,l])=>`<button type="button" data-crep="${k}" class="${costF.reparto===k?'on':''}">${l}</button>`).join('')}</div>
       <div class="ecchips">${chip('soloConCosto','Solo con costos registrados',costF.soloConCosto)}${chip('cobrados','Incluir cobrados',costF.cobrados)}</div>
