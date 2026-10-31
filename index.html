@@ -43,7 +43,23 @@ window.__standalone = true;
 
   /* Asistente: la app pide window.claude.use('sample') y recibe este puente a la API de Claude (clave y modelo los pone la app en window.__ia desde Gastos → Ajustes). */
   const IA_MODELO = 'claude-sonnet-5-5';
-  window.__ia = { clave: '', modelo: '' };
+  window.__ia = { clave: '', modelo: '', uso: null, ultimo: null };
+  /* Saldo de la API: la API no lo informa. La app lo estima restando a lo comprado el costo de cada consulta, calculado con la respuesta
+     (tokens de entrada, salida y caché) y los precios de lista por millón de tokens de cada modelo. El acumulado vive en config/ia.uso. */
+  const PRECIOS = [[/haiku-5/, [0.10, 0.50, 0.125, 0.01]], [/sonnet-5/, [2, 10, 2.5, 0.10]], [/opus-5/, [4, 20, 5, 0.20]], [/fable|mythos/, [10, 50, 12.5, 0.25]], [/haiku-4/, [1, 5, 1.25, 0.10]], [/sonnet-4/, [3, 15, 3.75, 0.30]], [/opus-4-[5-9]/, [5, 25, 6.25, 0.50]], [/opus-4/, [15, 75, 18.75, 1.50]], [/haiku/, [0.80, 4, 1, 0.08]]];
+  const precioDe = m => (PRECIOS.find(([re]) => re.test(String(m || ''))) || [null, [2, 10, 2.5, 0.10]])[1];
+  const costoUso = (m, u) => { const p = precioDe(m), n = k => +(u && u[k]) || 0; return (n('input_tokens') * p[0] + n('output_tokens') * p[1] + n('cache_creation_input_tokens') * p[2] + n('cache_read_input_tokens') * p[3]) / 1e6; };
+  let fsRef = null;
+  function registrarUso(modelo, u) {
+    const costo = costoUso(modelo, u), n = k => +(u && u[k]) || 0, ahora = new Date().toISOString();
+    const entrada = n('input_tokens') + n('cache_creation_input_tokens') + n('cache_read_input_tokens'), salida = n('output_tokens');
+    window.__ia.ultimo = { costo, entrada, salida, modelo, fecha: ahora };
+    const uso = window.__ia.uso || (window.__ia.uso = { llamadas: 0, entrada: 0, salida: 0, costo: 0 });
+    uso.llamadas = (+uso.llamadas || 0) + 1; uso.entrada = (+uso.entrada || 0) + entrada; uso.salida = (+uso.salida || 0) + salida; uso.costo = (+uso.costo || 0) + costo; uso.ultimo = ahora; uso.ultimoCosto = costo; uso.ultimoModelo = modelo;
+    if (!fsRef) return;
+    const inc = firebase.firestore.FieldValue.increment;
+    fsRef.doc('config/ia').set({ uso: { llamadas: inc(1), entrada: inc(entrada), salida: inc(salida), costo: inc(costo), ultimo: ahora, ultimoCosto: costo, ultimoModelo: modelo } }, { merge: true }).catch(() => {});
+  }
   const b64 = blob => new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = () => no({ code: 'image_rejected' }); fr.readAsDataURL(blob); });
   const parseJSON = txt => {
     let s = String(txt || '').trim(); const m = s.match(/```(?:json)?\s*([\s\S]*?)```/i); if (m) s = m[1].trim();
@@ -73,6 +89,7 @@ window.__standalone = true;
         throw { code, message: msg, status: r.status };
       }
       const j = await r.json();
+      try { registrarUso(j.model || body.model, j.usage); } catch (_) {}
       return parseJSON((j.content || []).filter(p => p.type === 'text').map(p => p.text).join(''));
     }
   };
@@ -82,9 +99,9 @@ window.__standalone = true;
   if (!cfg.apiKey || !cfg.projectId) { msg.textContent = 'Falta la configuración de Firebase: pega las claves de tu proyecto en firebase-config.js (ver README.md).'; btn.hidden = true; return; }
   if (typeof firebase === 'undefined') { msg.textContent = 'No se pudo cargar Firebase. Revisa la conexión y recarga.'; btn.hidden = true; return; }
   firebase.initializeApp(cfg);
-  const auth = firebase.auth(), fs = firebase.firestore();
+  const auth = firebase.auth(), fs = firebase.firestore(); fsRef = fs;
   try { fs.enablePersistence({ synchronizeTabs: true }).catch(() => {}); } catch (_) {}
-  const wrapDoc = d => ({ id: d.id, set: o => d.set(limpiar(o)), update: o => d.update(limpiar(o)), delete: () => d.delete(), onSnapshot: (f, e) => d.onSnapshot(f, e), get: () => d.get() });
+  const wrapDoc = d => ({ id: d.id, set: (o, opt) => opt ? d.set(limpiar(o), opt) : d.set(limpiar(o)), update: o => d.update(limpiar(o)), delete: () => d.delete(), onSnapshot: (f, e) => d.onSnapshot(f, e), get: () => d.get() });
   const wrapColl = c => ({ doc: id => wrapDoc(id ? c.doc(id) : c.doc()), onSnapshot: (f, e) => c.onSnapshot(f, e) });
   const adapter = { collection: c => wrapColl(fs.collection(c)), doc: p => wrapDoc(fs.doc(p)) };
   const provider = new firebase.auth.GoogleAuthProvider();
@@ -1837,7 +1854,7 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
       const res=await sampleFn.json(pr, opts);
       aiLast = {texto, textos, imgs, res:res||{}, hilo: esResp ? aiLast.hilo : []};
       $('#aiReplyBox').hidden = !canWrite; $('#aiReply').value='';
-      $('#aiStat').textContent=avisos.join(' ');
+      $('#aiStat').textContent=[...avisos, lineaConsultaIA()].filter(Boolean).join(' ');
       if(aiMode==='asis') renderAIAsis(res||{}); else if(aiMode==='trab') renderAITrab(res||{}); else if(aiMode==='gas') renderAIGas(res||{}); else if(aiMode==='inv') renderAIInv(res||{}); else renderAI(res||{});
     }catch(e){
       const code=e&&e.code;
@@ -2790,8 +2807,32 @@ Responde solo con un objeto JSON:
   let gDb=null, gCfgRef=null, gcfg=JSON.parse(JSON.stringify(GCFG_DEF)), movs=[], gLoaded={m:false,c:false};
   /* Fuera de Claude (versión independiente) el asistente usa la API de Claude con una clave propia, guardada en config/ia */
   const IA_MODELO='claude-sonnet-5-5';
-  let iaCfg={clave:'', modelo:''};
-  function publicarIA(){ if(window.__ia) Object.assign(window.__ia, {clave:iaCfg.clave, modelo:iaCfg.modelo}); }
+  let iaCfg={clave:'', modelo:'', credito:0, uso:null};
+  function publicarIA(){ if(window.__ia) Object.assign(window.__ia, {clave:iaCfg.clave, modelo:iaCfg.modelo, uso: iaCfg.uso ? {...iaCfg.uso} : window.__ia.uso}); }
+  /* Saldo del crédito de la API de Claude para los asistentes (solo en la versión independiente). La API no informa el saldo:
+     se resta al crédito registrado en Ajustes el costo de cada consulta, calculado con los tokens de la respuesta a precios de lista. */
+  const usoIA = () => (window.__ia && window.__ia.uso) || iaCfg.uso || {llamadas:0, entrada:0, salida:0, costo:0, ultimo:'', ultimoCosto:0};
+  const usdF = n => `USD ${nfT.format(n)}`;
+  const fechaHora = iso => { if(!iso) return ''; const d=new Date(iso); return isNaN(d) ? '' : `${fdate(iso.slice(0,10)).slice(0,5)} ${d.toLocaleTimeString('es-VE',{hour:'numeric',minute:'2-digit'})}`; };
+  function saldoIA(){
+    if(!window.__standalone) return null;
+    const u=usoIA(), credito=num(iaCfg.credito), gastado=num(u.costo);
+    return {credito, gastado, saldo:r2(credito-gastado), llamadas:num(u.llamadas), ultimo:String(u.ultimo||''), ultimoCosto:num(u.ultimoCosto), tieneCredito:credito>0};
+  }
+  /* Línea corta para la hoja del asistente: lo que costó esta consulta y lo que queda */
+  function lineaConsultaIA(){
+    const s=saldoIA(); if(!s) return '';
+    const u=window.__ia&&window.__ia.ultimo, partes=[];
+    if(u&&u.costo>=0) partes.push(`Esta consulta: ${usdF(u.costo)}`);
+    if(s.tieneCredito) partes.push(`Saldo estimado de Claude IA: ${usd(s.saldo)}`); else if(s.llamadas) partes.push(`Gastado en Claude IA: ${usdF(s.gastado)}`);
+    return partes.join(' · ');
+  }
+  function textoUsoIA(){
+    const s=saldoIA(); if(!s) return '';
+    if(!s.llamadas) return 'Aún no hay consultas registradas. La API no informa el saldo: la app lo estima restando el costo de cada consulta (tokens a precios de lista) al crédito que registres aquí; en la Consola de Claude ves el saldo exacto.';
+    return `Gastado: ${usdF(s.gastado)} en ${s.llamadas} ${s.llamadas===1?'consulta':'consultas'}${s.ultimo?` (última ${fechaHora(s.ultimo)}, ${usdF(s.ultimoCosto)})`:''}. ${s.tieneCredito?`Saldo estimado: ${usd(s.saldo)}.`:'Registra el crédito comprado para ver el saldo estimado.'} Estimado a precios de lista; el saldo exacto está en la Consola de Claude.`;
+  }
+  function pintarUsoIA(){ const e=$('#iaUso'); if(e) e.textContent=textoUsoIA(); }
   let gView='mov', gSemana=null, mvEditId=null, mvTipo='gasto', balF={modo:'semana', semana:null, desde:'', hasta:'', partes:['general'], formato:'detallado', tasa:'', tasaModo:'propia'};
   const m$ = n => `$${nf.format(n)}`, mBs = n => `Bs. ${nf.format(n)}`;
   const cuentaDe = id => gcfg.cuentas.find(c=>c.id===id) || {id, nombre:id||'Sin cuenta', moneda:'USD'};
@@ -2939,8 +2980,10 @@ Responde solo con un objeto JSON:
       <div class="row-btns"><label class="btn sec" style="cursor:pointer">Restaurar desde respaldo (JSON)<input type="file" id="gRestaurar" accept=".json,application/json" style="position:absolute;width:1px;height:1px;opacity:0"></label></div>
       ${window.__standalone?`<div class="sech">Asistente de Claude</div>
       <div class="tip">Fuera de Claude, el asistente trabaja con la API de Claude y una clave tuya (Consola de Claude → API keys). Se paga por uso con crédito prepagado, aparte del plan Max. Donde la API no tenga servicio, el asistente no responde y ya.</div>
-      <div class="cfg"><label class="f full">Clave de la API<input id="iaClave" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(($('#iaClave')||{}).value??iaCfg.clave)}" placeholder="sk-ant-…"></label><label class="f full">Modelo (opcional)<input id="iaModelo" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(($('#iaModelo')||{}).value??iaCfg.modelo)}" placeholder="${IA_MODELO}"></label></div>
-      <div class="row-btns"><button type="button" class="btn sec" id="iaProbar">Probar el asistente</button></div><div class="tip" id="iaEstado"></div>`:''}
+      <div class="cfg"><label class="f full">Clave de la API<input id="iaClave" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(($('#iaClave')||{}).value??iaCfg.clave)}" placeholder="sk-ant-…"></label><label class="f full">Modelo (opcional)<input id="iaModelo" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(($('#iaModelo')||{}).value??iaCfg.modelo)}" placeholder="${IA_MODELO}"></label>
+      <label class="f full">Crédito comprado en la Consola (USD, total acumulado)<input id="iaCredito" inputmode="decimal" value="${esc(($('#iaCredito')||{}).value??(iaCfg.credito?nf.format(iaCfg.credito):''))}" placeholder="Por ejemplo 10"></label></div>
+      <div class="row-btns"><button type="button" class="btn sec" id="iaProbar">Probar el asistente</button><button type="button" class="btn sec" id="iaReset">Reiniciar contador de uso</button></div><div class="tip" id="iaEstado"></div>
+      <div class="tip" id="iaUso">${textoUsoIA()}</div>`:''}
       ${window.__cerrarSesion?`<div class="sech">Sesión</div><div class="row-btns"><button type="button" class="btn sec" id="gSalir">Cerrar sesión</button></div>`:''}
       <div class="err" id="gAjErr"></div>
       <div class="nsum"><div class="row-btns" style="margin-top:0"><button type="button" class="btn pri" id="gAjSave">Guardar ajustes</button></div></div>`;
@@ -3017,7 +3060,8 @@ Responde solo con un objeto JSON:
     const n=leerGAj();
     try{
       await gCfgRef.set(n); gcfg=n;
-      if(window.__standalone && $('#iaClave')){ const ia={clave:$('#iaClave').value.trim(), modelo:($('#iaModelo')||{value:''}).value.trim()}; if(ia.clave!==iaCfg.clave||ia.modelo!==iaCfg.modelo){ await gDb.doc('config/ia').set(ia); iaCfg=ia; publicarIA(); } }
+      if(window.__standalone && $('#iaClave')){ const cr=parseNum(($('#iaCredito')||{value:''}).value); if(isNaN(cr)||cr<0){ $('#gAjErr').textContent='El crédito de Claude IA debe ser un número.'; return; }
+        const ia={clave:$('#iaClave').value.trim(), modelo:($('#iaModelo')||{value:''}).value.trim(), credito:r2(cr)}; if(ia.clave!==iaCfg.clave||ia.modelo!==iaCfg.modelo||ia.credito!==num(iaCfg.credito)){ await gDb.doc('config/ia').set(ia,{merge:true}); iaCfg={...iaCfg, ...ia}; publicarIA(); } }
       toast('Ajustes guardados'); renderGas();
     }catch(err){ $('#gAjErr').textContent=errMsg(err); }
   }
@@ -3284,6 +3328,7 @@ Responde solo con un objeto JSON:
     if(t.closest('#gExcel')) return exportarExcel(t.closest('#gExcel'));
     if(t.closest('#gJson')) return descargarJSON();
     if(t.closest('#iaProbar')) return probarIA();
+    if(t.closest('#iaReset')) return reiniciarUsoIA();
     if(t.closest('#gSalir') && window.__cerrarSesion) return window.__cerrarSesion();
     const bm=t.closest('[data-bmodo]'); if(bm){ balF.modo=bm.dataset.bmodo; return renderGas(); }
     const bf=t.closest('[data-bfmt]'); if(bf){ balF.formato=bf.dataset.bfmt; return renderGas(); }
@@ -3325,7 +3370,15 @@ Responde solo con un objeto JSON:
     gDb=db; gCfgRef=db.doc('config/gastos');
     gCfgRef.onSnapshot(s=>{ const d=s.exists?s.data():null; gcfg = d ? {...JSON.parse(JSON.stringify(GCFG_DEF)), ...d, saldos:{...GCFG_DEF.saldos, ...(d.saldos||{})}} : JSON.parse(JSON.stringify(GCFG_DEF)); gLoaded.c=true; if(gView!=='aj') renderGas(); }, ()=>{ gLoaded.c=true; renderGas(); });
     db.collection('movimientos').onSnapshot(s=>{ movs=s.docs.map(d=>Object.assign({id:d.id}, d.data())); gLoaded.m=true; renderGas(); }, ()=>{ gLoaded.m=true; renderGas(); });
-    if(window.__standalone) db.doc('config/ia').onSnapshot(s=>{ const d=s.exists?(s.data()||{}):{}; iaCfg={clave:String(d.clave||'').trim(), modelo:String(d.modelo||'').trim()}; publicarIA(); if(gView==='aj'&&!$('#iaClave')) renderGas(); }, ()=>{});
+    if(window.__standalone) db.doc('config/ia').onSnapshot(s=>{ const d=s.exists?(s.data()||{}):{}, u=d.uso&&typeof d.uso==='object'?d.uso:null;
+      iaCfg={clave:String(d.clave||'').trim(), modelo:String(d.modelo||'').trim(), credito:num(d.credito), uso: u ? {llamadas:num(u.llamadas), entrada:num(u.entrada), salida:num(u.salida), costo:num(u.costo), ultimo:String(u.ultimo||''), ultimoCosto:num(u.ultimoCosto), ultimoModelo:String(u.ultimoModelo||'')} : null};
+      publicarIA(); if(gView==='aj'&&!$('#iaClave')) renderGas(); else pintarUsoIA(); if(modulo==='res') renderRes(); }, ()=>{});
+  }
+  async function reiniciarUsoIA(){
+    if(!gDb||!window.__standalone) return;
+    if(!confirm('¿Poner en cero el contador de consultas y gasto de Claude IA? El crédito registrado se mantiene.')) return;
+    try{ await gDb.doc('config/ia').set({uso:{llamadas:0, entrada:0, salida:0, costo:0, ultimo:'', ultimoCosto:0, ultimoModelo:''}},{merge:true}); if(window.__ia) window.__ia.uso=null; toast('Contador reiniciado'); }
+    catch(err){ $('#gAjErr').textContent=errMsg(err); }
   }
   /* Prueba de conexión con la API de Claude usando lo que está escrito en Ajustes (sin guardar) */
   async function probarIA(){
@@ -3334,7 +3387,7 @@ Responde solo con un objeto JSON:
     if(!clave.trim()){ est.textContent='Pega primero la clave de la API.'; return; }
     if(window.__ia) Object.assign(window.__ia, {clave:clave.trim(), modelo});
     est.textContent='Probando…';
-    try{ const r=await sampleFn.json('Responde exactamente con este JSON y nada más: {"ok":true}', {cache:false}); est.textContent = r&&r.ok===true ? `Conectado. El asistente responde con ${modelo||IA_MODELO}. Toca “Guardar ajustes” para dejar la clave guardada.` : 'Respondió, pero no con lo esperado. Revisa el modelo.'; }
+    try{ const r=await sampleFn.json('Responde exactamente con este JSON y nada más: {"ok":true}', {cache:false}); est.textContent = r&&r.ok===true ? `Conectado. El asistente responde con ${modelo||IA_MODELO}. Toca “Guardar ajustes” para dejar la clave guardada.` : 'Respondió, pero no con lo esperado. Revisa el modelo.'; pintarUsoIA(); }
     catch(e){ est.textContent=msgIA(e); }
     finally{ publicarIA(); }
   }
@@ -4117,6 +4170,10 @@ Responde solo con un objeto JSON:
         gcfg.cuentas.map(c=>fila(c.nombre, 0, {raw: c.moneda==='VES' ? `${bsNeg(R.sal[c.id]||0)}${R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''}` : usdNeg(R.sal[c.id]||0), neg:(R.sal[c.id]||0)<0})).join('')
         + fila('Nómina por pagar hoy', R.nomPend, {neg:R.nomPend>0, raw:R.nomPend>0?'− '+usd(R.nomPend):usd(0), extra:R.nomPend>0?'Lo trabajado desde el último corte, más supervisores':'Nada pendiente desde el último corte'})
         + (R.adelPend>0?fila('Adelantos por descontar', R.adelPend):''))}
+      ${(()=>{ const s=saldoIA(); if(!s||(!s.tieneCredito&&!s.llamadas)) return '';
+        return card('Claude IA · asistentes', s.tieneCredito?s.saldo:null, s.tieneCredito?'Saldo estimado del crédito de la API, a precios de lista':'Gastado en consultas a la API, a precios de lista',
+          (s.tieneCredito?fila('Crédito registrado', s.credito):fila('Crédito registrado', 0, {raw:'Sin registrar', extra:'Ponlo en Gastos → Ajustes → Asistente de Claude'}))
+          + fila('Gastado en consultas', s.gastado, {raw:'− '+usdF(s.gastado), extra:`${s.llamadas} ${s.llamadas===1?'consulta':'consultas'}${s.ultimo?' · última '+fechaHora(s.ultimo)+' ('+usdF(s.ultimoCosto)+')':''}`})); })()}
       ${card('Pendiente por cobrar', R.pend, 'Ejecutado o con orden de servicio',
         fila('Facturable ahora (con orden)', R.facturable, {c:'var(--c-lf)', n:R.lf.length+R.po.length})
         + fila('Ejecutado sin orden', R.sinOrdenEj, {c:'var(--c-so)', n:R.so.length})
@@ -4149,6 +4206,7 @@ Responde solo con un objeto JSON:
     gcfg.cuentas.forEach(c=>L.push(`• ${c.nombre}: ${c.moneda==='VES'?bsNeg(R.sal[c.id]||0)+(R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''):usdNeg(R.sal[c.id]||0)}`));
     if(R.nomPend>0) L.push(`• Nómina por pagar hoy: − ${usd(R.nomPend)}`);
     if(R.adelPend>0) L.push(`• Adelantos por descontar: ${usd(R.adelPend)}`);
+    const sIA=saldoIA(); if(sIA&&sIA.tieneCredito) L.push(`• Crédito de Claude IA para los asistentes: ${usd(sIA.saldo)} (estimado)`);
     L.push(''); L.push(`📄 *Pendiente por cobrar: ${usd(R.pend)}*`);
     L.push(`• Facturable ahora (con orden): ${usd(R.facturable)}`); L.push(`• Ejecutado sin orden de servicio: ${usd(R.sinOrdenEj)}`); L.push(`• Sin orden, por ejecutar (no incluido): ${usd(R.porEjecSin)}`);
     L.push(''); L.push(`🧭 *Posición: ${usd(R.posicion)}* (caja + inventario + pendiente por cobrar − nómina por pagar)`);
@@ -4208,7 +4266,7 @@ Responde solo con un objeto JSON:
     etapa, saldo, pagado, pagadoPropio, tieneOrden, pagoDia, horaExtraDe, factorDe, tarifaDe, sueldoSup, tipoDia, calcCorte, semanasPagadasSup, pagadoHastaDe, semanasDe, calcPrefill, reciboTrabajador, detalleDias,
     tasaOrdenLlegada, tasaParaBs, tasaSugerida, tasaSaldoBanco, saldoCuenta, inicioCaja, saldoIni, usdDe, movsAuto, todosMovs, calcBalance, buildBalance,
     estadoItem, detallesInv, materialesTrabajo, mermasPorSemana, valorInventario, bajoMinimo, buildInv,
-    costoTrabajo, generalesPorSemana, actividadPorSemana, repartoGenerales, buildCostos, datosResumen, textoResumen, buildShare, respaldoJSON,
+    costoTrabajo, generalesPorSemana, actividadPorSemana, repartoGenerales, buildCostos, datosResumen, textoResumen, buildShare, respaldoJSON, saldoIA, usoIA, lineaConsultaIA, textoUsoIA,
     inicioSemana, finSemana, sumarDias, today, parseNum, norm, parecido, listaClientes, listaUnidades, mapUnidad, clienteExacto, r2,
     TODOS_F, get cfgN(){ return cfgN; }, get gcfg(){ return gcfg; }, get icfg(){ return icfg; }, get docs(){ return docs; }, get trabs(){ return trabs; }, get movs(){ return movs; }, get invMovs(){ return invMovs; }, get items(){ return items; }, get cortes(){ return cortes; },
     set(o){ for(const [k,v] of Object.entries(o)){
