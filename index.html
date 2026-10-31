@@ -40,7 +40,43 @@ window.__standalone = true;
 (function(){
   const cfg = window.FIREBASE_CONFIG || {};
   let resolveDb; const dbReady = new Promise(r => { resolveDb = r; });
-  window.claude = { use: async n => n === 'db' ? dbReady : n === 'user' ? { can: async () => true } : null };
+
+  /* Asistente: la app pide window.claude.use('sample') y recibe este puente a la API de Claude (clave y modelo los pone la app en window.__ia desde Gastos → Ajustes). */
+  const IA_MODELO = 'claude-sonnet-5-5';
+  window.__ia = { clave: '', modelo: '' };
+  const b64 = blob => new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = () => no({ code: 'image_rejected' }); fr.readAsDataURL(blob); });
+  const parseJSON = txt => {
+    let s = String(txt || '').trim(); const m = s.match(/```(?:json)?\s*([\s\S]*?)```/i); if (m) s = m[1].trim();
+    try { return JSON.parse(s); } catch (_) {}
+    const a = s.search(/[{\[]/), b = Math.max(s.lastIndexOf('}'), s.lastIndexOf(']'));
+    if (a >= 0 && b > a) { try { return JSON.parse(s.slice(a, b + 1)); } catch (_) {} }
+    throw { code: 'invalid_json' };
+  };
+  const sample = {
+    limits: async () => ({ images: { maxCount: 20, mediaTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'], maxInputBytes: 4500000 } }),
+    json: async (prompt, opts) => {
+      opts = opts || {};
+      const clave = (window.__ia.clave || '').trim(); if (!clave) throw { code: 'sin_clave' };
+      const content = [];
+      for (const b of (opts.images || [])) content.push({ type: 'image', source: { type: 'base64', media_type: b.type || 'image/jpeg', data: await b64(b) } });
+      content.push({ type: 'text', text: String(prompt) });
+      const body = { model: (window.__ia.modelo || '').trim() || IA_MODELO, max_tokens: 8192, system: 'Responde únicamente con un objeto JSON válido: sin texto antes ni después, sin comentarios y sin cercas de código.', messages: [{ role: 'user', content }] };
+      let r;
+      try {
+        r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: opts.signal, headers: { 'content-type': 'application/json', 'x-api-key': clave, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, body: JSON.stringify(body) });
+      } catch (e) { if (e && e.name === 'AbortError') throw { code: 'cancelled' }; throw { code: 'sin_conexion', message: String(e && e.message || e) }; }
+      if (!r.ok) {
+        let j = null; try { j = await r.json(); } catch (_) {}
+        const msg = (j && j.error && j.error.message) || r.statusText || ('HTTP ' + r.status);
+        const code = r.status === 401 ? 'api_key' : r.status === 403 ? 'region' : r.status === 429 ? 'rate_limited' : r.status === 529 ? 'overloaded'
+          : r.status === 400 && /credit|billing/i.test(msg) ? 'sin_credito' : r.status === 400 && /too (long|large|many)|exceed|maximum/i.test(msg) ? 'prompt_too_large' : r.status === 400 && /image/i.test(msg) ? 'image_rejected' : 'api_error';
+        throw { code, message: msg, status: r.status };
+      }
+      const j = await r.json();
+      return parseJSON((j.content || []).filter(p => p.type === 'text').map(p => p.text).join(''));
+    }
+  };
+  window.claude = { use: async n => n === 'db' ? dbReady : n === 'user' ? { can: async () => true } : n === 'sample' ? sample : null };
   const ov = document.getElementById('login'), msg = document.getElementById('loginMsg'), btn = document.getElementById('loginBtn');
   const limpiar = o => JSON.parse(JSON.stringify(o));
   if (!cfg.apiKey || !cfg.projectId) { msg.textContent = 'Falta la configuración de Firebase: pega las claves de tu proyecto en firebase-config.js (ver README.md).'; btn.hidden = true; return; }
@@ -1687,16 +1723,28 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
       if(aiMode==='asis') renderAIAsis(res||{}); else if(aiMode==='trab') renderAITrab(res||{}); else if(aiMode==='gas') renderAIGas(res||{}); else renderAI(res||{});
     }catch(e){
       const code=e&&e.code;
-      $('#aiStat').textContent = code==='cancelled' ? 'Lectura detenida.'
-        : code==='not_granted'||code==='sampling_disabled' ? 'El asistente no tiene permiso en esta cuenta.'
-        : code==='rate_limited' ? 'Se alcanzó el límite de uso por ahora. Intenta más tarde.'
-        : code==='image_rejected' ? 'Una de las imágenes no se pudo leer. Prueba con otra foto.'
-        : code==='invalid_json' ? 'El asistente no devolvió una respuesta ordenada. Toca “Leer” otra vez.'
-        : code==='session_expired' ? 'Tu sesión de Claude venció. Vuelve a iniciar sesión.'
-        : code==='prompt_too_large' ? 'El material es demasiado largo. Envíalo por partes.'
-        : 'No se pudo completar la lectura. Intenta otra vez.';
+      $('#aiStat').textContent = msgIA(e);
       if(code==='not_granted'||code==='sampling_disabled') $('#btnAI').hidden=true;
     }finally{ $('#aiGo').disabled=false; $('#aiStop').hidden=true; aiCtl=null; }
+  }
+  /* Mensajes del asistente: los códigos de Claude (visor) y los de la API de Claude (versión independiente) */
+  function msgIA(e){
+    const code=e&&e.code;
+    return code==='cancelled' ? 'Lectura detenida.'
+      : code==='not_granted'||code==='sampling_disabled' ? 'El asistente no tiene permiso en esta cuenta.'
+      : code==='rate_limited' ? 'Se alcanzó el límite de uso por ahora. Intenta más tarde.'
+      : code==='image_rejected' ? 'Una de las imágenes no se pudo leer. Prueba con otra foto.'
+      : code==='invalid_json' ? 'El asistente no devolvió una respuesta ordenada. Toca “Leer” otra vez.'
+      : code==='session_expired' ? 'Tu sesión de Claude venció. Vuelve a iniciar sesión.'
+      : code==='prompt_too_large' ? 'El material es demasiado largo. Envíalo por partes.'
+      : code==='sin_clave' ? 'Para usar el asistente aquí, pon tu clave de la API de Claude en Gastos → Ajustes.'
+      : code==='api_key' ? 'La clave de la API de Claude no es válida. Revísala en Gastos → Ajustes.'
+      : code==='region' ? 'La API de Claude no da servicio desde esta región (o la cuenta no tiene acceso). El asistente no funciona aquí; lo demás sí.'
+      : code==='sin_credito' ? 'La cuenta de la API de Claude no tiene crédito. Recárgala en la Consola de Claude.'
+      : code==='overloaded' ? 'Claude está saturado en este momento. Intenta en un minuto.'
+      : code==='sin_conexion' ? 'No hay conexión con la API de Claude. Revisa la señal e inténtalo otra vez.'
+      : code==='api_error' ? 'La API de Claude respondió con un error'+(e&&e.message?': '+e.message:'.')
+      : 'No se pudo completar la lectura. Intenta otra vez.';
   }
   async function aplicarAI(){
     if(!coll||!canWrite) return;
@@ -2612,6 +2660,10 @@ Responde solo con un objeto JSON:
     catIngreso:['Aporte de socios','Préstamo recibido','Otros ingresos']
   };
   let gDb=null, gCfgRef=null, gcfg=JSON.parse(JSON.stringify(GCFG_DEF)), movs=[], gLoaded={m:false,c:false};
+  /* Fuera de Claude (versión independiente) el asistente usa la API de Claude con una clave propia, guardada en config/ia */
+  const IA_MODELO='claude-sonnet-5-5';
+  let iaCfg={clave:'', modelo:''};
+  function publicarIA(){ if(window.__ia) Object.assign(window.__ia, {clave:iaCfg.clave, modelo:iaCfg.modelo}); }
   let gView='mov', gSemana=null, mvEditId=null, mvTipo='gasto', balF={modo:'semana', semana:null, desde:'', hasta:'', partes:['general'], formato:'detallado', tasa:'', tasaModo:'propia'};
   const m$ = n => `$${nf.format(n)}`, mBs = n => `Bs. ${nf.format(n)}`;
   const cuentaDe = id => gcfg.cuentas.find(c=>c.id===id) || {id, nombre:id||'Sin cuenta', moneda:'USD'};
@@ -2752,6 +2804,10 @@ Responde solo con un objeto JSON:
       <div class="row-btns"><button type="button" class="btn sec" id="gExcel">Descargar respaldo en Excel</button><button type="button" class="btn sec" id="gJson">Descargar respaldo completo (JSON)</button></div>
       <div class="tip">El respaldo completo (JSON) sirve para restaurar la app tal cual, por ejemplo al pasarla a otra plataforma. Restaurar sobrescribe lo que tenga el mismo nombre y no borra lo demás.</div>
       <div class="row-btns"><label class="btn sec" style="cursor:pointer">Restaurar desde respaldo (JSON)<input type="file" id="gRestaurar" accept=".json,application/json" style="position:absolute;width:1px;height:1px;opacity:0"></label></div>
+      ${window.__standalone?`<div class="sech">Asistente de Claude</div>
+      <div class="tip">Fuera de Claude, el asistente trabaja con la API de Claude y una clave tuya (Consola de Claude → API keys). Se paga por uso con crédito prepagado, aparte del plan Max. Donde la API no tenga servicio, el asistente no responde y ya.</div>
+      <div class="cfg"><label class="f full">Clave de la API<input id="iaClave" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(($('#iaClave')||{}).value??iaCfg.clave)}" placeholder="sk-ant-…"></label><label class="f full">Modelo (opcional)<input id="iaModelo" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(($('#iaModelo')||{}).value??iaCfg.modelo)}" placeholder="${IA_MODELO}"></label></div>
+      <div class="row-btns"><button type="button" class="btn sec" id="iaProbar">Probar el asistente</button></div><div class="tip" id="iaEstado"></div>`:''}
       ${window.__cerrarSesion?`<div class="sech">Sesión</div><div class="row-btns"><button type="button" class="btn sec" id="gSalir">Cerrar sesión</button></div>`:''}
       <div class="err" id="gAjErr"></div>
       <div class="nsum"><div class="row-btns" style="margin-top:0"><button type="button" class="btn pri" id="gAjSave">Guardar ajustes</button></div></div>`;
@@ -2822,7 +2878,11 @@ Responde solo con un objeto JSON:
   }
   async function guardarGAj(){
     const n=leerGAj();
-    try{ await gCfgRef.set(n); gcfg=n; toast('Ajustes guardados'); renderGas(); }catch(err){ $('#gAjErr').textContent=errMsg(err); }
+    try{
+      await gCfgRef.set(n); gcfg=n;
+      if(window.__standalone && $('#iaClave')){ const ia={clave:$('#iaClave').value.trim(), modelo:($('#iaModelo')||{value:''}).value.trim()}; if(ia.clave!==iaCfg.clave||ia.modelo!==iaCfg.modelo){ await gDb.doc('config/ia').set(ia); iaCfg=ia; publicarIA(); } }
+      toast('Ajustes guardados'); renderGas();
+    }catch(err){ $('#gAjErr').textContent=errMsg(err); }
   }
 
   /* ---------- hoja de movimiento ---------- */
@@ -3085,6 +3145,7 @@ Responde solo con un objeto JSON:
     if(t.closest('#gAjSave')) return guardarGAj();
     if(t.closest('#gExcel')) return exportarExcel();
     if(t.closest('#gJson')) return descargarJSON();
+    if(t.closest('#iaProbar')) return probarIA();
     if(t.closest('#gSalir') && window.__cerrarSesion) return window.__cerrarSesion();
     const bm=t.closest('[data-bmodo]'); if(bm){ balF.modo=bm.dataset.bmodo; return renderGas(); }
     const bf=t.closest('[data-bfmt]'); if(bf){ balF.formato=bf.dataset.bfmt; return renderGas(); }
@@ -3125,6 +3186,18 @@ Responde solo con un objeto JSON:
     gDb=db; gCfgRef=db.doc('config/gastos');
     gCfgRef.onSnapshot(s=>{ const d=s.exists?s.data():null; gcfg = d ? {...JSON.parse(JSON.stringify(GCFG_DEF)), ...d, saldos:{...GCFG_DEF.saldos, ...(d.saldos||{})}} : JSON.parse(JSON.stringify(GCFG_DEF)); gLoaded.c=true; if(gView!=='aj') renderGas(); }, ()=>{ gLoaded.c=true; renderGas(); });
     db.collection('movimientos').onSnapshot(s=>{ movs=s.docs.map(d=>Object.assign({id:d.id}, d.data())); gLoaded.m=true; renderGas(); }, ()=>{ gLoaded.m=true; renderGas(); });
+    if(window.__standalone) db.doc('config/ia').onSnapshot(s=>{ const d=s.exists?(s.data()||{}):{}; iaCfg={clave:String(d.clave||'').trim(), modelo:String(d.modelo||'').trim()}; publicarIA(); if(gView==='aj'&&!$('#iaClave')) renderGas(); }, ()=>{});
+  }
+  /* Prueba de conexión con la API de Claude usando lo que está escrito en Ajustes (sin guardar) */
+  async function probarIA(){
+    const est=$('#iaEstado'); if(!est||!sampleFn) return;
+    const clave=($('#iaClave')||{}).value||'', modelo=(($('#iaModelo')||{}).value||'').trim();
+    if(!clave.trim()){ est.textContent='Pega primero la clave de la API.'; return; }
+    if(window.__ia) Object.assign(window.__ia, {clave:clave.trim(), modelo});
+    est.textContent='Probando…';
+    try{ const r=await sampleFn.json('Responde exactamente con este JSON y nada más: {"ok":true}', {cache:false}); est.textContent = r&&r.ok===true ? `Conectado. El asistente responde con ${modelo||IA_MODELO}. Toca “Guardar ajustes” para dejar la clave guardada.` : 'Respondió, pero no con lo esperado. Revisa el modelo.'; }
+    catch(e){ est.textContent=msgIA(e); }
+    finally{ publicarIA(); }
   }
 
   /* ---------- asistente para gastos ---------- */

@@ -52,7 +52,8 @@ Todo se hace desde el teléfono o la computadora, una sola vez. Son unos 15 minu
 
 ## Qué cambia respecto a la versión de Claude
 
-- No están los botones **"Cargar con asistente"** ni **"Responder al asistente"**: dependen del servicio de Anthropic.
+- Los asistentes ("Cargar con asistente", "Registrar con asistente", "Responder al asistente") trabajan con la **API de Claude** y una clave tuya. Se consigue en la Consola de Claude (API keys) y se paga por uso con crédito prepagado, aparte del plan Max. Pégala en **Gastos → Ajustes → Asistente de Claude**, toca **Probar el asistente** y luego **Guardar ajustes**. La clave queda en tu Firestore, protegida por las mismas reglas: quien tenga acceso a la app puede usarla.
+- Donde la API de Claude no tenga servicio, el asistente avisa y no responde; todo lo demás sigue funcionando.
 - Todo lo demás es igual: cobranzas, nómina, cortes, recibos, gastos, balance, costos, resumen y respaldos.
 - Desde que empieces a usar esta versión, usa solo esta. Si registras cosas en las dos, los datos se separan.
 - Respaldo: **Gastos → Ajustes → Descargar respaldo completo (JSON)** de vez en cuando; con ese archivo se restaura todo en cualquier momento.
