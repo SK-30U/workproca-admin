@@ -3724,7 +3724,7 @@ Responde solo con un objeto JSON:
     const old=invMovs.find(x=>x.id===imEditId);
     try{
       await iDb.collection('invMovs').doc(imEditId).delete();
-      if(old&&old.movId){ try{ await gDb.collection('movimientos').doc(old.movId).update({inventario:false, actualizado:new Date().toISOString()}); }catch(_){} }
+      if(old&&old.movId && !invMovs.some(m=>m.id!==old.id&&m.movId===old.movId)){ try{ await gDb.collection('movimientos').doc(old.movId).update({inventario:false, actualizado:new Date().toISOString()}); }catch(_){} }
       closeSheets(); toast('Movimiento eliminado'+(old&&old.movId?'; el gasto sigue en Gastos':''));
     }catch(e){ $('#imErr').textContent=errMsg(e); }
   }
@@ -3886,7 +3886,7 @@ Reglas:
 - Unidades: usa la del ítem del catálogo. Si el documento trae otra ("2 bombonas", "1 caja de 25 discos"), convierte solo cuando sea evidente y dilo en "motivo"; si no es evidente, deja la cantidad tal cual y ponlo en "dudas".
 - Costos siempre por unidad: en dólares en costo_unit_usd; si el precio viene en bolívares, ponlo tal cual en costo_unit_bs (y costo_unit_usd en 0). La app lo lleva a dólares con la tasa del día que Fran confirma, así que NUNCA pidas la tasa en "dudas"; pon "tasa" solo si el documento la trae. No inventes costos: si no aparece, 0.
 - En una factura, el total es la suma de los ítems: si no cuadra, revísalo antes de proponer.
-- Una entrada no es un gasto de dinero por sí sola: si el documento muestra que ya se pagó (recibo, comprobante, "pagué"), marca pagado=true y la cuenta ("banco" si fue en bolívares, "binance" si fue en USDT, "efectivo" si fue en dólares) para que Fran decida si registra también el gasto.
+- Una factura es UN solo gasto que cubre todas sus líneas: pon el mismo proveedor y el mismo número de factura (referencia) en todas las entradas de esa factura; la app las agrupa y registra un gasto por factura con el total. Marca pagado=true en esas entradas cuando el documento muestre que se pagó (factura, recibo, comprobante) o cuando Fran diga que la registre o que la pagó, con la cuenta ("banco" si fue en bolívares, "binance" si fue en USDT, "efectivo" si fue en dólares). Un presupuesto, cotización o lista de precios sin compra no va pagado.
 - Asocia cada salida al trabajo activo que corresponda por descripción, unidad (embarcación) u orden de servicio. Si no se dice para qué orden, déjala sin orden (consumo general) y no lo conviertas en duda.
 - Resuelve tú lo menor (tildes, mayúsculas, formato de números). En "dudas" pon solo lo que cambia la existencia o el costo: una cantidad ilegible, una unidad que no se puede saber, un ítem que podría ser cualquiera de dos. Cada duda: una frase corta con tu propuesta.
 ${REGLAS_COMUNES}
@@ -3934,7 +3934,15 @@ Responde solo con un objeto JSON:
     const ctaOpts=v=>gcfg.cuentas.map(c=>`<option value="${esc(c.id)}"${c.id===v?' selected':''}>${esc(c.nombre)}</option>`).join('');
     const hayEntradas=movsP.some(x=>x.tipo==='entrada'), hayBs=movsP.some(x=>x.tipo==='entrada'&&(num(x.costo_unit_bs)>0||num(x.costo_total_bs)>0));
     let h=(res.resumen?`<div class="sum">${esc(res.resumen)}</div>`:'');
-    if(hayEntradas) h+=`<div class="panel num" style="margin:0 0 10px"><label class="f">Tasa del día (Bs. por USD)<input id="aiTasaInv" inputmode="decimal" value="${num(res.tasa)>0?nfT.format(num(res.tasa)):ts?nfT.format(ts):''}" placeholder="0,00"></label><div class="tip" style="margin:6px 0 0">${hayBs?'Los costos que vienen en bolívares se llevan a dólares con esta tasa. ':''}Vale para todas las tarjetas; puedes cambiarla en una en particular. Si la dejas vacía, la app usa la tasa a la que entraron los bolívares del banco (si el pago sale de ahí) o la última registrada.</div></div>`;
+    /* Compras: una factura (mismo proveedor y número) es un solo gasto que cubre todas sus entradas */
+    const grupos=[]; const grpDe=x=>{ const k=norm(x.proveedor||'')+'|'+norm(x.referencia||''); let g=grupos.find(g=>g.k===k); if(!g){ g={k, proveedor:String(x.proveedor||'').trim(), referencia:String(x.referencia||'').trim(), pagado:false, cuenta:'binance', n:0}; grupos.push(g); } g.n++; if(x.pagado) g.pagado=true; if(['banco','binance','efectivo'].includes(x.cuenta)) g.cuenta=x.cuenta; return grupos.indexOf(g); };
+    const grpIdx=movsP.map(x=>x.tipo==='entrada'?grpDe(x):-1);
+    aiInv.grupos=grupos;
+    const tasaTxt=num(res.tasa)>0?nfT.format(num(res.tasa)):ts?nfT.format(ts):'';
+    if(hayEntradas) h+=`<div class="panel num" style="margin:0 0 10px"><label class="f">Tasa del día (Bs. por USD)<input id="aiTasaInv" inputmode="decimal" value="${tasaTxt}" placeholder="0,00"></label><div class="tip" style="margin:6px 0 0">${hayBs?'Los costos que vienen en bolívares se llevan a dólares con esta tasa. ':''}Vale para todas las tarjetas; puedes cambiarla en una en particular. Si la dejas vacía, la app usa la tasa a la que entraron los bolívares del banco (si el pago sale de ahí) o la última registrada.</div>
+      <div class="tip" style="border:0;margin:10px 0 0">Gasto de la compra</div>
+      ${grupos.map((g,gi)=>`<div class="act tr" style="margin-top:6px"><input type="checkbox" data-gchkc="${gi}"${g.pagado?' checked':''} aria-label="Registrar el gasto"><div style="min-width:0;flex:1"><b>${g.referencia?'Factura N° '+esc(g.referencia):'Sin número de factura'}${g.proveedor?' · '+esc(g.proveedor):''}</b><small>${g.n} ${g.n===1?'ítem':'ítems'} · total <b data-gtot="${gi}">USD 0,00</b> · se registra como un solo gasto en Gastos, enlazado a sus entradas</small>
+        <div class="g"><label>Cuenta del pago<select data-gc="${gi}" data-k="cuenta">${ctaOpts(g.cuenta)}</select></label><label>Tasa del pago (Bs./USD)<input data-gc="${gi}" data-k="tasa" inputmode="decimal" value="${tasaTxt}" placeholder="Solo si pagaste en bolívares"></label></div></div></div>`).join('')}</div>`;
     h+=huerfanos.map((n,i)=>`<div class="act tr"><input type="checkbox" data-ichk="n${i}" checked aria-label="Incluir"><div style="min-width:0;flex:1"><span class="tag">Ítem nuevo</span>
       <div class="g"><label style="grid-column:1/-1">Nombre<input data-in="${i}" data-k="nombre" value="${esc(n.nombre)}"></label><label>Categoría<select data-in="${i}" data-k="categoria">${catOpts(n.categoria)}</select></label><label>Unidad<select data-in="${i}" data-k="unidad">${uniOpts(UNIDADES.some(u=>u[0]===n.unidad)?n.unidad:'und')}</select></label><label>Mínimo<input data-in="${i}" data-k="minimo" inputmode="decimal" value="${num(n.minimo)>0?nq.format(num(n.minimo)):''}"></label></div>
       ${n.motivo?`<small>${esc(n.motivo)}</small>`:''}<small class="err" data-ierr="n${i}"></small></div></div>`).join('');
@@ -3958,7 +3966,7 @@ Responde solo con un objeto JSON:
           <label><span>${con?'Cantidad contada':'Cantidad'} (<span data-ul="${i}">${esc(uni(u))}</span>)</span><input data-im="${i}" data-k="cantidad" inputmode="decimal" value="${q?nq.format(q):''}"></label>
           ${ent?`<label>Costo por unidad (USD)<input data-im="${i}" data-k="costo" inputmode="decimal" value="${nf3(cu)}"${usdAuto?' data-auto="1"':''}></label><label>Costo por unidad (Bs.)<input data-im="${i}" data-k="costo_bs" inputmode="decimal" value="${nf3(cuBs)}"></label>
           <label>Tasa (Bs./USD)<input data-im="${i}" data-k="tasa" inputmode="decimal" value="${tasa>0?nfT.format(tasa):''}"${num(x.tasa)>0?' data-manual="1"':''}></label><label>Proveedor<input data-im="${i}" data-k="proveedor" value="${esc(x.proveedor||'')}"></label><label>N° factura o nota<input data-im="${i}" data-k="referencia" value="${esc(x.referencia||'')}"></label>
-          <label class="chkl"><input type="checkbox" data-im="${i}" data-k="gasto"${x.pagado?' checked':''}> Registrar también el gasto</label><label>Cuenta del pago<select data-im="${i}" data-k="cuenta">${ctaOpts(['banco','binance','efectivo'].includes(x.cuenta)?x.cuenta:'binance')}</select></label>`:''}
+          <input type="hidden" data-im="${i}" data-k="grupo" value="${grpIdx[i]}">`:''}
           ${sal||dev?`<label style="grid-column:1/-1">${dev?'Orden de la que regresa':'Orden o trabajo'}<select data-im="${i}" data-k="trabajo">${trabOpts(x.trabajo_id)}</select></label>`:''}
           ${sal?`<label style="grid-column:1/-1">Quién lo retiró<select data-im="${i}" data-k="quien">${quienOpts(x.quien_id)}</select></label>`:''}
           <label style="grid-column:1/-1">Nota<input data-im="${i}" data-k="nota" value="${esc(x.nota||'')}"></label>
@@ -3966,7 +3974,7 @@ Responde solo con un objeto JSON:
     }).join('');
     h+=(dudas.length?`<div class="dudas"><b>Revisa antes de guardar</b><ul>${dudas.map(q=>`<li>${esc(q)}</li>`).join('')}</ul></div>`:'');
     if(!huerfanos.length&&!movsP.length) h+='<div class="sum">No encontré movimientos de inventario en lo que enviaste.</div>';
-    $('#aiRes').innerHTML=h;
+    $('#aiRes').innerHTML=h; totalesCompraAI();
     $('#aiApplyRow').hidden=!(huerfanos.length||movsP.length) || !canWrite;
   }
   /* Tarjetas del inventario: costo en bolívares → dólares con la tasa; tasa del día para todas; campos del ítem nuevo según el ítem elegido */
@@ -3974,17 +3982,28 @@ Responde solo con un objeto JSON:
     const el=k=>document.querySelector(`[data-im="${i}"][data-k="${k}"]`); const usd=el('costo'), bs=el('costo_bs'), t=el('tasa'); if(!usd||!bs||!t) return;
     const b=parseNum(bs.value)||0, tt=parseNum(t.value)||0;
     if(b>0&&tt>0&&(usd.dataset.auto||!usd.value.trim())){ usd.value=nf.format(r2(b/tt)); usd.dataset.auto='1'; }
+    totalesCompraAI();
+  }
+  /* Total de cada factura: suma de las entradas marcadas con costo */
+  function totalesCompraAI(){
+    (aiInv.grupos||[]).forEach((g,gi)=>{ const el=document.querySelector(`[data-gtot="${gi}"]`); if(!el) return; let tot=0, sin=0;
+      document.querySelectorAll(`[data-k="grupo"][value="${gi}"]`).forEach(h=>{ const i=h.dataset.im, chk=document.querySelector(`[data-ichk="m${i}"]`); if(!chk||!chk.checked) return; const q=parseNum((document.querySelector(`[data-im="${i}"][data-k="cantidad"]`)||{}).value)||0, cu=parseNum((document.querySelector(`[data-im="${i}"][data-k="costo"]`)||{}).value)||0; if(q>0&&cu>0) tot+=q*cu; else sin++; });
+      el.textContent=usd(r2(tot))+(sin?` (${sin} sin costo, no entra)`:''); });
   }
   $('#aiRes').addEventListener('input', e=>{
     const t=e.target; if(aiMode!=='inv') return;
-    if(t.id==='aiTasaInv'){ document.querySelectorAll('#aiRes [data-k="tasa"]').forEach(x=>{ if(!x.dataset.manual){ x.value=t.value; recalcCostoAI(x.dataset.im); } }); return; }
+    if(t.id==='aiTasaInv'){ document.querySelectorAll('#aiRes [data-k="tasa"]').forEach(x=>{ if(!x.dataset.manual){ x.value=t.value; if(x.dataset.im!=null) recalcCostoAI(x.dataset.im); } }); return; }
+    if(t.dataset.gc!=null && t.dataset.k==='tasa'){ t.dataset.manual='1'; return; }
     if(t.dataset.im==null) return;
-    if(t.dataset.k==='costo') delete t.dataset.auto;
+    if(t.dataset.k==='costo'){ delete t.dataset.auto; totalesCompraAI(); }
+    if(t.dataset.k==='cantidad') totalesCompraAI();
     if(t.dataset.k==='tasa'){ t.dataset.manual='1'; recalcCostoAI(t.dataset.im); }
     if(t.dataset.k==='costo_bs') recalcCostoAI(t.dataset.im);
   });
   $('#aiRes').addEventListener('change', e=>{
-    const t=e.target; if(aiMode!=='inv'||t.dataset.im==null) return;
+    const t=e.target; if(aiMode!=='inv') return;
+    if(t.dataset.ichk!=null){ totalesCompraAI(); return; }
+    if(t.dataset.im==null) return;
     const i=t.dataset.im;
     if(t.dataset.k==='item'||t.dataset.k==='item_unidad'){
       const sel=document.querySelector(`[data-im="${i}"][data-k="item"]`), nuevo=String(sel.value).startsWith('nuevo:');
@@ -3998,6 +4017,8 @@ Responde solo con un objeto JSON:
     const vN=(i,k)=>{ const e=document.querySelector(`[data-in="${i}"][data-k="${k}"]`); return e?e.value.trim():''; };
     const vM=(i,k)=>{ const e=document.querySelector(`[data-im="${i}"][data-k="${k}"]`); return e ? (e.type==='checkbox'?e.checked:e.value.trim()) : ''; };
     const creados={};  // nombre normalizado → id del ítem creado en esta pasada
+    const gastoDe={};  // índice de grupo → id del gasto creado
+    const vG=(gi,k)=>{ const e=document.querySelector(`[data-gc="${gi}"][data-k="${k}"]`); return e?e.value.trim():''; };
     const crearItem=async(nombre, categoria, unidad, minimo)=>{
       const nm=norm(nombre); if(creados[nm]) return creados[nm];
       const ex=items.find(it=>norm(it.nombre)===nm); if(ex){ creados[nm]=ex.id; return ex.id; }
@@ -4029,8 +4050,21 @@ Responde solo con un objeto JSON:
           if(bs>0&&t>0&&(!(cu>0)||(usdEl&&usdEl.dataset.auto))) cu=bs/t;   // el valor exacto, no el redondeado de la casilla
           Object.assign(body,{costoUnit:cu>0?r4(cu):0, sinCosto:!(cu>0), proveedor:vM(i,'proveedor'), referencia:vM(i,'referencia'), movId:''});
           if(bs>0 && t>0) Object.assign(body,{costoUnitBs:r2(bs), tasa:t});
-          if(vM(i,'gasto') && cu>0){ const cta=cuentaDe(vM(i,'cuenta')), tot=r2(cu*q); if(cta.moneda==='VES'&&!(t>0)){ errEl.textContent='Escribe la tasa del pago en bolívares.'; conErr++; continue; }
-            const gref=gDb.collection('movimientos').doc(); await gref.set({tipo:'gasto', fecha:f, concepto:`Compra: ${it.nombre} (${cant(q,it.unidad)})`, categoria:CAT_GASTO_INV[it.categoria]||'Materiales', aCargo:'Empresa', cuenta:cta.id, monto:cta.moneda==='VES'?r2(tot*t):tot, tasa:cta.moneda==='VES'?t:0, trabajoId:'', referencia:body.referencia, inventario:true, creado:body.creado, actualizado:body.creado}); body.movId=gref.id; }
+          const gi=vM(i,'grupo'), gchk=document.querySelector(`[data-gchkc="${gi}"]`);
+          if(gchk && gchk.checked && cu>0){
+            if(gastoDe[gi]==null){
+              /* total de la factura: todas las entradas marcadas del grupo con costo (las sin costo no entran) */
+              let tot=0, cats={}; const g=(aiInv.grupos||[])[gi]||{};
+              document.querySelectorAll(`[data-k="grupo"][value="${gi}"]`).forEach(hh=>{ const j=hh.dataset.im, c2=document.querySelector(`[data-ichk="m${j}"]`); if(!c2||!c2.checked) return; const q2=parseNum(vM(j,'cantidad'))||0; let cu2=parseNum(vM(j,'costo'))||0; const bs2=parseNum(vM(j,'costo_bs'))||0, t2=parseNum(vM(j,'tasa'))||0; if(bs2>0&&(!(cu2>0)||((document.querySelector(`[data-im="${j}"][data-k="costo"]`)||{}).dataset||{}).auto)){ const tt2=t2>0?t2:tasaParaBs(f, bs2*q2, vG(gi,'cuenta')).tasa; if(tt2>0) cu2=bs2/tt2; } if(q2>0&&cu2>0){ tot+=q2*cu2; const sel=String(vM(j,'item')); const itj=itemDe(sel); const catj=itj?itj.categoria:vM(j,'item_categoria'); cats[catj]=(cats[catj]||0)+q2*cu2; } });
+              const cta=cuentaDe(vG(gi,'cuenta')); let gt=parseNum(vG(gi,'tasa'))||0; if(cta.moneda==='VES'&&!(gt>0)) gt=tasaParaBs(f, tot*(tasaSugerida()||1), 'banco').tasa;
+              if(cta.moneda==='VES'&&!(gt>0)){ errEl.textContent='Escribe la tasa del pago en bolívares en el gasto de la compra.'; conErr++; continue; }
+              const catTop=Object.entries(cats).sort((a,b)=>b[1]-a[1])[0]; const nIt=document.querySelectorAll(`[data-k="grupo"][value="${gi}"]`).length;
+              const gref=gDb.collection('movimientos').doc();
+              await gref.set({tipo:'gasto', fecha:f, concepto:`Compra${g.proveedor?' '+g.proveedor:' de materiales'}${g.referencia?' · factura N° '+g.referencia:''} (${nIt} ${nIt===1?'ítem':'ítems'})`, categoria:CAT_GASTO_INV[catTop?catTop[0]:'']||'Materiales', aCargo:'Empresa', cuenta:cta.id, monto:cta.moneda==='VES'?r2(tot*gt):r2(tot), tasa:cta.moneda==='VES'?gt:0, trabajoId:'', referencia:g.referencia||'', inventario:true, creado:body.creado, actualizado:body.creado});
+              gastoDe[gi]=gref.id;
+            }
+            body.movId=gastoDe[gi];
+          }
         } else if(x.tipo==='salida'||x.tipo==='devolucion'){ body.trabajoId=vM(i,'trabajo')||''; if(x.tipo==='salida'){ body.quienId=vM(i,'quien')||''; const ex=estadoItem(itemId).existencia; if(q>ex+0.0005){ errEl.textContent=`Solo hay ${cant(ex,it.unidad)}; registra primero la entrada o un conteo.`; conErr++; continue; } } }
         await iDb.collection('invMovs').doc().set(body); ok++; errEl.textContent=''; chk.checked=false; chk.closest('.act').style.opacity='.5';
       }catch(e){ errEl.textContent=errMsg(e); conErr++; }
