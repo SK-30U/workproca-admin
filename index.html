@@ -760,7 +760,7 @@ textarea.share{min-height:38vh}
       <label class="f full" id="mvCatL">Categoría<select id="mvCat"></select></label>
       <label class="f full" id="mvFactTrabL" hidden>Trabajo facturado<select id="mvFactTrab"></select></label>
       <label class="f full" id="mvModoL" hidden>Modalidad de pago<select id="mvModo"><option value="banco">Bolívares (banco)</option><option value="binance">Binance (USDT)</option><option value="efectivo">Efectivo (dólares)</option></select></label>
-      <label class="f" id="mvFactNumL" hidden>Número de factura<input id="mvFactNum" inputmode="numeric"></label>
+      <label class="f" id="mvFactNumL" hidden>N° de factura (vacío si es adelanto)<input id="mvFactNum" inputmode="numeric"></label>
       <label class="f full" id="mvConceptoL">Concepto<input id="mvConcepto" autocomplete="off"></label>
       <label class="f" id="mvCuentaL">Cuenta<select id="mvCuenta"></select></label>
       <label class="f" id="mvMontoL"><span id="mvMontoLbl">Monto</span><input id="mvMonto" inputmode="decimal" placeholder="0,00"></label>
@@ -1180,7 +1180,7 @@ textarea.share{min-height:38vh}
       return `<button class="card" type="button" data-id="${esc(d.id)}"><div class="body">
         <div class="r1"><div class="desc">${esc(d.descripcion)}${d.unidad?' · '+esc(d.unidad):''}</div><div class="money num">${usdHtml(num(c.monto))}</div></div>
         <div class="meta num">${meta.map(m=>`<span>${m}</span>`).join('')}</div>
-        <div class="r3"><span class="pill ${completo?'co':'lf'}">${completo?'Cobrado completo':'Abono parcial'}</span>${completo?'':`<span class="num">Quedan ${usd(saldo(d))} por cobrar</span>`}</div>
+        <div class="r3"><span class="pill ${completo?'co':d.ejecutado?'lf':'pe'}">${completo?'Cobrado completo':d.ejecutado?'Abono parcial':'Adelanto'}</span>${completo?'':`<span class="num">Quedan ${usd(saldo(d))} por cobrar</span>`}</div>
       </div></button>`; }).join('')}</div></section>`;
   }
   function renderTabs(){
@@ -2869,7 +2869,7 @@ Responde solo con un objeto JSON:
     return `Gastado: ${usdF(s.gastado)} en ${s.llamadas} ${s.llamadas===1?'consulta':'consultas'}${s.ultimo?` (última ${fechaHora(s.ultimo)}, ${usdF(s.ultimoCosto)})`:''}. ${s.tieneCredito?`Saldo estimado: ${usd(s.saldo)}.`:'Registra el crédito comprado para ver el saldo estimado.'} Estimado a precios de lista; el saldo exacto está en la Consola de Claude.`;
   }
   function pintarUsoIA(){ const e=$('#iaUso'); if(e) e.textContent=textoUsoIA(); }
-  let gView='mov', gSemana=null, mvEditId=null, mvTipo='gasto', balF={modo:'semana', semana:null, desde:'', hasta:'', partes:['general'], formato:'detallado', tasa:'', tasaModo:'propia'};
+  let gView='mov', gSemana=null, mvEditId=null, mvAplicando=false, mvTipo='gasto', balF={modo:'semana', semana:null, desde:'', hasta:'', partes:['general'], formato:'detallado', tasa:'', tasaModo:'propia'};
   const m$ = n => `$${nf.format(n)}`, mBs = n => `Bs. ${nf.format(n)}`;
   const cuentaDe = id => gcfg.cuentas.find(c=>c.id===id) || {id, nombre:id||'Sin cuenta', moneda:'USD'};
   const enMoneda = (n, mon) => mon==='VES' ? mBs(n) : m$(n);
@@ -3115,7 +3115,7 @@ Responde solo con un objeto JSON:
   }
   function fillCats(sel){
     const ls=catsPara(mvTipo, $('#mvACargo').value);
-    $('#mvCat').innerHTML=ls.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    $('#mvCat').innerHTML=ls.map(c=>`<option value="${esc(c)}">${c===COBRO_FACT?'Pago de un trabajo (factura, abono o adelanto)':esc(c)}</option>`).join('');
     if(sel && !ls.includes(sel)) $('#mvCat').insertAdjacentHTML('afterbegin', `<option value="${esc(sel)}">${esc(sel)}</option>`);
     if(sel) $('#mvCat').value=sel;
   }
@@ -3163,7 +3163,7 @@ Responde solo con un objeto JSON:
     $('#mvConv').innerHTML=txt;
   }
   function openMov(tipo, id){
-    const m=id?movs.find(x=>x.id===id):null; mvEditId=id||null; mvTipo=m?m.tipo:tipo;
+    const m=id?movs.find(x=>x.id===id):null; mvEditId=id||null; mvAplicando=false; mvTipo=m?m.tipo:tipo;
     fillMvSelects();
     $('#mvTitle').textContent = m ? 'Editar movimiento' : mvTipo==='gasto'?'Nuevo gasto':mvTipo==='ingreso'?'Nuevo ingreso':'Cambio entre cuentas';
     $('#mvFecha').value=m?m.fecha:today(); $('#mvACargo').value=m&&m.aCargo||'Empresa';
@@ -3396,7 +3396,7 @@ Responde solo con un objeto JSON:
   $('#mvCat').addEventListener('change', ()=>{ const antes=$('#mvMontoLbl').textContent.includes('cobrado'); if(antes!==esCobroFact()) $('#mvMonto').value=''; syncMvTipo(); });
   $('#mvModo').addEventListener('change', syncMvMoneda);
   $('#mvAplicar').addEventListener('click', ()=>{
-    const m=movs.find(x=>x.id===mvEditId); if(!m) return;
+    const m=movs.find(x=>x.id===mvEditId); if(!m) return; mvAplicando=true;
     const md=['banco','binance','efectivo'].includes(m.cuenta)?m.cuenta:'banco', enBs=cuentaDe(m.cuenta).moneda==='VES', t=num(m.tasa);
     const usdM = enBs ? (t>0 ? r2(num(m.monto)/t) : 0) : r2(num(m.monto));
     fillCats(COBRO_FACT); $('#mvModo').value=md; $('#mvMonto').value = usdM>0 ? nf.format(usdM) : ''; $('#mvTasa').value = t>0 ? nfT.format(t) : ''; $('#mvTasa').dataset.manual='1';
@@ -3407,7 +3407,7 @@ Responde solo con un objeto JSON:
     $('#mvAplicar').hidden=true; $('#mvErr').textContent='';
     $('#mvConv').innerHTML=($('#mvConv').innerHTML?$('#mvConv').innerHTML+'<br>':'')+`Elige la orden y toca Guardar: este ingreso pasa a ser un pago de ese trabajo en Cobranzas y deja de estar suelto aquí (la caja no lo cuenta dos veces).`;
   });
-  $('#mvFactTrab').addEventListener('change', ()=>{ const d=docs.find(x=>x.id===$('#mvFactTrab').value); if(d) $('#mvMonto').value=nf.format(saldo(d)); renderMvConv(); });
+  $('#mvFactTrab').addEventListener('change', ()=>{ const d=docs.find(x=>x.id===$('#mvFactTrab').value); if(d && !mvAplicando) $('#mvMonto').value=nf.format(saldo(d)); renderMvConv(); });
   ['#mvCuenta','#mvOrig','#mvDest'].forEach(s=>$(s).addEventListener('change', ()=>{ delete $('#mvDestMonto').dataset.manual; syncMvMoneda(); }));
   ['#mvMonto','#mvOrigMonto'].forEach(s=>$(s).addEventListener('input', renderMvConv));
   $('#mvTasa').addEventListener('input', ()=>{ $('#mvTasa').dataset.manual='1'; renderMvConv(); });
