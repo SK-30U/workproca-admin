@@ -2859,8 +2859,8 @@ Responde solo con un objeto JSON:
     }catch(e){ $('#gAjErr').textContent=`Se restauraron ${ok} y falló el resto: ${errMsg(e)}`; }
   }
   /* Respaldo completo en Excel, una hoja por tipo de dato */
-  async function exportarExcel(){
-    const btn=$('#gExcel'); if(btn){ btn.disabled=true; btn.textContent='Preparando…'; }
+  async function exportarExcel(btn){
+    btn=btn||$('#gExcel'); const lbl=btn?btn.textContent:''; if(btn){ btn.disabled=true; btn.textContent='Preparando…'; }
     try{
       await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
       const X=window.XLSX, wb=X.utils.book_new(), siNo=v=>v?'Sí':'No';
@@ -2877,7 +2877,7 @@ Responde solo con un objeto JSON:
       const bin=X.write(wb, {bookType:'xlsx', type:'array'});
       if(await guardarArchivo(`Respaldo Workproca ${today()}.xlsx`, new Blob([bin]))) toast('Respaldo descargado');
     }catch(e){ toast('No se pudo generar el respaldo. Revisa la conexión e inténtalo otra vez.'); }
-    finally{ if(btn){ btn.disabled=false; btn.textContent='Descargar respaldo en Excel'; } }
+    finally{ if(btn){ btn.disabled=false; btn.textContent=lbl; } }
   }
   function leerGAj(){
     const n=JSON.parse(JSON.stringify(gcfg));
@@ -3152,7 +3152,7 @@ Responde solo con un objeto JSON:
     const gd=t.closest('[data-gdel]'); if(gd){ const [k,i]=gd.dataset.gdel.split('|'); gcfg={...leerGAj()}; gcfg[k]=(gcfg[k]||[]).filter((_,j)=>j!==+i); renderGas(); return; }
     const ga=t.closest('[data-gadd]'); if(ga){ const k=ga.dataset.gadd; const inp=document.querySelector(`[data-gnew="${k}"]`); const v=(inp.value||'').trim(); if(!v) return; gcfg={...leerGAj()}; if(!(gcfg[k]||[]).some(x=>norm(x)===norm(v))) gcfg[k]=[...(gcfg[k]||[]), v]; renderGas(); toast('Agregada; toca “Guardar ajustes”'); return; }
     if(t.closest('#gAjSave')) return guardarGAj();
-    if(t.closest('#gExcel')) return exportarExcel();
+    if(t.closest('#gExcel')) return exportarExcel(t.closest('#gExcel'));
     if(t.closest('#gJson')) return descargarJSON();
     if(t.closest('#iaProbar')) return probarIA();
     if(t.closest('#gSalir') && window.__cerrarSesion) return window.__cerrarSesion();
@@ -3328,6 +3328,7 @@ Responde solo con un objeto JSON:
     const perLbl = resF.periodo==='mes' ? `Del 01/${R.hoy.slice(5,7)} al ${fdate(R.hoy)}` : `Semana del ${fdate(R.per[0])} al ${fdate(R.per[1])}`;
     const sinSaldos=!gcfg.cuentas.some(c=>((gcfg.saldos||{})[c.id]||{}).fecha);
     el.innerHTML = `
+      <div class="row-btns" style="margin-top:12px"><button type="button" class="btn sec" id="rExcel">Exportar todo a Excel</button><button type="button" class="btn sec" id="rCopy">Copiar resumen</button></div>
       ${sinSaldos?`<div class="lock" style="margin-top:14px">Las cuentas arrancan en cero el ${fdate(inicioCaja())} porque no tienen saldo inicial: la caja solo muestra los movimientos desde esa fecha. Pon el saldo real en <button type="button" class="lnk" id="rIrAj">Gastos → Ajustes</button>.</div>`:''}
       ${card('Caja hoy', R.disponible, `Bolívares a ${nfT.format(R.tasaBs||0)} Bs/$, la tasa a la que entraron`,
         gcfg.cuentas.map(c=>fila(c.nombre, 0, {raw: c.moneda==='VES' ? `${bs(R.sal[c.id]||0)}${R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''}` : usdNeg(R.sal[c.id]||0), neg:(R.sal[c.id]||0)<0})).join('')
@@ -3356,7 +3357,6 @@ Responde solo con un objeto JSON:
           ${fila('Margen esperado al cobrar todo', R.montoTot-R.costoTot, {neg:R.montoTot-R.costoTot<0, raw:usd(r2(R.montoTot-R.costoTot))+(R.montoTot>0?` (${nf.format(r2((R.montoTot-R.costoTot)/R.montoTot*100)).replace(/,00$/,'')} %)`:'')})}
           ${R.porRecuperar>0?fila('Gastado y aún no cobrado', R.porRecuperar, {extra:'Órdenes con más costo que cobros: lo están financiando los cobros de otras'}):''}
         </div></div>
-      <div class="row-btns"><button type="button" class="btn pri" id="rCopy">Copiar resumen</button></div>
       <div style="height:24px"></div>`;
   }
   function textoResumen(){
@@ -3381,6 +3381,7 @@ Responde solo con un objeto JSON:
     const b=e.target.closest('[data-rper]'); if(b){ resF.periodo=b.dataset.rper; return renderRes(); }
     if(e.target.closest('#rIrAj')){ gView='aj'; setModulo('gas'); return; }
     if(e.target.closest('#rCopy')) return copyPlain(textoResumen(), 'Resumen copiado. Pégalo en WhatsApp', 'Resumen general');
+    if(e.target.closest('#rExcel')) return exportarExcel(e.target.closest('#rExcel'));
   });
 
   render();
