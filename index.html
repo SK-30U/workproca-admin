@@ -4100,7 +4100,7 @@ Responde solo con un objeto JSON:
     const porRecuperar=r2(sum(cs,x=>x.c.porRecuperar)), invValor=valorInventario(), invBajos=itemsActivos().filter(bajoMinimo).length;
     return {tasa, tasaBs, hoy, sal, disponible, invValor, invBajos, lf, po, so, ps, facturable, sinOrdenEj, pend, porEjecSin, nomPend, adelPend, per, ing, gEmp, gPapa, gFran, costoTot, cobTot, montoTot, cs, porRecuperar, posicion:r2(disponible+invValor+pend-nomPend), sinRepartir:rep.sinRepartir};
   }
-  const usdNeg = v => v<0 ? '− '+usd(-v) : usd(v);
+  const usdNeg = v => v<0 ? '− '+usd(-v) : usd(v), bsNeg = v => v<0 ? '− '+bs(-v) : bs(v);
   function renderRes(){
     if(modulo!=='res') return;
     const el=$('#rMain');
@@ -4114,7 +4114,7 @@ Responde solo con un objeto JSON:
       <div class="row-btns" style="margin-top:12px"><button type="button" class="btn sec" id="rExcel">Exportar todo a Excel</button><button type="button" class="btn sec" id="rCopy">Copiar resumen</button></div>
       ${sinSaldos?`<div class="lock" style="margin-top:14px">Las cuentas arrancan en cero el ${fdate(inicioCaja())} porque no tienen saldo inicial: la caja solo muestra los movimientos desde esa fecha. Pon el saldo real en <button type="button" class="lnk" id="rIrAj">Gastos → Ajustes</button>.</div>`:''}
       ${card('Caja hoy', R.disponible, `Bolívares a ${nfT.format(R.tasaBs||0)} Bs/$, la tasa a la que entraron`,
-        gcfg.cuentas.map(c=>fila(c.nombre, 0, {raw: c.moneda==='VES' ? `${bs(R.sal[c.id]||0)}${R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''}` : usdNeg(R.sal[c.id]||0), neg:(R.sal[c.id]||0)<0})).join('')
+        gcfg.cuentas.map(c=>fila(c.nombre, 0, {raw: c.moneda==='VES' ? `${bsNeg(R.sal[c.id]||0)}${R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''}` : usdNeg(R.sal[c.id]||0), neg:(R.sal[c.id]||0)<0})).join('')
         + fila('Nómina por pagar hoy', R.nomPend, {neg:R.nomPend>0, raw:R.nomPend>0?'− '+usd(R.nomPend):usd(0), extra:R.nomPend>0?'Lo trabajado desde el último corte, más supervisores':'Nada pendiente desde el último corte'})
         + (R.adelPend>0?fila('Adelantos por descontar', R.adelPend):''))}
       ${card('Pendiente por cobrar', R.pend, 'Ejecutado o con orden de servicio',
@@ -4146,7 +4146,7 @@ Responde solo con un objeto JSON:
   function textoResumen(){
     const R=datosResumen(), L=['*WORKPROCA, Trabajos Profesionales C.A.*', `*Resumen general · ${fdate(R.hoy)}*`, ''];
     L.push(`💼 *Caja hoy: ${usd(R.disponible)}*`);
-    gcfg.cuentas.forEach(c=>L.push(`• ${c.nombre}: ${c.moneda==='VES'?bs(R.sal[c.id]||0)+(R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''):usdNeg(R.sal[c.id]||0)}`));
+    gcfg.cuentas.forEach(c=>L.push(`• ${c.nombre}: ${c.moneda==='VES'?bsNeg(R.sal[c.id]||0)+(R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''):usdNeg(R.sal[c.id]||0)}`));
     if(R.nomPend>0) L.push(`• Nómina por pagar hoy: − ${usd(R.nomPend)}`);
     if(R.adelPend>0) L.push(`• Adelantos por descontar: ${usd(R.adelPend)}`);
     L.push(''); L.push(`📄 *Pendiente por cobrar: ${usd(R.pend)}*`);
@@ -4202,6 +4202,20 @@ Responde solo con un objeto JSON:
       }
     }catch(_){}
   })();
+
+  /* Gancho para la batería de pruebas: solo existe si la página se abre con window.__pruebas (nunca en uso normal) */
+  if(window.__pruebas) window.__api={
+    etapa, saldo, pagado, pagadoPropio, tieneOrden, pagoDia, horaExtraDe, factorDe, tarifaDe, sueldoSup, tipoDia, calcCorte, semanasPagadasSup, pagadoHastaDe, semanasDe, calcPrefill, reciboTrabajador, detalleDias,
+    tasaOrdenLlegada, tasaParaBs, tasaSugerida, tasaSaldoBanco, saldoCuenta, inicioCaja, saldoIni, usdDe, movsAuto, todosMovs, calcBalance, buildBalance,
+    estadoItem, detallesInv, materialesTrabajo, mermasPorSemana, valorInventario, bajoMinimo, buildInv,
+    costoTrabajo, generalesPorSemana, actividadPorSemana, repartoGenerales, buildCostos, datosResumen, textoResumen, buildShare, respaldoJSON,
+    inicioSemana, finSemana, sumarDias, today, parseNum, norm, parecido, listaClientes, listaUnidades, mapUnidad, clienteExacto, r2,
+    TODOS_F, get cfgN(){ return cfgN; }, get gcfg(){ return gcfg; }, get icfg(){ return icfg; }, get docs(){ return docs; }, get trabs(){ return trabs; }, get movs(){ return movs; }, get invMovs(){ return invMovs; }, get items(){ return items; }, get cortes(){ return cortes; },
+    set(o){ for(const [k,v] of Object.entries(o)){
+      if(k==='docs') docs=v; else if(k==='trabs') trabs=v; else if(k==='asis') asis=v; else if(k==='adels') adels=v; else if(k==='cortes') cortes=v; else if(k==='movs') movs=v;
+      else if(k==='items') items=v; else if(k==='invMovs') invMovs=v; else if(k==='activos') activos=v; else if(k==='cfgN') cfgN=v; else if(k==='gcfg') gcfg=v; else if(k==='icfg') icfg=v;
+      else if(k==='corteF') corteF=v; else if(k==='costF') Object.assign(costF,v); else if(k==='invRep') Object.assign(invRep,v); else if(k==='balF') Object.assign(balF,v); else if(k==='resF') Object.assign(resF,v); else if(k==='ecF') Object.assign(ecF,v); else if(k==='cliente') cliente=v; } }
+  };
 })();
 </script>
 
