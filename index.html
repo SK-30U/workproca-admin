@@ -2756,6 +2756,11 @@ Responde solo con un objeto JSON:
     if(!(gLoaded.m&&gLoaded.c&&nLoaded.c)){ el.innerHTML=`<div class="empty"><b>Cargando gastos…</b>Movimientos, cuentas y balance.</div>`; return; }
     if(gView==='mov') renderMov(el); else if(gView==='bal') renderBal(el); else renderGAj(el);
   }
+  /* Tasa de los bolívares que quedan en el banco: la de los lotes a los que entraron (orden de llegada), no la última tasa escrita en cualquier gasto */
+  function tasaSaldoBanco(hasta){
+    const sal=saldoCuenta('banco', hasta||today()); if(!(sal>0)) return tasaSugerida();
+    const o=tasaOrdenLlegada(sumarDias(hasta||today(),1), sal); return o.tasa>0 ? o.tasa : tasaSugerida();
+  }
   function tasaSugerida(){ const ms=movs.filter(m=>num(m.tasa)>0).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))); if(ms[0]) return num(ms[0].tasa); const u=ultimoCorte(); if(u&&num(u.tasa)>0) return num(u.tasa); const ut=ultimaTasa(); return ut?ut.tasa:0; }
 
   function renderMov(el){
@@ -2767,9 +2772,9 @@ Responde solo con un objeto JSON:
     const porAc=ac=>sum(gas.filter(m=>(m.aCargo||'Empresa')===ac),m=>usdDe(m,tasa));
     el.innerHTML = `
       ${sinSaldos?`<div class="lock" style="margin-top:14px">Las cuentas arrancan en cero el ${fdate(inicioCaja())}; los cobros anteriores no cuentan. Para que el disponible sea real, pon el saldo de hoy de cada cuenta en <button type="button" class="lnk" id="gIrAj">Ajustes</button>.</div>`:''}
-      ${(()=>{ const sal={}; gcfg.cuentas.forEach(c=>sal[c.id]=saldoCuenta(c.id,hoy)); const tot=totalUsdCuentas(sal,tasa);
+      ${(()=>{ const sal={}; gcfg.cuentas.forEach(c=>sal[c.id]=saldoCuenta(c.id,hoy)); const tasaB=tasaSaldoBanco(hoy); const tot=totalUsdCuentas(sal,tasaB);
         return `<div class="hero"><div class="lbl">Disponible hoy</div><div class="big num"><small>USD</small>${nf.format(r2(tot))}</div>
-          <div class="brk num" style="margin-top:8px">${gcfg.cuentas.map(c=>`<div><span>${esc(c.nombre)}</span><b>${c.moneda==='VES'?mBs(sal[c.id])+(tasa?' = '+m$(r2(sal[c.id]/tasa)):''):m$(sal[c.id])}</b></div>`).join('')}</div>
+          <div class="brk num" style="margin-top:8px">${gcfg.cuentas.map(c=>`<div><span>${esc(c.nombre)}</span><b>${c.moneda==='VES'?mBs(sal[c.id])+(tasaB?' = '+m$(r2(sal[c.id]/tasaB)):''):m$(sal[c.id])}</b></div>`).join('')}</div>
           ${tasa?`<div class="tip">Bolívares llevados a dólares a ${nfT.format(tasa)}, la última tasa usada.</div>`:''}</div>`; })()}
       <div class="row-btns">
         <button type="button" class="btn pri" data-nuevo="gasto">+ Gasto</button>
@@ -3296,8 +3301,8 @@ Responde solo con un objeto JSON:
      ===================================================================== */
   let resF={periodo:'semana'};
   function datosResumen(){
-    const tasa=tasaSugerida(), hoy=today();
-    const sal={}; gcfg.cuentas.forEach(c=>sal[c.id]=saldoCuenta(c.id,hoy)); const disponible=r2(totalUsdCuentas(sal,tasa));
+    const tasa=tasaSugerida(), hoy=today(), tasaBs=tasaSaldoBanco(hoy);
+    const sal={}; gcfg.cuentas.forEach(c=>sal[c.id]=saldoCuenta(c.id,hoy)); const disponible=r2(totalUsdCuentas(sal,tasaBs));
     const lf=docs.filter(d=>etapa(d)==='listo'), po=docs.filter(d=>etapa(d)==='porEjecutar'&&tieneOrden(d)), so=docs.filter(d=>etapa(d)==='sinOrden'), ps=docs.filter(d=>etapa(d)==='porEjecutar'&&!tieneOrden(d));
     const facturable=r2(sum(lf,saldo)+sum(po,saldo)), sinOrdenEj=r2(sum(so,saldo)), pend=r2(facturable+sinOrdenEj), porEjecSin=r2(sum(ps,saldo));
     const nomPend = r2(sum(calcCorte(hoy, TODOS_F).lineas,l=>Math.max(0,l.totalUsd)));
@@ -3308,7 +3313,7 @@ Responde solo con un objeto JSON:
     const rep=repartoGenerales(costF.reparto), cs=docs.map(d=>({d,c:costoTrabajo(d,rep.porTrabajo)})).filter(x=>x.c.costo>0);
     const costoTot=r2(sum(cs,x=>x.c.costo)), cobTot=r2(sum(docs,pagado)), montoTot=r2(sum(docs,d=>num(d.monto)));
     const porRecuperar=r2(sum(cs,x=>x.c.porRecuperar));
-    return {tasa, hoy, sal, disponible, lf, po, so, ps, facturable, sinOrdenEj, pend, porEjecSin, nomPend, adelPend, per, ing, gEmp, gPapa, gFran, costoTot, cobTot, montoTot, cs, porRecuperar, posicion:r2(disponible+pend-nomPend), sinRepartir:rep.sinRepartir};
+    return {tasa, tasaBs, hoy, sal, disponible, lf, po, so, ps, facturable, sinOrdenEj, pend, porEjecSin, nomPend, adelPend, per, ing, gEmp, gPapa, gFran, costoTot, cobTot, montoTot, cs, porRecuperar, posicion:r2(disponible+pend-nomPend), sinRepartir:rep.sinRepartir};
   }
   const usdNeg = v => v<0 ? '− '+usd(-v) : usd(v);
   function renderRes(){
@@ -3322,8 +3327,8 @@ Responde solo con un objeto JSON:
     const sinSaldos=!gcfg.cuentas.some(c=>((gcfg.saldos||{})[c.id]||{}).fecha);
     el.innerHTML = `
       ${sinSaldos?`<div class="lock" style="margin-top:14px">Las cuentas arrancan en cero el ${fdate(inicioCaja())} porque no tienen saldo inicial: la caja solo muestra los movimientos desde esa fecha. Pon el saldo real en <button type="button" class="lnk" id="rIrAj">Gastos → Ajustes</button>.</div>`:''}
-      ${card('Caja hoy', R.disponible, `Bolívares a ${nfT.format(R.tasa||0)} Bs/$`,
-        gcfg.cuentas.map(c=>fila(c.nombre, 0, {raw: c.moneda==='VES' ? `${bs(R.sal[c.id]||0)}${R.tasa?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasa)):''}` : usdNeg(R.sal[c.id]||0), neg:(R.sal[c.id]||0)<0})).join('')
+      ${card('Caja hoy', R.disponible, `Bolívares a ${nfT.format(R.tasaBs||0)} Bs/$, la tasa a la que entraron`,
+        gcfg.cuentas.map(c=>fila(c.nombre, 0, {raw: c.moneda==='VES' ? `${bs(R.sal[c.id]||0)}${R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''}` : usdNeg(R.sal[c.id]||0), neg:(R.sal[c.id]||0)<0})).join('')
         + fila('Nómina por pagar hoy', R.nomPend, {neg:R.nomPend>0, raw:R.nomPend>0?'− '+usd(R.nomPend):usd(0), extra:R.nomPend>0?'Lo trabajado desde el último corte, más supervisores':'Nada pendiente desde el último corte'})
         + (R.adelPend>0?fila('Adelantos por descontar', R.adelPend):''))}
       ${card('Pendiente por cobrar', R.pend, 'Ejecutado o con orden de servicio',
@@ -3355,7 +3360,7 @@ Responde solo con un objeto JSON:
   function textoResumen(){
     const R=datosResumen(), L=['*WORKPROCA, Trabajos Profesionales C.A.*', `*Resumen general · ${fdate(R.hoy)}*`, ''];
     L.push(`💼 *Caja hoy: ${usd(R.disponible)}*`);
-    gcfg.cuentas.forEach(c=>L.push(`• ${c.nombre}: ${c.moneda==='VES'?bs(R.sal[c.id]||0)+(R.tasa?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasa)):''):usdNeg(R.sal[c.id]||0)}`));
+    gcfg.cuentas.forEach(c=>L.push(`• ${c.nombre}: ${c.moneda==='VES'?bs(R.sal[c.id]||0)+(R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''):usdNeg(R.sal[c.id]||0)}`));
     if(R.nomPend>0) L.push(`• Nómina por pagar hoy: − ${usd(R.nomPend)}`);
     if(R.adelPend>0) L.push(`• Adelantos por descontar: ${usd(R.adelPend)}`);
     L.push(''); L.push(`📄 *Pendiente por cobrar: ${usd(R.pend)}*`);
