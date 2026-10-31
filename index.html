@@ -1429,6 +1429,7 @@ textarea.share{min-height:38vh}
   $('#ecFiltros').addEventListener('click', e=>{
     const ir=e.target.closest('[data-ir]'); if(ir){ invRep.tipo=ir.dataset.ir; renderInvFiltros(); $('#shareText').value=buildInv(); return; }
     const ip=e.target.closest('[data-iper]'); if(ip){ invRep.periodo=ip.dataset.iper; renderInvFiltros(); $('#shareText').value=buildInv(); return; }
+    const im=e.target.closest('[data-imonr]'); if(im){ iMon=im.dataset.imonr; renderInvFiltros(); $('#shareText').value=buildInv(); return; }
     const cb=e.target.closest('[data-cfmt]'); if(cb){ costF.formato=cb.dataset.cfmt; renderCostFiltros(); $('#shareText').value=buildCostos(); return; }
     const cr=e.target.closest('[data-crep]'); if(cr){ costF.reparto=cr.dataset.crep; renderCostFiltros(); $('#shareText').value=buildCostos(); return; }
     const b=e.target.closest('[data-fmt]'); if(!b) return; ecF.formato=b.dataset.fmt; renderEcFiltros(); $('#shareText').value=buildShare(); });
@@ -3439,10 +3440,14 @@ Responde solo con un objeto JSON:
   const TIPO_INV={entrada:'Entrada', salida:'Salida', conteo:'Conteo', devolucion:'Devolución'};
   const ESTADOS_AC=['Bueno','En reparación','Dañado','Perdido'];
   let iDb=null, icfg=JSON.parse(JSON.stringify(ICFG_DEF)), items=[], invMovs=[], activos=[], iLoaded={i:false,m:false,a:false,c:false};
-  let iView='ex', iQ='', iCat='', iSemana=inicioSemana(today()), itEditId=null, imEditId=null, imTipo='entrada', imPre=null, acEditId=null, invRep={tipo:'existencias', periodo:'semana'};
+  let iView='ex', iQ='', iCat='', iMon='usd', iSemana=inicioSemana(today()), itEditId=null, imEditId=null, imTipo='entrada', imPre=null, acEditId=null, invRep={tipo:'existencias', periodo:'semana'};
   const nq=new Intl.NumberFormat('es-VE',{maximumFractionDigits:2});
   const r2q = n => Math.round(n*1000)/1000, r4 = n => Math.round(n*10000)/10000;
   const cant = (n,u) => `${nq.format(num(n))} ${uni(u)}`;
+  /* Montos del inventario en la moneda elegida: dólares, o bolívares a la última tasa registrada */
+  const monI = v => iMon==='bs' ? bs(r2(v*(tasaSugerida()||0))) : usd(v);
+  const monIHtml = v => iMon==='bs' ? `<small>Bs.</small>${nf.format(r2(v*(tasaSugerida()||0)))}` : usdHtml(v);
+  const segMon = () => `<div class="seg" role="group" aria-label="Moneda" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px"><button type="button" data-imon="usd" class="${iMon==='usd'?'on':''}">Dólares</button><button type="button" data-imon="bs" class="${iMon==='bs'?'on':''}">Bolívares</button></div>`;
   const itemDe = id => items.find(x=>x.id===id);
   const nombreItem = id => { const it=itemDe(id); return it?it.nombre:'Ítem eliminado'; };
   const quienRegistra = () => document.documentElement.dataset.user||'';
@@ -3518,7 +3523,7 @@ Responde solo con un objeto JSON:
       </div>`;
   function tarjetaItem(it){
     const e=estadoItem(it.id), bajo=bajoMinimo(it);
-    return `<button type="button" class="wcard${it.activo===false?' off':''}" data-it="${esc(it.id)}"><div class="l"><b>${esc(it.nombre)}${bajo?' <span class="pill so">Bajo mínimo</span>':''}${e.sinCosto>0?` <span class="pill" style="background:var(--sunk);color:var(--muted)">${cant(e.sinCosto,it.unidad)} sin costo</span>`:''}${it.activo===false?' <span class="pill">Inactivo</span>':''}</b><small class="num">${esc(it.categoria||'Sin categoría')}${it.ubicacion?' · '+esc(it.ubicacion):''}${e.promedio>0?' · '+usd(e.promedio)+' por '+esc(uni(it.unidad)):''}${num(it.minimo)>0?' · mín. '+cant(it.minimo,it.unidad):''}</small></div><div class="r num"><b style="display:block;font-size:16px;color:${bajo?'var(--so)':'var(--ink)'}">${cant(e.existencia,it.unidad)}</b>${usd(e.valor)}</div></button>`;
+    return `<button type="button" class="wcard${it.activo===false?' off':''}" data-it="${esc(it.id)}"><div class="l"><b>${esc(it.nombre)}${bajo?' <span class="pill so">Bajo mínimo</span>':''}${e.sinCosto>0?` <span class="pill" style="background:var(--sunk);color:var(--muted)">${cant(e.sinCosto,it.unidad)} sin costo</span>`:''}${it.activo===false?' <span class="pill">Inactivo</span>':''}</b><small class="num">${esc(it.categoria||'Sin categoría')}${it.ubicacion?' · '+esc(it.ubicacion):''}${e.promedio>0?' · '+monI(e.promedio)+' por '+esc(uni(it.unidad)):''}${num(it.minimo)>0?' · mín. '+cant(it.minimo,it.unidad):''}</small></div><div class="r num"><b style="display:block;font-size:16px;color:${bajo?'var(--so)':'var(--ink)'}">${cant(e.existencia,it.unidad)}</b>${monI(e.valor)}</div></button>`;
   }
   function listaItems(){
     const q=norm(iQ);
@@ -3532,9 +3537,10 @@ Responde solo con un objeto JSON:
     const act=itemsActivos(), bajos=act.filter(bajoMinimo), total=valorInventario(), sinC=act.filter(it=>estadoItem(it.id).sinCosto>0).length;
     const porCat={}; act.forEach(it=>{ porCat[it.categoria||'Sin categoría']=r2((porCat[it.categoria||'Sin categoría']||0)+estadoItem(it.id).valor); });
     el.innerHTML = `
-      <div class="hero"><div class="lbl">Inventario valorado</div><div class="big num">${usdHtml(total)}</div>
-        <div class="sub">${act.length} ${act.length===1?'ítem':'ítems'} en existencia · al costo de los lotes que quedan${bajos.length?` · <b style="color:var(--so)">${bajos.length} bajo mínimo</b>`:''}${sinC?` · ${sinC} ${sinC===1?'ítem con unidades sin costo':'ítems con unidades sin costo'} (valen 0 hasta que pongas el precio)`:''}</div>
-        ${Object.keys(porCat).length?`<div class="brk num" style="margin-top:8px">${Object.entries(porCat).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div><span>${esc(c)}</span><b>${usd(v)}</b></div>`).join('')}</div>`:''}</div>
+      <div class="hero"><div class="lbl">Inventario valorado</div><div class="big num">${monIHtml(total)}</div>
+        <div class="sub">${act.length} ${act.length===1?'ítem':'ítems'} en existencia · al costo de los lotes que quedan${iMon==='bs'?` · bolívares a ${nfT.format(tasaSugerida()||0)} Bs/USD, la última tasa registrada`:''}${bajos.length?` · <b style="color:var(--so)">${bajos.length} bajo mínimo</b>`:''}${sinC?` · ${sinC} ${sinC===1?'ítem con unidades sin costo':'ítems con unidades sin costo'} (valen 0 hasta que pongas el precio)`:''}</div>
+        ${Object.keys(porCat).length?`<div class="brk num" style="margin-top:8px">${Object.entries(porCat).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div><span>${esc(c)}</span><b>${monI(v)}</b></div>`).join('')}</div>`:''}
+        ${segMon()}</div>
       ${btnsInv()}
       <div class="filters" style="margin-top:12px"><input id="iQ" type="search" placeholder="Buscar ítem" aria-label="Buscar ítem" value="${esc(iQ)}" style="grid-column:1/-1"></div>
       <div class="ecchips scroll"><label class="${!iCat?'on':''}"><input type="radio" name="icat" data-icat="" ${!iCat?'checked':''}> Todas</label>${icfg.categorias.map(c=>`<label class="${iCat===c?'on':''}"><input type="radio" name="icat" data-icat="${esc(c)}" ${iCat===c?'checked':''}> ${esc(c)}</label>`).join('')}</div>
@@ -3766,15 +3772,15 @@ Responde solo con un objeto JSON:
   function buildInv(){
     const hoy=today(), L=[], det=detallesInv();
     if(invRep.tipo==='existencias'){
-      L.push('*WORKPROCA · Inventario*', `Al ${fdate(hoy)}`);
+      L.push('*WORKPROCA · Inventario*', `Al ${fdate(hoy)}${iMon==='bs'?` · bolívares a ${nfT.format(tasaSugerida()||0)} Bs/USD`:''}`);
       const act=itemsActivos(); let cat=null, sub=0; const tot=valorInventario();
       if(!act.length){ L.push('', 'No hay ítems en el inventario.'); return L.join('\n'); }
       act.forEach((it,i)=>{
         const e=estadoItem(it.id);
-        if(it.categoria!==cat){ cat=it.categoria; const v=r2(sum(act.filter(x=>x.categoria===cat),x=>estadoItem(x.id).valor)); L.push('', `*${cat||'Sin categoría'}* (${usd(v)})`); }
-        L.push(`• ${it.nombre}: ${cant(e.existencia,it.unidad)} · ${usd(e.valor)}${e.sinCosto>0?` (${cant(e.sinCosto,it.unidad)} sin costo)`:''}${bajoMinimo(it)?` ⚠️ bajo mínimo (${nq.format(num(it.minimo))})`:''}`);
+        if(it.categoria!==cat){ cat=it.categoria; const v=r2(sum(act.filter(x=>x.categoria===cat),x=>estadoItem(x.id).valor)); L.push('', `*${cat||'Sin categoría'}* (${monI(v)})`); }
+        L.push(`• ${it.nombre}: ${cant(e.existencia,it.unidad)} · ${monI(e.valor)}${e.sinCosto>0?` (${cant(e.sinCosto,it.unidad)} sin costo)`:''}${bajoMinimo(it)?` ⚠️ bajo mínimo (${nq.format(num(it.minimo))})`:''}`);
       });
-      L.push('', `*Valor total del inventario: ${usd(tot)}*`);
+      L.push('', `*Valor total del inventario: ${monI(tot)}*`);
       const bajos=act.filter(bajoMinimo); if(bajos.length) L.push(`Bajo mínimo: ${bajos.map(it=>`${it.nombre} (${nq.format(estadoItem(it.id).existencia)} de ${nq.format(num(it.minimo))})`).join(', ')}`);
       return L.join('\n');
     }
@@ -3814,6 +3820,7 @@ Responde solo con un objeto JSON:
   function renderInvFiltros(){
     $('#ecFiltros').innerHTML = `
       <div class="seg" role="group" aria-label="Reporte" style="grid-template-columns:repeat(2,minmax(0,1fr))">${[['existencias','Existencias'],['reposicion','Reposición'],['consumo','Consumo por orden'],['compras','Compras']].map(([k,l])=>`<button type="button" data-ir="${k}" class="${invRep.tipo===k?'on':''}">${l}</button>`).join('')}</div>
+      ${invRep.tipo==='existencias'?`<div class="seg" role="group" aria-label="Moneda" style="margin-top:8px;grid-template-columns:repeat(2,minmax(0,1fr))"><button type="button" data-imonr="usd" class="${iMon==='usd'?'on':''}">Dólares</button><button type="button" data-imonr="bs" class="${iMon==='bs'?'on':''}">Bolívares</button></div>`:''}
       ${['consumo','compras'].includes(invRep.tipo)?`<div class="seg" role="group" aria-label="Período" style="margin-top:8px">${[['semana','Esta semana'],['mes','Este mes'],['todo','Todo']].map(([k,l])=>`<button type="button" data-iper="${k}" class="${invRep.periodo===k?'on':''}">${l}</button>`).join('')}</div>`:''}`;
   }
   function abrirRepInv(){
@@ -3841,6 +3848,7 @@ Responde solo con un objeto JSON:
     const idl=t.closest('[data-idel]'); if(idl){ const [k,i]=idl.dataset.idel.split('|'); const n={...icfg}; n[k]=(n[k]||[]).filter((_,j)=>j!==+i); return guardarICfg(n); }
     const iad=t.closest('[data-iadd]'); if(iad){ const k=iad.dataset.iadd; const inp=document.querySelector(`[data-inew="${k}"]`); const v=(inp.value||'').trim(); if(!v) return; const n={...icfg}; if(!(n[k]||[]).some(x=>norm(x)===norm(v))) n[k]=[...(n[k]||[]), v]; return guardarICfg(n); }
   });
+  $('#iMain').addEventListener('click', e=>{ const b=e.target.closest('[data-imon]'); if(b){ iMon=b.dataset.imon; renderInv(); } });
   $('#iMain').addEventListener('change', e=>{ const t=e.target; if(t.dataset.icat!=null){ iCat=t.dataset.icat; const l=$('#iList'); if(l) l.innerHTML=listaItems(); document.querySelectorAll('#iMain [data-icat]').forEach(x=>x.closest('label').classList.toggle('on', x.checked)); } });
   $('#iMain').addEventListener('input', e=>{ if(e.target.id==='iQ'){ iQ=e.target.value; const l=$('#iList'); if(!l) return; if(iView==='ex') l.innerHTML=listaItems(); else { const q=norm(iQ); const ls=items.filter(it=>!q||norm(it.nombre).includes(q)||norm(it.categoria).includes(q)); l.innerHTML=ls.map(tarjetaItem).join('')||'<div class="empty"><b>Nada coincide</b></div>'; } } });
   async function guardarICfg(n){ try{ await iDb.doc('config/inventario').set(n); icfg=n; renderInv(); toast('Guardado'); }catch(e){ toast(errMsg(e)); } }
