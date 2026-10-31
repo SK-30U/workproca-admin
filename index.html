@@ -166,7 +166,6 @@ h1{font-family:var(--f-disp);font-weight:700;font-size:34px;line-height:1;margin
 .row{display:grid;grid-template-columns:10px minmax(0,1fr) auto;align-items:center;column-gap:10px;width:100%;text-align:left;border:0;background:transparent;padding:9px 0;color:inherit;font:inherit;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:0}
 div.row{cursor:default}
-.modtabs button{font-size:14px;padding:10px 4px}
 .row .sw{width:10px;height:10px;border-radius:3px}
 .row .nm{font-size:14px;color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row .nm em{font-style:normal;color:var(--muted);margin-left:6px;font-size:13px}
@@ -224,8 +223,8 @@ main{padding-bottom:130px}
 .pill.co{background:var(--co-bg);color:var(--co)}
 .hbtns{display:flex;gap:8px;flex-wrap:wrap}
 .topnav{position:sticky;top:env(safe-area-inset-top,0px);z-index:8;background:var(--bg);padding-block:10px;border-bottom:1px solid var(--line)}
-.modtabs{display:flex;gap:6px}
-.modtabs button{flex:1;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 8px;font-weight:700;font-size:15px;color:var(--muted)}
+.modtabs{display:flex;gap:4px}
+.modtabs button{flex:1 1 0;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 1px;font-weight:700;font-size:12.5px;letter-spacing:-.01em;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:clip}
 .modtabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 13px}
 .daynav{display:flex;align-items:center;gap:8px;margin-top:16px}
@@ -398,6 +397,12 @@ label.f input[type=date]::-webkit-date-and-time-value{text-align:left}
 .saldo{display:flex;justify-content:space-between;font-size:14px;padding:4px 2px 10px;color:var(--muted)}
 .saldo b{color:var(--ink)}
 .row-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.ibtns{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:12px}
+.ibtns .btn{padding:12px 4px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ibtns .btn.pri{flex:none}
+.ecchips.scroll{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:8px -16px 0;padding:0 16px}
+.ecchips.scroll label{flex:none}
+.ecchips.scroll input{display:none}
 .btn{border:0;border-radius:11px;padding:12px 16px;font-weight:700;font-size:15px}
 .btn.pri{background:var(--accent);color:var(--accent-ink);flex:1}
 .btn.sec{background:var(--sunk);border:1px solid var(--line);color:var(--ink)}
@@ -430,6 +435,7 @@ textarea.share{min-height:38vh}
       <button type="button" role="tab" data-m="cob" aria-selected="true">Cobranzas</button>
       <button type="button" role="tab" data-m="nom" aria-selected="false">Nómina</button>
       <button type="button" role="tab" data-m="gas" aria-selected="false">Gastos</button>
+      <button type="button" role="tab" data-m="inv" aria-selected="false">Inventario</button>
       <button type="button" role="tab" data-m="res" aria-selected="false">Resumen</button>
     </nav>
   </div>
@@ -505,6 +511,20 @@ textarea.share{min-height:38vh}
     </div>
   </div>
   <main class="wrap" id="gMain"></main>
+</div>
+
+<div id="modInv" hidden>
+  <div class="bar">
+    <div class="wrap">
+      <div class="tabs" role="tablist" id="iTabs">
+        <button type="button" role="tab" data-v="ex" aria-selected="true">Existencias</button>
+        <button type="button" role="tab" data-v="mov" aria-selected="false">Movimientos</button>
+        <button type="button" role="tab" data-v="cat" aria-selected="false">Catálogo</button>
+        <button type="button" role="tab" data-v="act" aria-selected="false">Equipos</button>
+      </div>
+    </div>
+  </div>
+  <main class="wrap" id="iMain"></main>
 </div>
 
 <div id="modRes" hidden><main class="wrap" id="rMain"></main></div>
@@ -739,6 +759,7 @@ textarea.share{min-height:38vh}
     <div class="err" id="mvErr"></div>
     <div class="row-btns" style="margin-top:12px">
       <button type="button" class="btn pri" id="mvSave">Guardar</button>
+      <button type="button" class="btn sec" id="mvInv" hidden>Pasar a inventario</button>
       <button type="button" class="btn del" id="mvDel">Eliminar</button>
     </div>
   </div>
@@ -758,6 +779,96 @@ textarea.share{min-height:38vh}
     <div class="tip">Se descuenta en el próximo corte que incluya esa fecha.</div>
     <div class="err" id="adErr"></div>
     <div class="row-btns"><button type="button" class="btn pri" id="adSave">Guardar adelanto</button></div>
+  </div>
+</section>
+
+<!-- Inventario: ítem del catálogo -->
+<section class="sheet" id="itSheet" hidden aria-modal="true" role="dialog" aria-labelledby="itTitle">
+  <div class="wrap">
+    <div class="grab"></div>
+    <div class="sh-head"><h3 id="itTitle">Ítem del inventario</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
+    <div class="grid" style="margin-top:4px">
+      <label class="f full">Nombre<input id="itNombre" autocomplete="off" placeholder="Por ejemplo: Disco de corte 4½ pulgadas"></label>
+      <label class="f">Categoría<select id="itCat"></select></label>
+      <label class="f">Unidad<select id="itUni"></select></label>
+      <label class="f">Mínimo en existencia<input id="itMin" inputmode="decimal" placeholder="Avisa al bajar de aquí"></label>
+      <label class="f">Ubicación<input id="itUbi" list="itUbiL" autocomplete="off" placeholder="Almacén"><datalist id="itUbiL"></datalist></label>
+      <label class="f full">Proveedor habitual (opcional)<input id="itProv" autocomplete="off"></label>
+      <label class="chk full"><input type="checkbox" id="itActivo" checked> Activo (se lleva en inventario)</label>
+    </div>
+    <div id="itEstado"></div>
+    <div class="err" id="itErr"></div>
+    <div class="row-btns" style="margin-top:12px">
+      <button type="button" class="btn pri" id="itSave">Guardar</button>
+      <button type="button" class="btn sec" id="itEntrada">+ Entrada</button>
+      <button type="button" class="btn sec" id="itSalida">− Salida</button>
+      <button type="button" class="btn del" id="itDel">Eliminar</button>
+    </div>
+  </div>
+</section>
+
+<!-- Inventario: movimiento (entrada, salida, conteo, devolución) -->
+<section class="sheet" id="imSheet" hidden aria-modal="true" role="dialog" aria-labelledby="imTitle">
+  <div class="wrap">
+    <div class="grab"></div>
+    <div class="sh-head"><h3 id="imTitle">Movimiento de inventario</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
+    <div class="seg" id="imTipo" role="group" aria-label="Tipo de movimiento" style="margin-top:4px;grid-template-columns:repeat(4,minmax(0,1fr))">
+      <button type="button" data-t="entrada">Entrada</button><button type="button" data-t="salida">Salida</button><button type="button" data-t="conteo">Conteo</button><button type="button" data-t="devolucion">Devolución</button>
+    </div>
+    <div class="tip" id="imTipoTip" style="margin-top:8px"></div>
+    <div class="grid" style="margin-top:10px">
+      <label class="f full">Ítem<select id="imItem"></select></label>
+      <div class="tip num full" id="imExist" style="margin-top:-4px"></div>
+      <label class="f">Fecha<input id="imFecha" type="date"></label>
+      <label class="f"><span id="imCantLbl">Cantidad</span><input id="imCant" inputmode="decimal" placeholder="0"></label>
+      <label class="f" id="imCostoUL">Costo por unidad (USD)<input id="imCostoU" inputmode="decimal" placeholder="0,00"></label>
+      <label class="f" id="imCostoTL">Costo total (USD)<input id="imCostoT" inputmode="decimal" placeholder="0,00"></label>
+      <label class="f" id="imBsL">Total en bolívares (opcional)<input id="imBs" inputmode="decimal" placeholder="0,00"></label>
+      <label class="f" id="imTasaL">Tasa (Bs. por USD)<input id="imTasa" inputmode="decimal" placeholder="0,00"></label>
+      <label class="f" id="imProvL">Proveedor<input id="imProv" autocomplete="off"></label>
+      <label class="f" id="imRefL">N° de factura o nota<input id="imRef" autocomplete="off"></label>
+      <label class="f full" id="imTrabL">Orden o trabajo (centro de costo)<select id="imTrab"></select></label>
+      <label class="f full" id="imQuienL">Quién lo retiró<select id="imQuien"></select></label>
+      <label class="f full">Nota (opcional)<input id="imNota" autocomplete="off"></label>
+    </div>
+    <div id="imGastoBox" class="panel" style="margin-top:10px">
+      <label class="chk"><input type="checkbox" id="imGasto"> Registrar también el gasto en Gastos</label>
+      <div class="grid" id="imGastoCampos" style="margin-top:8px" hidden>
+        <label class="f">Cuenta<select id="imCuenta"></select></label>
+        <label class="f">Tasa del pago (Bs. por USD)<input id="imGTasa" inputmode="decimal" placeholder="Solo si pagaste en bolívares"></label>
+      </div>
+      <div class="tip" id="imGastoInfo" style="margin:6px 0 0"></div>
+    </div>
+    <div class="conv num" id="imConv"></div>
+    <div class="err" id="imErr"></div>
+    <div class="row-btns" style="margin-top:12px">
+      <button type="button" class="btn pri" id="imSave">Guardar</button>
+      <button type="button" class="btn del" id="imDel">Eliminar</button>
+    </div>
+  </div>
+</section>
+
+<!-- Inventario: herramienta o equipo (activo) -->
+<section class="sheet" id="acSheet" hidden aria-modal="true" role="dialog" aria-labelledby="acTitle">
+  <div class="wrap">
+    <div class="grab"></div>
+    <div class="sh-head"><h3 id="acTitle">Herramienta o equipo</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
+    <div class="grid" style="margin-top:4px">
+      <label class="f full">Nombre<input id="acNombre" autocomplete="off" placeholder="Por ejemplo: Esmeril angular DeWalt 4½"></label>
+      <label class="f">Código o serial<input id="acCodigo" autocomplete="off"></label>
+      <label class="f">Estado<select id="acEstado"><option>Bueno</option><option>En reparación</option><option>Dañado</option><option>Perdido</option></select></label>
+      <label class="f full">Responsable (quién lo tiene)<select id="acResp"></select></label>
+      <label class="f">Ubicación<input id="acUbi" list="itUbiL" autocomplete="off" placeholder="Almacén"></label>
+      <label class="f">Fecha de compra<input id="acFecha" type="date"></label>
+      <label class="f">Costo (USD)<input id="acCosto" inputmode="decimal" placeholder="0,00"></label>
+      <label class="f full">Nota (opcional)<input id="acNota" autocomplete="off"></label>
+    </div>
+    <div id="acHist"></div>
+    <div class="err" id="acErr"></div>
+    <div class="row-btns" style="margin-top:12px">
+      <button type="button" class="btn pri" id="acSave">Guardar</button>
+      <button type="button" class="btn del" id="acDel">Eliminar</button>
+    </div>
   </div>
 </section>
 
@@ -1037,7 +1148,7 @@ textarea.share{min-height:38vh}
 
   /* ---------- hojas ---------- */
   function openSheet(id){ $('#scrim').hidden=false; $(id).hidden=false; document.body.style.overflow='hidden'; }
-  function closeSheets(){ ['#sheet','#bulkSheet','#shareSheet','#aiSheet','#wSheet','#adSheet','#mvSheet'].forEach(s=>$(s).hidden=true); $('#scrim').hidden=true; document.body.style.overflow=''; draft=null; editingId=null; }
+  function closeSheets(){ ['#sheet','#bulkSheet','#shareSheet','#aiSheet','#wSheet','#adSheet','#mvSheet','#itSheet','#imSheet','#acSheet'].forEach(s=>$(s).hidden=true); $('#scrim').hidden=true; document.body.style.overflow=''; draft=null; editingId=null; }
 
   function openEditor(id){
     const src = id ? docs.find(d=>d.id===id) : null;
@@ -1316,6 +1427,8 @@ textarea.share{min-height:38vh}
     $('#shareText').value=buildShare(); openSheet('#shareSheet');
   }
   $('#ecFiltros').addEventListener('click', e=>{
+    const ir=e.target.closest('[data-ir]'); if(ir){ invRep.tipo=ir.dataset.ir; renderInvFiltros(); $('#shareText').value=buildInv(); return; }
+    const ip=e.target.closest('[data-iper]'); if(ip){ invRep.periodo=ip.dataset.iper; renderInvFiltros(); $('#shareText').value=buildInv(); return; }
     const cb=e.target.closest('[data-cfmt]'); if(cb){ costF.formato=cb.dataset.cfmt; renderCostFiltros(); $('#shareText').value=buildCostos(); return; }
     const cr=e.target.closest('[data-crep]'); if(cr){ costF.reparto=cr.dataset.crep; renderCostFiltros(); $('#shareText').value=buildCostos(); return; }
     const b=e.target.closest('[data-fmt]'); if(!b) return; ecF.formato=b.dataset.fmt; renderEcFiltros(); $('#shareText').value=buildShare(); });
@@ -1341,15 +1454,17 @@ textarea.share{min-height:38vh}
       mo+=v; dias+=p.dias; horas+=p.horas; porT[t.nombre]=r2((porT[t.nombre]||0)+v);
     }));
     const tasaRep=tasaSugerida();
-    const gs=movs.filter(m=>m.tipo==='gasto' && m.trabajoId===d.id).map(m=>({m, usd:usdDe(m,tasaRep)}));
-    const gastos=r2(sum(gs,x=>x.usd)), gen=r2((generales||{})[d.id]||0), monto=num(d.monto), costo=r2(mo+gastos+gen), cobrado=r2(pagado(d));
-    return {mo:r2(mo), dias, horas, porT, gs, gastos, gen, costo, monto, cobrado, margen:r2(monto-costo), pct: monto>0 ? r2((monto-costo)/monto*100) : 0, porRecuperar: r2(Math.max(0, costo-cobrado))};
+    const gs=movs.filter(m=>m.tipo==='gasto' && m.trabajoId===d.id && !m.inventario).map(m=>({m, usd:usdDe(m,tasaRep)}));
+    const matI=materialesTrabajo(d.id), mat=matI.total;
+    const gastos=r2(sum(gs,x=>x.usd)), gen=r2((generales||{})[d.id]||0), monto=num(d.monto), costo=r2(mo+gastos+mat+gen), cobrado=r2(pagado(d));
+    return {mo:r2(mo), dias, horas, porT, gs, gastos, mat, matL:matI.lineas, gen, costo, monto, cobrado, margen:r2(monto-costo), pct: monto>0 ? r2((monto-costo)/monto*100) : 0, porRecuperar: r2(Math.max(0, costo-cobrado))};
   }
   /* Gastos generales por semana de nómina: gastos de la empresa sin centro de costo, mano de obra sin asignar y sueldos de supervisores */
   function generalesPorSemana(){
     const por={}; const add=(w,k,v)=>{ const o=por[w]||(por[w]={gastos:0,mo:0,sup:0}); o[k]+=v; };
     const tasaRep=tasaSugerida();
-    movs.filter(m=>m.tipo==='gasto' && m.fecha && (m.aCargo||'Empresa')==='Empresa' && !['Nómina','Sueldos de supervisores'].includes(m.categoria) && !tieneTrabajo(m.trabajoId)).forEach(m=>add(inicioSemana(m.fecha),'gastos',usdDe(m,tasaRep)));
+    movs.filter(m=>m.tipo==='gasto' && m.fecha && (m.aCargo||'Empresa')==='Empresa' && !m.inventario && !['Nómina','Sueldos de supervisores'].includes(m.categoria) && !tieneTrabajo(m.trabajoId)).forEach(m=>add(inicioSemana(m.fecha),'gastos',usdDe(m,tasaRep)));
+    Object.entries(mermasPorSemana()).forEach(([w,v])=>add(w,'gastos',v));   // lo que faltó en los conteos de inventario
     Object.values(asis).forEach(a=>Object.entries(a.registros||{}).forEach(([id,r])=>{ if(tieneTrabajo(r.trabajoId)) return; const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return; const p=pagoDia(t,r,a.fecha); const v=p.montoDias+p.montoExtra; if(v>0) add(inicioSemana(a.fecha),'mo',v); }));
     cortes.forEach(k=>(k.lineas||[]).forEach(l=>{ if(l.cargo!==SUP || !(num(l.sueldoFijo)>0)) return; const sem=Array.isArray(l.semanas)&&l.semanas.length?l.semanas:[inicioSemana(k.hasta)]; sem.forEach(w=>add(w,'sup',num(l.sueldoFijo)/sem.length)); }));
     return por;
@@ -1359,6 +1474,7 @@ textarea.share{min-height:38vh}
     const out={}; const jor=num(cfgN.horasJornada)||8.5;
     Object.values(asis).forEach(a=>Object.entries(a.registros||{}).forEach(([id,r])=>{ if(!tieneTrabajo(r.trabajoId)) return; const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return; const p=pagoDia(t,r,a.fecha); if(!p.dias&&!p.horas) return; const w=inicioSemana(a.fecha), o=out[w]||(out[w]={}); o[r.trabajoId]=(o[r.trabajoId]||0)+p.dias+p.horas/jor; }));
     movs.filter(m=>m.tipo==='gasto' && m.fecha && tieneTrabajo(m.trabajoId)).forEach(m=>{ const w=inicioSemana(m.fecha), o=out[w]||(out[w]={}); if(!(m.trabajoId in o)) o[m.trabajoId]=0; });
+    invMovs.filter(m=>m.tipo==='salida' && m.fecha && tieneTrabajo(m.trabajoId)).forEach(m=>{ const w=inicioSemana(m.fecha), o=out[w]||(out[w]={}); if(!(m.trabajoId in o)) o[m.trabajoId]=0; });
     return out;
   }
   /* Reparto de los generales de cada semana entre los trabajos activos esa semana: según días trabajados o por igual */
@@ -1385,15 +1501,16 @@ textarea.share{min-height:38vh}
       const det=[c.dias?`${nf.format(c.dias).replace(/,00$/,'')} ${c.dias===1?'día':'días'}`:'', c.horas?`${nf.format(c.horas).replace(/,00$/,'')} h extra`:''].filter(Boolean).join(', ');
       L.push(`Mano de obra: ${usd(c.mo)}${det?' ('+det+')':''}`);
       if(costF.formato==='detallado') Object.entries(c.porT).sort((a,b)=>b[1]-a[1]).forEach(([n,v])=>L.push(`  • ${n}: ${usd(v)}`));
-      L.push(`Materiales y gastos directos: ${usd(c.gastos)}`);
+      if(c.mat||c.matL.length){ L.push(`Materiales del inventario: ${usd(c.mat)}`); if(costF.formato==='detallado') c.matL.forEach(x=>{ const it=itemDe(x.m.itemId)||{nombre:'Ítem eliminado',unidad:'und'}; L.push(`  • ${fdate(x.m.fecha).slice(0,5)} ${x.m.tipo==='devolucion'?'devolución de ':''}${cant(x.m.cantidad,it.unidad)} ${it.nombre}: ${x.costo<0?'− ':''}${usd(Math.abs(x.costo))}`); }); }
+      L.push(`${c.mat||c.matL.length?'Otros gastos directos':'Materiales y gastos directos'}: ${usd(c.gastos)}`);
       if(costF.formato==='detallado') c.gs.forEach(x=>L.push(`  • ${fdate(x.m.fecha).slice(0,5)} ${x.m.concepto}: ${usd(x.usd)}`));
       L.push(`Gastos generales (su parte): ${usd(c.gen)}`);
       L.push(`Costo: ${usd(c.costo)} · *Margen: ${usd(c.margen)}${c.monto>0?' ('+pctTxt(c.pct)+')':''}*`);
       if(c.porRecuperar>0) L.push(`Por recuperar: ${usd(c.porRecuperar)} (gastado por encima de lo cobrado; lo cubren los cobros de otras órdenes)`);
     });
-    const tM=sum(base,x=>x.c.monto), tC=sum(base,x=>x.c.costo), tMo=sum(base,x=>x.c.mo), tG=sum(base,x=>x.c.gastos), tGen=sum(base,x=>x.c.gen);
+    const tM=sum(base,x=>x.c.monto), tC=sum(base,x=>x.c.costo), tMo=sum(base,x=>x.c.mo), tG=sum(base,x=>x.c.gastos), tMat=sum(base,x=>x.c.mat), tGen=sum(base,x=>x.c.gen);
     L.push(''); L.push(`*Totales de ${base.length} ${base.length===1?'orden':'órdenes'}*`);
-    L.push(`Monto: ${usd(tM)} · Mano de obra: ${usd(tMo)} · Gastos directos: ${usd(tG)} · Generales: ${usd(r2(tGen))}`);
+    L.push(`Monto: ${usd(tM)} · Mano de obra: ${usd(tMo)}${tMat?` · Materiales: ${usd(r2(tMat))}`:''} · Gastos directos: ${usd(tG)} · Generales: ${usd(r2(tGen))}`);
     L.push(`*Costo: ${usd(r2(tC))} · Margen: ${usd(r2(tM-tC))}${tM>0?' ('+pctTxt(r2((tM-tC)/tM*100))+')':''}*`);
     if(rep.tot.total>0){
       L.push(''); L.push(`_Gastos generales de la empresa: ${usd(rep.tot.total)} (gastos sin orden ${usd(rep.tot.gastos)} · mano de obra sin asignar ${usd(rep.tot.mo)} · supervisores ${usd(rep.tot.sup)}), repartidos ${costF.reparto==='igual'?'por igual':'según los días trabajados'} entre las órdenes activas cada semana.${rep.sinRepartir>0?` Sin repartir: ${usd(rep.sinRepartir)} de semanas sin ninguna orden activa.`:''}_`);
@@ -1711,7 +1828,7 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
       $('#aiStat').textContent = esResp ? 'Corrigiendo la propuesta con tu respuesta…' : 'Leyendo… esto puede tardar hasta un minuto.';
       const opts={signal:aiCtl.signal, cache:false};
       if(imgs.length) opts.images=imgs;
-      let pr = aiMode==='asis' ? promptAsis(texto, textos, imgs.length) : aiMode==='trab' ? promptTrab(texto, textos, imgs.length) : aiMode==='gas' ? promptGas(texto, textos, imgs.length) : promptAI(texto, textos, imgs.length);
+      let pr = aiMode==='asis' ? promptAsis(texto, textos, imgs.length) : aiMode==='trab' ? promptTrab(texto, textos, imgs.length) : aiMode==='gas' ? promptGas(texto, textos, imgs.length) : aiMode==='inv' ? promptInv(texto, textos, imgs.length) : promptAI(texto, textos, imgs.length);
       if(esResp){
         aiLast.hilo=[...(aiLast.hilo||[]), {propuesta:aiLast.res, respuesta:respuesta.trim()}];
         pr += `\n\nYa revisamos este material antes. Conversación hasta ahora (tu propuesta y la respuesta de Fran):\n${aiLast.hilo.map((h,k)=>`Propuesta ${k+1}:\n${JSON.stringify(h.propuesta)}\nRespuesta de Fran:\n<<<\n${h.respuesta}\n>>>`).join('\n\n')}\n\nAplica lo que dice Fran (su palabra manda sobre lo que leíste) y devuelve la propuesta completa corregida, con el mismo formato JSON. Quita de "dudas" lo que su respuesta ya resolvió.`;
@@ -1720,7 +1837,7 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
       aiLast = {texto, textos, imgs, res:res||{}, hilo: esResp ? aiLast.hilo : []};
       $('#aiReplyBox').hidden = !canWrite; $('#aiReply').value='';
       $('#aiStat').textContent=avisos.join(' ');
-      if(aiMode==='asis') renderAIAsis(res||{}); else if(aiMode==='trab') renderAITrab(res||{}); else if(aiMode==='gas') renderAIGas(res||{}); else renderAI(res||{});
+      if(aiMode==='asis') renderAIAsis(res||{}); else if(aiMode==='trab') renderAITrab(res||{}); else if(aiMode==='gas') renderAIGas(res||{}); else if(aiMode==='inv') renderAIInv(res||{}); else renderAI(res||{});
     }catch(e){
       const code=e&&e.code;
       $('#aiStat').textContent = msgIA(e);
@@ -1798,6 +1915,11 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
       $('#aiDesc').textContent='Sube fotos de facturas de compra, comprobantes de pago o capturas de Binance, o pega el texto. El asistente propone los movimientos y tú decides cuáles guardar.';
       $('#aiText').placeholder='Por ejemplo: “Pagué 2 bombonas de argón, 420 dólares en Binance, y gasolina 3.500 Bs por pago móvil a 945”';
       $('#aiApply').textContent='Guardar movimientos marcados';
+    } else if(modo==='inv'){
+      $('#aiTitle').textContent='Inventario con asistente';
+      $('#aiDesc').textContent='Lee facturas o notas de entrega de materiales (entradas), mensajes de retiro de material para una orden (salidas), fotos o listas del conteo físico (conteos) y material que regresa al almacén (devoluciones). Propone cada movimiento con ítem, cantidad, costo y orden; tú revisas, corriges o le respondes antes de guardar. No toca gastos ni cobranzas por su cuenta: en una compra, tú decides si registra también el gasto.';
+      $('#aiText').placeholder='Por ejemplo: “Compré 20 discos de corte a 1,50 y 2 láminas de aluminio 3 mm a 80 en MEOCA, pagué por Binance” o “Saqué 10 discos y 1 lámina para la base de la planta de Lupara V”';
+      $('#aiApply').textContent='Guardar lo marcado';
     } else if(modo==='trab'){
       $('#aiTitle').textContent='Agregar trabajadores con asistente';
       $('#aiDesc').textContent='Sube fotos de cédulas, capturas de pago móvil o archivos, o pega los datos en texto. El asistente arma una ficha por persona y te marca lo que falta; nada se guarda hasta que confirmes.';
@@ -2071,30 +2193,31 @@ Responde solo con un objeto JSON:
   $('#aiGo').addEventListener('click', ()=>leerAI());
   $('#aiReplyGo').addEventListener('click', ()=>leerAI($('#aiReply').value));
   $('#aiStop').addEventListener('click', ()=>aiCtl&&aiCtl.abort());
-  $('#aiApply').addEventListener('click', ()=> aiMode==='asis' ? aplicarAIAsis() : aiMode==='trab' ? aplicarAITrab() : aiMode==='gas' ? aplicarAIGas() : aplicarAI());
+  $('#aiApply').addEventListener('click', ()=> aiMode==='asis' ? aplicarAIAsis() : aiMode==='trab' ? aplicarAITrab() : aiMode==='gas' ? aplicarAIGas() : aiMode==='inv' ? aplicarAIInv() : aplicarAI());
 
   /* =====================================================================
      MÓDULOS (pestañas de arriba)
      ===================================================================== */
   let modulo='cob';
   function setModulo(m){
-    modulo = ['nom','gas','res'].includes(m) ? m : 'cob';
+    modulo = ['nom','gas','inv','res'].includes(m) ? m : 'cob';
     document.querySelectorAll('#modTabs button').forEach(b=>b.setAttribute('aria-selected', String(b.dataset.m===modulo)));
     $('#modCob').hidden = modulo!=='cob'; $('#cobHead').hidden = modulo!=='cob'; $('#cobBtns').hidden = modulo!=='cob';
-    $('#modNom').hidden = modulo!=='nom'; $('#modGas').hidden = modulo!=='gas'; $('#modRes').hidden = modulo!=='res';
-    $('#modTitle').textContent = modulo==='nom' ? 'Nómina' : modulo==='gas' ? 'Gastos y balance' : modulo==='res' ? 'Resumen general' : 'Cobranzas';
-    const hs = modulo==='nom'?'nomina':modulo==='gas'?'gastos':modulo==='res'?'resumen':'cobranzas';
+    $('#modNom').hidden = modulo!=='nom'; $('#modGas').hidden = modulo!=='gas'; $('#modInv').hidden = modulo!=='inv'; $('#modRes').hidden = modulo!=='res';
+    $('#modTitle').textContent = modulo==='nom' ? 'Nómina' : modulo==='gas' ? 'Gastos y balance' : modulo==='inv' ? 'Inventario' : modulo==='res' ? 'Resumen general' : 'Cobranzas';
+    const hs = modulo==='nom'?'nomina':modulo==='gas'?'gastos':modulo==='inv'?'inventario':modulo==='res'?'resumen':'cobranzas';
     try{ if(location.hash !== '#'+hs) history.replaceState(null,'','#'+hs); }catch(_){}
     if(modulo!=='cob'){ selMode=false; sel.clear(); }
     if(modulo==='nom') renderNom();
     if(modulo==='gas') renderGas();
+    if(modulo==='inv') renderInv();
     if(modulo==='res') renderRes();
     renderSelbar();
   }
   function medirNav(){ const n=$('#topnav'); if(n) document.documentElement.style.setProperty('--navh', n.offsetHeight+'px'); }
   medirNav(); window.addEventListener('resize', medirNav);
   $('#modTabs').addEventListener('click', e=>{ const b=e.target.closest('button'); if(b) setModulo(b.dataset.m); });
-  const modDeHash = () => location.hash==='#nomina'?'nom':location.hash==='#gastos'?'gas':location.hash==='#resumen'?'res':'cob';
+  const modDeHash = () => location.hash==='#nomina'?'nom':location.hash==='#gastos'?'gas':location.hash==='#inventario'?'inv':location.hash==='#resumen'?'res':'cob';
   window.addEventListener('hashchange', ()=>setModulo(modDeHash()));
 
   /* =====================================================================
@@ -2790,7 +2913,7 @@ Responde solo con un objeto JSON:
         const c=cuentaDe(m.cuenta);
         const titulo = m.tipo==='cambio' ? `${esc(cuentaDe(m.cuentaOrigen).nombre)} → ${esc(cuentaDe(m.cuentaDestino).nombre)}` : esc(m.concepto||'Sin concepto');
         const monto = m.tipo==='cambio' ? `${enMoneda(num(m.montoOrigen),cuentaDe(m.cuentaOrigen).moneda)} → ${enMoneda(num(m.montoDestino),cuentaDe(m.cuentaDestino).moneda)}` : `${m.tipo==='gasto'?'− ':'+ '}${enMoneda(num(m.monto),c.moneda)}`;
-        const det = m.tipo==='cambio' ? `${fdate(m.fecha)}${num(m.tasa)?' · tasa '+nfT.format(num(m.tasa)):''}${m.concepto?' · '+esc(m.concepto):''}` : `${fdate(m.fecha)} · ${esc(m.categoria||'')}${m.tipo==='gasto'&&m.aCargo&&m.aCargo!=='Empresa'?' · a cargo de '+esc(m.aCargo):''} · ${esc(c.nombre)}${c.moneda==='VES'&&usdDe(m,tasa)?' · '+m$(usdDe(m,tasa)):''}`;
+        const det = m.tipo==='cambio' ? `${fdate(m.fecha)}${num(m.tasa)?' · tasa '+nfT.format(num(m.tasa)):''}${m.concepto?' · '+esc(m.concepto):''}` : `${fdate(m.fecha)} · ${esc(m.categoria||'')}${m.tipo==='gasto'&&m.aCargo&&m.aCargo!=='Empresa'?' · a cargo de '+esc(m.aCargo):''} · ${esc(c.nombre)}${c.moneda==='VES'&&usdDe(m,tasa)?' · '+m$(usdDe(m,tasa)):''}${m.inventario?' · en inventario':''}`;
         return `<button type="button" class="wcard${m.auto?' auto':''}" ${m.auto?`data-auto="${esc(m.auto)}"`:`data-mv="${esc(m.id)}"`}><div class="l"><b>${titulo}</b><small class="num">${det}</small>${m.auto?`<small>Automático desde ${esc(m.auto)}</small>`:''}</div><div class="r num" style="color:${m.tipo==='gasto'?'var(--danger)':m.tipo==='ingreso'?'var(--co)':'var(--ink)'};font-weight:600">${monto}</div></button>`;
       }).join(''):`<div class="empty"><b>Sin movimientos esta semana</b>Registra un gasto, un ingreso o un cambio entre cuentas.</div>`}</div>
       <div style="height:24px"></div>`;
@@ -2809,7 +2932,7 @@ Responde solo con un objeto JSON:
       ${lista('catPersonal','Categorías de gastos de papá y tuyos')}
       ${lista('catIngreso','Categorías de ingresos')}
       <div class="sech">Respaldo</div>
-      <div class="tip">Descarga un Excel con todo lo registrado: trabajos, pagos, trabajadores, asistencia, adelantos, cortes y movimientos. Guárdalo en tu nube de vez en cuando.</div>
+      <div class="tip">Descarga un Excel con todo lo registrado: trabajos, pagos, trabajadores, asistencia, adelantos, cortes, movimientos, inventario y herramientas. Guárdalo en tu nube de vez en cuando.</div>
       <div class="row-btns"><button type="button" class="btn sec" id="gExcel">Descargar respaldo en Excel</button><button type="button" class="btn sec" id="gJson">Descargar respaldo completo (JSON)</button></div>
       <div class="tip">El respaldo completo (JSON) sirve para restaurar la app tal cual, por ejemplo al pasarla a otra plataforma. Restaurar sobrescribe lo que tenga el mismo nombre y no borra lo demás.</div>
       <div class="row-btns"><label class="btn sec" style="cursor:pointer">Restaurar desde respaldo (JSON)<input type="file" id="gRestaurar" accept=".json,application/json" style="position:absolute;width:1px;height:1px;opacity:0"></label></div>
@@ -2824,8 +2947,8 @@ Responde solo con un objeto JSON:
   /* Respaldo completo en JSON (tal cual está en la base) y restauración */
   function respaldoJSON(){
     const obj=ls=>Object.fromEntries(ls.map(d=>{ const c={...d}; delete c.id; return [d.id, c]; }));
-    const cfg={}; if(clientesExtra.length) cfg.clientes={lista:clientesExtra}; if(unidadesExtra.length) cfg.unidades={lista:unidadesExtra}; cfg.nomina=cfgN; cfg.gastos=gcfg;
-    return {version:1, fecha:new Date().toISOString(), facturas:obj(docs), trabajadores:obj(trabs), asistencia:Object.fromEntries(Object.values(asis).map(a=>[a.fecha, a])), adelantos:obj(adels), cortes:obj(cortes), movimientos:obj(movs), config:cfg};
+    const cfg={}; if(clientesExtra.length) cfg.clientes={lista:clientesExtra}; if(unidadesExtra.length) cfg.unidades={lista:unidadesExtra}; cfg.nomina=cfgN; cfg.gastos=gcfg; cfg.inventario=icfg;
+    return {version:2, fecha:new Date().toISOString(), facturas:obj(docs), trabajadores:obj(trabs), asistencia:Object.fromEntries(Object.values(asis).map(a=>[a.fecha, a])), adelantos:obj(adels), cortes:obj(cortes), movimientos:obj(movs), inventario:obj(items), invMovs:obj(invMovs), activos:obj(activos), config:cfg};
   }
   /* Entregar un archivo generado: dentro de Claude se pide por la capacidad "downloads" (el visor confirma y guarda); en la versión independiente se descarga directo. */
   async function guardarArchivo(nombre, data){
@@ -2847,7 +2970,7 @@ Responde solo con un objeto JSON:
   async function restaurarJSON(file){
     if(!gDb||!file) return;
     let data; try{ data=JSON.parse(await file.text()); }catch(_){ $('#gAjErr').textContent='Ese archivo no es un respaldo válido.'; return; }
-    const cols=['facturas','trabajadores','asistencia','adelantos','cortes','movimientos'];
+    const cols=['facturas','trabajadores','asistencia','adelantos','cortes','movimientos','inventario','invMovs','activos'];
     const n=cols.reduce((a,c)=>a+Object.keys(data[c]||{}).length,0)+Object.keys(data.config||{}).length;
     if(!n){ $('#gAjErr').textContent='El respaldo está vacío.'; return; }
     if(!confirm(`Se van a escribir ${n} registros en la base. Lo que tenga el mismo nombre se sobrescribe. ¿Continuar?`)) return;
@@ -2865,6 +2988,7 @@ Responde solo con un objeto JSON:
       await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
       const X=window.XLSX, wb=X.utils.book_new(), siNo=v=>v?'Sí':'No';
       const add=(name,rows)=>{ const ws=X.utils.json_to_sheet(rows.length?rows:[{'Sin datos':''}]); ws['!cols']=Object.keys(rows[0]||{'Sin datos':1}).map(k=>({wch:Math.min(48,Math.max(10,k.length+2,...rows.slice(0,200).map(r=>String(r[k]??'').length)))})); X.utils.book_append_sheet(wb, ws, name); };
+      const detI=detallesInv();
       const nomT = id => (trabs.find(t=>t.id===id)||{}).nombre||id||'';
       const nomD = id => { const d=docs.find(x=>x.id===id); return d?`${d.descripcion}${d.unidad?' ('+d.unidad+')':''}`:(id||''); };
       add('Trabajos', docs.slice().sort(byOrden).map(d=>({'N°':num(d.orden), Cliente:d.cliente||'', Unidad:d.unidad||'', Descripción:d.descripcion||'', 'Orden de servicio':d.ods||'', 'Requisición':d.nota||'', 'Monto USD':num(d.monto), 'Fecha de solicitud':d.fecha||'', Ejecutado:siNo(d.ejecutado), 'Fecha de culminación':d.fechaEjecucion||'', 'Pagado USD':r2(pagado(d)), 'Saldo USD':saldo(d), Estado:ETAPAS[etapa(d)].lbl})));
@@ -2874,6 +2998,9 @@ Responde solo con un objeto JSON:
       add('Adelantos', adels.slice().sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha))).map(a=>({Fecha:a.fecha, Trabajador:nomT(a.trabajadorId), 'Monto USD':num(a.monto), Nota:a.nota||'', 'Descontado en corte':a.corteId?'Sí':'Pendiente'})));
       add('Cortes', cortes.slice().sort((a,b)=>String(a.hasta).localeCompare(String(b.hasta))).flatMap(k=>(k.lineas||[]).map(l=>({'Fecha del corte':k.fecha, Desde:k.desde, Hasta:k.hasta, 'Tasa Bs/USD':num(k.tasa), Trabajador:l.nombre, Cargo:l.cargo||'', 'Días completos':num(l.completos), 'Medios días':num(l.medios), 'Horas extra':num(l.horasExtra), 'Devengado USD':num(l.bruto), 'Adelantos USD':num(l.adelantos), 'A pagar USD':Math.max(0,num(l.totalUsd)), 'A pagar Bs':num(l.totalBs)}))));
       add('Movimientos', todosMovs().map(m=>{ const c=cuentaDe(m.cuenta); const esC=m.tipo==='cambio'; return {Fecha:m.fecha, Tipo:esC?'Cambio':m.tipo==='gasto'?'Gasto':'Ingreso', Concepto:m.concepto||'', Categoría:esC?'':(m.categoria||''), 'A cargo de':esC?'':(m.aCargo||'Empresa'), Cuenta:esC?`${cuentaDe(m.cuentaOrigen).nombre} → ${cuentaDe(m.cuentaDestino).nombre}`:c.nombre, Monto:esC?num(m.montoOrigen):num(m.monto), Moneda:esC?cuentaDe(m.cuentaOrigen).moneda:c.moneda, 'Entra':esC?num(m.montoDestino):'', 'Tasa Bs/USD':num(m.tasa)||'', 'En USD':esC?'':usdDe(m,tasaSugerida()), Trabajo:m.trabajoId?nomD(m.trabajoId):'', Referencia:m.referencia||'', Origen:m.auto?'Automático de '+m.auto:'Manual'}; }));
+      add('Inventario', itemsActivos().concat(items.filter(it=>it.activo===false)).map(it=>{ const e=estadoItem(it.id); return {Ítem:it.nombre, Categoría:it.categoria||'', Unidad:uni(it.unidad), Existencia:e.existencia, 'Costo promedio USD':e.promedio, 'Valor USD':e.valor, Mínimo:num(it.minimo)||'', 'Bajo mínimo':bajoMinimo(it)?'Sí':'', Ubicación:it.ubicacion||'', Proveedor:it.proveedor||'', Activo:siNo(it.activo!==false)}; }));
+      add('Mov. inventario', invMovs.slice().sort(byFechaCreado).map(m=>{ const it=itemDe(m.itemId)||{nombre:'Ítem eliminado',unidad:'und'}; const d=detI[m.id]||{}; return {Fecha:m.fecha, Tipo:TIPO_INV[m.tipo]||m.tipo, Ítem:it.nombre, Cantidad:m.tipo==='conteo'?num(m.contado):num(m.cantidad), Unidad:uni(it.unidad), 'Diferencia (conteo)':m.tipo==='conteo'?num(d.diferencia):'', 'Costo unitario USD':num(d.cu)||'', 'Costo USD':num(d.costo), 'Orden o trabajo':m.trabajoId?nomD(m.trabajoId):'', 'Quién':m.quienId?nomT(m.quienId):'', Proveedor:m.proveedor||'', Referencia:m.referencia||'', Nota:m.nota||'', 'Con gasto':m.movId?'Sí':'', 'Registrado por':m.registradoPor||''}; }));
+      add('Herramientas', activos.slice().sort((a,b)=>String(a.nombre).localeCompare(String(b.nombre),'es')).map(a=>({Nombre:a.nombre, Código:a.codigo||'', Estado:a.estado||'Bueno', Responsable:respNombre(a.responsableId), Ubicación:a.ubicacion||'', 'Fecha de compra':a.fechaCompra||'', 'Costo USD':num(a.costo)||'', Nota:a.nota||''})));
       const bin=X.write(wb, {bookType:'xlsx', type:'array'});
       if(await guardarArchivo(`Respaldo Workproca ${today()}.xlsx`, new Blob([bin]))) toast('Respaldo descargado');
     }catch(e){ toast('No se pudo generar el respaldo. Revisa la conexión e inténtalo otra vez.'); }
@@ -2966,6 +3093,7 @@ Responde solo con un objeto JSON:
     delete $('#mvTasa').dataset.manual; if(m) $('#mvTasa').dataset.manual='1';
     const ts=mvTipo==='ingreso' ? ((ultimaTasa()||{}).tasa||tasaSugerida()) : tasaSugerida(); $('#mvTasa').value = m ? (num(m.tasa)?nfT.format(num(m.tasa)):'') : (ts?nfT.format(ts):'');
     $('#mvErr').textContent=''; $('#mvDel').hidden=!m; $('#mvDel').textContent='Eliminar'; delete $('#mvDel').dataset.armed;
+    $('#mvInv').hidden = !(m && m.tipo==='gasto' && (m.aCargo||'Empresa')==='Empresa' && !m.inventario);
     $('#mvFactNum').value=''; $('#mvModo').value='banco';
     fillCats(m&&m.categoria); syncMvTipo();
     openSheet('#mvSheet');
@@ -3190,6 +3318,7 @@ Responde solo con un objeto JSON:
   $('#mvDestMonto').addEventListener('input', ()=>{ $('#mvDestMonto').dataset.manual='1'; });
   $('#mvSave').addEventListener('click', guardarMov);
   $('#mvDel').addEventListener('click', eliminarMov);
+  $('#mvInv').addEventListener('click', ()=>{ const m=movs.find(x=>x.id===mvEditId); if(!m) return; closeSheets(); openIMov('entrada', null, {movId:m.id, fecha:m.fecha, total:usdDe(m,tasaSugerida()), referencia:m.referencia||'', nota:m.concepto||''}); });
 
   function iniciarGastos(db){
     gDb=db; gCfgRef=db.doc('config/gastos');
@@ -3299,6 +3428,553 @@ Responde solo con un objeto JSON:
   }
 
   /* =====================================================================
+     INVENTARIO: catálogo, existencias por lotes (orden de llegada), movimientos, herramientas y equipos
+     El costo se carga a la orden cuando el material se consume (salida), no cuando se compra (entrada).
+     ===================================================================== */
+  const UNIDADES=[['und','und'],['kg','kg'],['m','m'],['l','l'],['gal','gal'],['cil','cil'],['lam','lám'],['tubo','tubo'],['par','par'],['rollo','rollo'],['caja','caja'],['saco','saco']];
+  const UNI_LBL={und:'unidades',kg:'kilogramos',m:'metros',l:'litros',gal:'galones',cil:'cilindros o bombonas',lam:'láminas',tubo:'tubos',par:'pares',rollo:'rollos',caja:'cajas',saco:'sacos'};
+  const uni = u => (UNIDADES.find(x=>x[0]===u)||[u,u||'und'])[1];
+  const ICFG_DEF={categorias:['Materiales','Consumibles','Combustible','Pintura y químicos','Seguridad','Otros'], ubicaciones:['Almacén','Camioneta']};
+  const CAT_GASTO_INV={'Materiales':'Materiales','Consumibles':'Consumibles (argón, electrodos, discos)','Combustible':'Combustible'};
+  const TIPO_INV={entrada:'Entrada', salida:'Salida', conteo:'Conteo', devolucion:'Devolución'};
+  const ESTADOS_AC=['Bueno','En reparación','Dañado','Perdido'];
+  let iDb=null, icfg=JSON.parse(JSON.stringify(ICFG_DEF)), items=[], invMovs=[], activos=[], iLoaded={i:false,m:false,a:false,c:false};
+  let iView='ex', iQ='', iCat='', iSemana=inicioSemana(today()), itEditId=null, imEditId=null, imTipo='entrada', imPre=null, acEditId=null, invRep={tipo:'existencias', periodo:'semana'};
+  const nq=new Intl.NumberFormat('es-VE',{maximumFractionDigits:2});
+  const r2q = n => Math.round(n*1000)/1000, r4 = n => Math.round(n*10000)/10000;
+  const cant = (n,u) => `${nq.format(num(n))} ${uni(u)}`;
+  const itemDe = id => items.find(x=>x.id===id);
+  const nombreItem = id => { const it=itemDe(id); return it?it.nombre:'Ítem eliminado'; };
+  const quienRegistra = () => document.documentElement.dataset.user||'';
+  const byFechaCreado = (a,b) => String(a.fecha).localeCompare(String(b.fecha)) || String(a.creado||'').localeCompare(String(b.creado||''));
+  const nombreTrabajo = d => `${d.descripcion}${d.unidad?' · '+d.unidad:''}${tieneOrden(d)?' · '+d.ods:d.nota?' · '+d.nota:''}`;
+  const trabajosActivos = () => docs.filter(d=>etapa(d)!=='cobrado').sort(byOrden);
+  const itemsActivos = () => items.filter(it=>it.activo!==false).sort((a,b)=>String(a.categoria||'').localeCompare(String(b.categoria||''),'es') || String(a.nombre).localeCompare(String(b.nombre),'es'));
+
+  /* Estado de un ítem reproduciendo sus movimientos en orden: cada entrada es un lote con su costo; cada salida consume el lote
+     más viejo y se lleva ese costo; un conteo ajusta la existencia (lo que falta es merma, lo que sobra entra al costo promedio). */
+  function estadoItem(id, hasta){
+    const ms=invMovs.filter(m=>m.itemId===id && (!hasta||m.fecha<=hasta)).sort(byFechaCreado);
+    const lotes=[], det={}; let exist=0, ultimoCU=0;
+    const promedio=()=>{ const q=sum(lotes,l=>l.q), v=sum(lotes,l=>l.q*l.cu); return q>0 ? v/q : ultimoCU; };
+    const consumir=q=>{ let r=q, c=0; for(const l of lotes){ if(r<=0) break; if(l.q<=0) continue; const u=Math.min(l.q,r); l.q=r2q(l.q-u); r=r2q(r-u); c+=u*l.cu; } if(r>0) c+=r*promedio(); return c; };
+    for(const m of ms){
+      const q=num(m.cantidad);
+      if(m.tipo==='entrada'||m.tipo==='devolucion'){ const cu=num(m.costoUnit)>0?num(m.costoUnit):promedio(); lotes.push({q, cu, fecha:m.fecha, id:m.id}); exist=r2q(exist+q); if(m.tipo==='entrada'&&num(m.costoUnit)>0) ultimoCU=num(m.costoUnit); det[m.id]={costo:r2(q*cu), cu:r2(cu)}; }
+      else if(m.tipo==='salida'){ const c=consumir(q); exist=r2q(exist-q); det[m.id]={costo:r2(c), cu:q>0?r2(c/q):0}; }
+      else if(m.tipo==='conteo'){ const d=r2q(num(m.contado)-exist); let c=0; if(d<0) c=-consumir(-d); else if(d>0){ const cu=promedio(); lotes.push({q:d, cu, fecha:m.fecha, id:m.id}); c=d*cu; } exist=r2q(num(m.contado)); det[m.id]={costo:r2(c), diferencia:d, cu:d!==0?r2(Math.abs(c/d)):0}; }
+    }
+    const vivos=lotes.filter(l=>l.q>0.0001);
+    return {existencia:exist, lotes:vivos, valor:r2(sum(vivos,l=>l.q*l.cu)), promedio:r2(promedio()), ultimoCU:r2(ultimoCU), det};
+  }
+  /* Costo de cada movimiento de inventario (por id), calculado una vez por juego de datos */
+  let _invCache={ref:null, items:null, map:null};
+  function detallesInv(){
+    if(_invCache.ref===invMovs && _invCache.items===items) return _invCache.map;
+    const map={}; const ids=new Set(invMovs.map(m=>m.itemId));
+    ids.forEach(id=>Object.assign(map, estadoItem(id).det));
+    _invCache={ref:invMovs, items, map}; return map;
+  }
+  const valorInventario = () => r2(sum(itemsActivos(), it=>estadoItem(it.id).valor));
+  const bajoMinimo = it => { const e=estadoItem(it.id); return num(it.minimo)>0 && e.existencia<num(it.minimo); };
+  /* Materiales consumidos en una orden (salidas menos devoluciones), al costo de los lotes que salieron */
+  function materialesTrabajo(tid){
+    const det=detallesInv();
+    const ms=invMovs.filter(m=>m.trabajoId===tid && (m.tipo==='salida'||m.tipo==='devolucion'));
+    const lineas=ms.map(m=>({m, costo:(m.tipo==='salida'?1:-1)*((det[m.id]||{}).costo||0)}));
+    return {total:r2(sum(lineas,x=>x.costo)), lineas};
+  }
+  /* Mermas de conteo por semana (lo que faltó al contar, al costo de los lotes): gasto general de la empresa */
+  function mermasPorSemana(){
+    const det=detallesInv(), por={};
+    invMovs.filter(m=>m.tipo==='conteo').forEach(m=>{ const d=det[m.id]; if(d && d.costo<0){ const w=inicioSemana(m.fecha); por[w]=(por[w]||0)+(-d.costo); } });
+    return por;
+  }
+
+  /* ---------- pintar ---------- */
+  function renderInv(){
+    if(modulo!=='inv') return;
+    document.querySelectorAll('#iTabs button').forEach(b=>b.setAttribute('aria-selected', String(b.dataset.v===iView)));
+    const el=$('#iMain');
+    if(!iDb){ el.innerHTML = nFallo ? `<div class="empty"><b>No se pudo abrir Inventario</b>Abre esta página desde tu cuenta de Claude.</div>` : `<div class="empty"><b>Cargando inventario…</b></div>`; return; }
+    if(!(iLoaded.i&&iLoaded.m&&iLoaded.a&&iLoaded.c)){ el.innerHTML=`<div class="empty"><b>Cargando inventario…</b>Existencias, movimientos y herramientas.</div>`; return; }
+    if(iView==='ex') renderEx(el); else if(iView==='mov') renderIMov(el); else if(iView==='cat') renderCat(el); else renderAct(el);
+  }
+  const btnsInv = () => `<div class="ibtns">
+        <button type="button" class="btn pri" data-inuevo="entrada">+ Entrada</button>
+        <button type="button" class="btn sec" data-inuevo="salida">− Salida</button>
+        <button type="button" class="btn sec" data-inuevo="conteo">Conteo</button>
+        <button type="button" class="btn sec" data-inuevo="devolucion">Devolución</button>
+      </div>
+      <div class="ibtns" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:6px">
+        ${sampleFn&&canWrite?'<button type="button" class="btn sec" id="iAI">Cargar con asistente</button>':''}
+        <button type="button" class="btn sec" id="iRep">Reportes</button>
+      </div>`;
+  function tarjetaItem(it){
+    const e=estadoItem(it.id), bajo=bajoMinimo(it);
+    return `<button type="button" class="wcard${it.activo===false?' off':''}" data-it="${esc(it.id)}"><div class="l"><b>${esc(it.nombre)}${bajo?' <span class="pill so">Bajo mínimo</span>':''}${it.activo===false?' <span class="pill">Inactivo</span>':''}</b><small class="num">${esc(it.categoria||'Sin categoría')}${it.ubicacion?' · '+esc(it.ubicacion):''}${e.promedio>0?' · '+usd(e.promedio)+' por '+esc(uni(it.unidad)):''}${num(it.minimo)>0?' · mín. '+cant(it.minimo,it.unidad):''}</small></div><div class="r num"><b style="display:block;font-size:16px;color:${bajo?'var(--so)':'var(--ink)'}">${cant(e.existencia,it.unidad)}</b>${usd(e.valor)}</div></button>`;
+  }
+  function listaItems(){
+    const q=norm(iQ);
+    const ls=itemsActivos().filter(it=>(!iCat||it.categoria===iCat) && (!q||norm(it.nombre).includes(q)||norm(it.categoria).includes(q)||norm(it.ubicacion).includes(q)));
+    if(!ls.length) return `<div class="empty"><b>${items.length?'Nada coincide con la búsqueda':'Aún no hay ítems en el inventario'}</b>${items.length?'':'Agrega los ítems en Catálogo o carga el conteo inicial con el asistente.'}</div>`;
+    let cat=null, h='';
+    ls.forEach(it=>{ if(it.categoria!==cat){ cat=it.categoria; h+=`<div class="cap" style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--muted);padding:12px 0 2px">${esc(cat||'Sin categoría')}</div>`; } h+=tarjetaItem(it); });
+    return h;
+  }
+  function renderEx(el){
+    const act=itemsActivos(), bajos=act.filter(bajoMinimo), total=valorInventario();
+    const porCat={}; act.forEach(it=>{ porCat[it.categoria||'Sin categoría']=r2((porCat[it.categoria||'Sin categoría']||0)+estadoItem(it.id).valor); });
+    el.innerHTML = `
+      <div class="hero"><div class="lbl">Inventario valorado</div><div class="big num">${usdHtml(total)}</div>
+        <div class="sub">${act.length} ${act.length===1?'ítem':'ítems'} en existencia · al costo de los lotes que quedan${bajos.length?` · <b style="color:var(--so)">${bajos.length} bajo mínimo</b>`:''}</div>
+        ${Object.keys(porCat).length?`<div class="brk num" style="margin-top:8px">${Object.entries(porCat).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div><span>${esc(c)}</span><b>${usd(v)}</b></div>`).join('')}</div>`:''}</div>
+      ${btnsInv()}
+      <div class="filters" style="margin-top:12px"><input id="iQ" type="search" placeholder="Buscar ítem" aria-label="Buscar ítem" value="${esc(iQ)}" style="grid-column:1/-1"></div>
+      <div class="ecchips scroll"><label class="${!iCat?'on':''}"><input type="radio" name="icat" data-icat="" ${!iCat?'checked':''}> Todas</label>${icfg.categorias.map(c=>`<label class="${iCat===c?'on':''}"><input type="radio" name="icat" data-icat="${esc(c)}" ${iCat===c?'checked':''}> ${esc(c)}</label>`).join('')}</div>
+      <div class="lns" id="iList" style="margin-top:4px">${listaItems()}</div>
+      <div style="height:24px"></div>`;
+  }
+  function tarjetaMov(m){
+    const it=itemDe(m.itemId)||{nombre:'Ítem eliminado', unidad:'und'}, d=(detallesInv()[m.id])||{};
+    const signo = m.tipo==='salida' ? '− ' : m.tipo==='conteo' ? (num(d.diferencia)<0?'− ':'+ ') : '+ ';
+    const q = m.tipo==='conteo' ? Math.abs(num(d.diferencia)) : num(m.cantidad);
+    const color = m.tipo==='salida' || (m.tipo==='conteo'&&num(d.diferencia)<0) ? 'var(--danger)' : (m.tipo==='conteo'&&!num(d.diferencia)) ? 'var(--muted)' : 'var(--co)';
+    const tj = m.trabajoId ? (docs.find(x=>x.id===m.trabajoId)||{}).descripcion : '';
+    const det=[fdate(m.fecha), m.tipo==='conteo'?`contado ${cant(m.contado,it.unidad)}`:'', tj?(m.tipo==='devolucion'?'desde ':'para ')+tj:(m.tipo==='salida'?'consumo general':''), m.quienId?nombreT(m.quienId):'', m.proveedor||'', m.referencia?'N° '+m.referencia:'', d.costo!=null&&m.tipo!=='conteo'?usd(Math.abs(d.costo)):'', m.tipo==='conteo'&&d.costo<0?'merma '+usd(-d.costo):'', m.nota||''].filter(Boolean).join(' · ');
+    return `<button type="button" class="wcard" data-im="${esc(m.id)}"><div class="l"><b>${TIPO_INV[m.tipo]||m.tipo} · ${esc(it.nombre)}</b><small class="num">${esc(det)}</small>${m.movId?'<small>Con gasto registrado en Gastos</small>':''}</div><div class="r num" style="color:${color};font-weight:600">${m.tipo==='conteo'&&!num(d.diferencia)?'sin diferencia':signo+cant(q,it.unidad)}</div></button>`;
+  }
+  function renderIMov(el){
+    const ini=iSemana, fin=finSemana(ini);
+    const ms=invMovs.filter(m=>m.fecha>=ini && m.fecha<=fin).sort(byFechaCreado).reverse();
+    const det=detallesInv();
+    const ent=r2(sum(ms.filter(m=>m.tipo==='entrada'),m=>(det[m.id]||{}).costo||0)), sal=r2(sum(ms.filter(m=>m.tipo==='salida'),m=>(det[m.id]||{}).costo||0)), mer=r2(sum(ms.filter(m=>m.tipo==='conteo'),m=>Math.max(0,-((det[m.id]||{}).costo||0))));
+    el.innerHTML = `
+      ${btnsInv()}
+      <div class="daynav"><button type="button" id="iPrev" aria-label="Semana anterior">‹</button><div class="panel num" style="flex:1;text-align:center;padding:10px">Semana del ${fdate(ini)} al ${fdate(fin)}</div><button type="button" id="iNext" aria-label="Semana siguiente">›</button></div>
+      <div class="tip num">Compras ${usd(ent)} · Consumo ${usd(sal)}${mer?` · Mermas por conteo ${usd(mer)}`:''}</div>
+      <div class="lns">${ms.length?ms.map(tarjetaMov).join(''):`<div class="empty"><b>Sin movimientos esta semana</b>Registra una entrada, una salida o un conteo.</div>`}</div>
+      <div style="height:24px"></div>`;
+  }
+  function renderCat(el){
+    const lista=(k,titulo)=>`<div class="sech">${titulo}</div><div class="fer">${(icfg[k]||[]).map((x,i)=>`<span>${esc(x)}<button type="button" data-idel="${k}|${i}" aria-label="Quitar ${esc(x)}">✕</button></span>`).join('')}</div>
+      <div class="ncrow" style="margin-top:8px"><input data-inew="${k}" placeholder="${k==='categorias'?'Nueva categoría':'Nueva ubicación'}" autocomplete="off"><button type="button" class="btn sec" data-iadd="${k}">Agregar</button></div>`;
+    const q=norm(iQ), ls=items.slice().sort((a,b)=>(a.activo===false)-(b.activo===false) || String(a.categoria||'').localeCompare(String(b.categoria||''),'es') || String(a.nombre).localeCompare(String(b.nombre),'es')).filter(it=>!q||norm(it.nombre).includes(q)||norm(it.categoria).includes(q));
+    el.innerHTML = `
+      <div class="sech">Catálogo <span class="hbtns">${sampleFn&&canWrite?'<button type="button" class="btn sec" id="iAI">Cargar con asistente</button>':''}<button type="button" class="btn pri" id="itNew">Agregar ítem</button></span></div>
+      <div class="tip">Cada ítem que se lleva en inventario, con su unidad, mínimo y ubicación. Lo que no vale la pena contar (tornillería, menudencias) se queda como gasto directo y no va aquí.</div>
+      <div class="filters" style="margin-top:10px"><input id="iQ" type="search" placeholder="Buscar en el catálogo" aria-label="Buscar" value="${esc(iQ)}" style="grid-column:1/-1"></div>
+      <div class="lns" id="iList">${ls.length?ls.map(tarjetaItem).join(''):'<div class="empty"><b>Sin ítems</b>Agrega el primero o carga el conteo inicial con el asistente.</div>'}</div>
+      ${lista('categorias','Categorías')}
+      ${lista('ubicaciones','Ubicaciones')}
+      <div style="height:24px"></div>`;
+  }
+  const respNombre = id => !id||id==='taller' ? 'En el taller' : nombreT(id);
+  function renderAct(el){
+    const ls=activos.slice().sort((a,b)=>String(a.nombre).localeCompare(String(b.nombre),'es'));
+    const porResp={}; ls.forEach(a=>{ const k=respNombre(a.responsableId); porResp[k]=(porResp[k]||0)+1; });
+    el.innerHTML = `
+      <div class="sech">Herramientas y equipos <button type="button" class="btn pri" id="acNew">Agregar</button></div>
+      <div class="tip">No se consumen: se prestan. Cada uno con su estado y quién lo tiene; al cambiar el responsable queda el historial.</div>
+      ${ls.length?`<div class="tip num">${Object.entries(porResp).map(([k,n])=>`${esc(k)}: ${n}`).join(' · ')}</div>`:''}
+      <div class="lns">${ls.length?ls.map(a=>`<button type="button" class="wcard" data-ac="${esc(a.id)}"><div class="l"><b>${esc(a.nombre)}${a.codigo?` <span class="code" style="font-family:var(--f-mono);font-size:12px;color:var(--muted)">${esc(a.codigo)}</span>`:''}</b><small>${esc(a.estado||'Bueno')}${a.ubicacion?' · '+esc(a.ubicacion):''}${num(a.costo)>0?' · '+usd(num(a.costo)):''}</small></div><div class="r num"${a.estado&&a.estado!=='Bueno'?' style="color:var(--so)"':''}>${esc(respNombre(a.responsableId))}</div></button>`).join(''):'<div class="empty"><b>Sin herramientas registradas</b>Agrega esmeriles, taladros, equipos de soldar, extensiones…</div>'}</div>
+      <div style="height:24px"></div>`;
+  }
+
+  /* ---------- hoja: ítem del catálogo ---------- */
+  function fillItemSelects(){
+    $('#itCat').innerHTML=icfg.categorias.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    $('#itUni').innerHTML=UNIDADES.map(([k,l])=>`<option value="${k}">${l} · ${UNI_LBL[k]}</option>`).join('');
+    $('#itUbiL').innerHTML=icfg.ubicaciones.map(u=>`<option value="${esc(u)}">`).join('');
+  }
+  function openItem(id){
+    const it=id?itemDe(id):null; itEditId=id||null; fillItemSelects();
+    $('#itTitle').textContent=it?'Ítem del inventario':'Nuevo ítem';
+    $('#itNombre').value=it?it.nombre:''; $('#itCat').value=it&&it.categoria||icfg.categorias[0]; if(it&&it.categoria&&!icfg.categorias.includes(it.categoria)){ $('#itCat').insertAdjacentHTML('afterbegin',`<option value="${esc(it.categoria)}">${esc(it.categoria)}</option>`); $('#itCat').value=it.categoria; }
+    $('#itUni').value=it&&it.unidad||'und'; $('#itMin').value=it&&num(it.minimo)>0?nq.format(num(it.minimo)):''; $('#itUbi').value=it&&it.ubicacion||''; $('#itProv').value=it&&it.proveedor||''; $('#itActivo').checked=!it||it.activo!==false;
+    $('#itErr').textContent=''; $('#itDel').hidden=!it; $('#itDel').textContent='Eliminar'; delete $('#itDel').dataset.armed; $('#itEntrada').hidden=!it; $('#itSalida').hidden=!it;
+    if(it){
+      const e=estadoItem(it.id), ms=invMovs.filter(m=>m.itemId===it.id).sort(byFechaCreado).reverse().slice(0,8), det=detallesInv();
+      $('#itEstado').innerHTML=`<div class="panel num" style="margin-top:10px"><div class="brk"><div><span>Existencia</span><b>${cant(e.existencia,it.unidad)}</b></div><div><span>Valor al costo de los lotes</span><b>${usd(e.valor)}</b></div>${e.lotes.length?`<div><span>Lotes</span><b>${e.lotes.map(l=>`${nq.format(l.q)} a ${usd(l.cu)}`).join(' · ')}</b></div>`:''}</div>
+        ${ms.length?`<div class="tip" style="border:0;margin:8px 0 0">Últimos movimientos</div><div class="blist" style="margin-bottom:0">${ms.map(m=>{ const d=det[m.id]||{}; const q=m.tipo==='conteo'?`contado ${nq.format(num(m.contado))} (${num(d.diferencia)>0?'+':''}${nq.format(num(d.diferencia))})`:`${m.tipo==='salida'?'−':'+'}${nq.format(num(m.cantidad))}`; return `<div><span>${fdate(m.fecha)} · ${TIPO_INV[m.tipo]}${m.trabajoId&&docs.find(x=>x.id===m.trabajoId)?' · '+esc(docs.find(x=>x.id===m.trabajoId).descripcion):''}</span><b>${q} ${esc(uni(it.unidad))}</b></div>`; }).join('')}</div>`:''}</div>`;
+    } else $('#itEstado').innerHTML='';
+    openSheet('#itSheet');
+  }
+  async function guardarItem(){
+    const nombre=$('#itNombre').value.trim(); if(!nombre){ $('#itErr').textContent='Escribe el nombre del ítem.'; return; }
+    const rep=items.find(x=>x.id!==itEditId && norm(x.nombre)===norm(nombre)); if(rep){ $('#itErr').textContent=`Ya existe «${rep.nombre}».`; return; }
+    const old=itEditId?itemDe(itEditId):null;
+    const body={nombre, categoria:$('#itCat').value, unidad:$('#itUni').value, minimo:Math.max(0,parseNum($('#itMin').value)||0), ubicacion:$('#itUbi').value.trim(), proveedor:$('#itProv').value.trim(), activo:$('#itActivo').checked, creado:old&&old.creado||new Date().toISOString(), actualizado:new Date().toISOString()};
+    try{ await (itEditId?iDb.collection('inventario').doc(itEditId):iDb.collection('inventario').doc()).set(body); closeSheets(); toast(old?'Ítem guardado':'Ítem agregado'); }
+    catch(e){ $('#itErr').textContent=errMsg(e); }
+  }
+  async function eliminarItem(){
+    const b=$('#itDel'); if(!itEditId) return;
+    if(invMovs.some(m=>m.itemId===itEditId)){ $('#itErr').textContent='Tiene movimientos registrados. Márcalo como inactivo en vez de eliminarlo.'; return; }
+    if(!b.dataset.armed){ b.dataset.armed='1'; b.textContent='Toca otra vez para eliminar'; return; }
+    try{ await iDb.collection('inventario').doc(itEditId).delete(); closeSheets(); toast('Ítem eliminado'); }catch(e){ $('#itErr').textContent=errMsg(e); }
+  }
+
+  /* ---------- hoja: movimiento de inventario ---------- */
+  function fillIMovSelects(itemId){
+    const cur=imEditId?invMovs.find(x=>x.id===imEditId):null;
+    const ls=items.filter(it=>it.activo!==false || (cur&&cur.itemId===it.id) || it.id===itemId).sort((a,b)=>String(a.nombre).localeCompare(String(b.nombre),'es'));
+    $('#imItem').innerHTML = ls.length ? ls.map(it=>`<option value="${esc(it.id)}">${esc(it.nombre)} (${esc(uni(it.unidad))})</option>`).join('') : '<option value="">Primero agrega ítems en Catálogo</option>';
+    const ts=trabajosActivos();
+    $('#imTrab').innerHTML='<option value="">Ninguna (consumo general del taller)</option>'+ts.map(d=>`<option value="${esc(d.id)}">${esc(nombreTrabajo(d))}</option>`).join('');
+    $('#imQuien').innerHTML='<option value="">Sin especificar</option>'+trabs.filter(t=>t.activo!==false).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es')).map(t=>`<option value="${esc(t.id)}">${esc(t.nombre)}</option>`).join('');
+    $('#imCuenta').innerHTML=gcfg.cuentas.map(c=>`<option value="${esc(c.id)}">${esc(c.nombre)} (${c.moneda==='VES'?'Bs.':'USD'})</option>`).join('');
+  }
+  function syncIMTipo(){
+    document.querySelectorAll('#imTipo button').forEach(b=>b.classList.toggle('on', b.dataset.t===imTipo));
+    const ent=imTipo==='entrada', sal=imTipo==='salida', con=imTipo==='conteo', dev=imTipo==='devolucion';
+    $('#imTipoTip').textContent = ent ? 'Compra o llegada de material: crea un lote con su costo.' : sal ? 'Material que se usa: sale del lote más viejo y su costo va a la orden.' : con ? 'Conteo físico: la diferencia con lo registrado queda como merma o sobrante.' : 'Material que regresa al almacén desde una orden: descuenta el costo de esa orden.';
+    ['#imCostoUL','#imCostoTL','#imBsL','#imTasaL','#imProvL','#imRefL'].forEach(s=>$(s).hidden=!ent);
+    $('#imTrabL').hidden=!(sal||dev); $('#imQuienL').hidden=!sal;
+    $('#imTrabL').firstChild.textContent = dev ? 'Orden de la que regresa' : 'Orden o trabajo (centro de costo)';
+    $('#imCantLbl').textContent = con ? 'Cantidad contada' : 'Cantidad';
+    $('#imGastoBox').hidden = !(ent && !imEditId && !(imPre&&imPre.movId));
+    syncIMItem();
+  }
+  function syncIMItem(){
+    const it=itemDe($('#imItem').value); const u=it?uni(it.unidad):'';
+    const e=it?estadoItem(it.id):null;
+    $('#imCantLbl').textContent = `${imTipo==='conteo'?'Cantidad contada':'Cantidad'}${u?' ('+u+')':''}`;
+    $('#imExist').textContent = it ? `Existencia hoy: ${cant(e.existencia,it.unidad)}${e.promedio>0?' · costo promedio '+usd(e.promedio)+' por '+u:''}${num(it.minimo)>0?' · mínimo '+cant(it.minimo,it.unidad):''}` : '';
+    if(imTipo==='entrada' && it && !$('#imCostoU').value && !imEditId && e.ultimoCU>0) $('#imCostoU').placeholder=`Último: ${nf.format(e.ultimoCU)}`;
+    renderIMConv();
+  }
+  function renderIMConv(){
+    const it=itemDe($('#imItem').value), q=parseNum($('#imCant').value)||0; let txt='';
+    if(!it){ $('#imConv').innerHTML=''; return; }
+    const e=estadoItem(it.id);
+    if(imTipo==='entrada'){
+      const cu=parseNum($('#imCostoU').value)||0, ct=parseNum($('#imCostoT').value)||0;
+      if(q>0 && cu>0) txt=`Entra un lote de <b>${cant(q,it.unidad)}</b> a ${usd(cu)} cada ${esc(uni(it.unidad))} = <b>${usd(r2(q*cu))}</b>.`;
+      else if(q>0 && ct>0) txt=`Entra un lote de <b>${cant(q,it.unidad)}</b> por ${usd(ct)} = ${usd(r2(ct/q))} cada ${esc(uni(it.unidad))}.`;
+      const g=$('#imGasto').checked, cta=cuentaDe($('#imCuenta').value), tot=cu>0&&q>0?r2(q*cu):ct;
+      $('#imGastoCampos').hidden=!g;
+      $('#imGastoInfo').textContent = g && tot>0 ? `Se registra un gasto de ${cta.moneda==='VES'?(parseNum($('#imGTasa').value)>0?bs(r2(tot*parseNum($('#imGTasa').value)))+' ('+usd(tot)+')':'bolívares (falta la tasa)'):usd(tot)} en ${cta.nombre}, categoría ${CAT_GASTO_INV[it.categoria]||'Materiales'}, como compra para inventario.` : '';
+    } else if(imTipo==='salida'){
+      if(q>0){ if(q>e.existencia+0.0005) txt=`<span style="color:var(--danger)">Solo hay ${cant(e.existencia,it.unidad)}. Si de verdad salió más, haz un conteo primero.</span>`; else { const sim=estadoItem(it.id); const c=sim.lotes.length?(()=>{ let r=q,cc=0; for(const l of sim.lotes){ if(r<=0) break; const u=Math.min(l.q,r); cc+=u*l.cu; r-=u; } return cc; })():0; txt=`Salen <b>${cant(q,it.unidad)}</b> = <b>${usd(r2(c))}</b> al costo de los lotes más viejos. Quedan ${cant(r2q(e.existencia-q),it.unidad)}.`; } }
+    } else if(imTipo==='conteo'){
+      if($('#imCant').value!==''){ const d=r2q(q-e.existencia); txt = d===0 ? 'Coincide con lo registrado: no hay diferencia.' : d<0 ? `Faltan <b>${cant(-d,it.unidad)}</b>: quedan como merma (≈ ${usd(r2(-d*e.promedio))}).` : `Sobran <b>${cant(d,it.unidad)}</b>: entran al costo promedio (${usd(e.promedio)}).`; }
+    } else if(q>0) txt=`Regresan <b>${cant(q,it.unidad)}</b> al almacén al costo promedio (${usd(e.promedio)} cada ${esc(uni(it.unidad))}); se descuentan de la orden elegida.`;
+    $('#imConv').innerHTML=txt;
+  }
+  function openIMov(tipo, id, pre){
+    const m=id?invMovs.find(x=>x.id===id):null; imEditId=id||null; imTipo=m?m.tipo:(tipo||'entrada'); imPre=pre||null;
+    fillIMovSelects(pre&&pre.itemId);
+    $('#imTitle').textContent = m ? 'Editar movimiento' : TIPO_INV[imTipo]+' de inventario';
+    $('#imItem').value = m ? m.itemId : (pre&&pre.itemId) || $('#imItem').value;
+    $('#imFecha').value = m ? m.fecha : (pre&&pre.fecha) || today();
+    $('#imCant').value = m ? (m.tipo==='conteo'?nq.format(num(m.contado)):nq.format(num(m.cantidad))) : (pre&&num(pre.cantidad)?nq.format(num(pre.cantidad)):'');
+    $('#imCostoU').value = m&&num(m.costoUnit)>0 ? nf.format(num(m.costoUnit)) : ''; $('#imCostoU').placeholder='0,00';
+    $('#imCostoT').value = (!m && pre && num(pre.total)>0) ? nf.format(num(pre.total)) : ''; $('#imBs').value=''; $('#imTasa').value='';
+    $('#imProv').value = m ? m.proveedor||'' : (pre&&pre.proveedor)||''; $('#imRef').value = m ? m.referencia||'' : (pre&&pre.referencia)||'';
+    $('#imTrab').value = m ? m.trabajoId||'' : ''; $('#imQuien').value = m ? m.quienId||'' : ''; $('#imNota').value = m ? m.nota||'' : (pre&&pre.nota)||'';
+    $('#imGasto').checked=false; $('#imGastoCampos').hidden=true; $('#imGTasa').value=tasaSugerida()?nfT.format(tasaSugerida()):''; $('#imCuenta').value='binance';
+    $('#imErr').textContent=''; $('#imDel').hidden=!m; $('#imDel').textContent='Eliminar'; delete $('#imDel').dataset.armed;
+    syncIMTipo(); openSheet('#imSheet');
+  }
+  async function guardarIMov(){
+    const err=x=>{ $('#imErr').textContent=x; };
+    const it=itemDe($('#imItem').value); if(!it) return err('Elige el ítem.');
+    const f=$('#imFecha').value; if(!f) return err('Pon la fecha.');
+    const q=parseNum($('#imCant').value); if(isNaN(q) || q<0 || (imTipo!=='conteo' && !(q>0))) return err(imTipo==='conteo'?'Escribe la cantidad contada.':'Escribe la cantidad.');
+    const old=imEditId?invMovs.find(x=>x.id===imEditId):null;
+    const body={tipo:imTipo, fecha:f, itemId:it.id, nota:$('#imNota').value.trim(), registradoPor:old&&old.registradoPor||quienRegistra(), creado:old&&old.creado||new Date().toISOString(), actualizado:new Date().toISOString()};
+    if(imTipo==='conteo') body.contado=r2q(q); else body.cantidad=r2q(q);
+    if(imTipo==='entrada'){
+      let cu=parseNum($('#imCostoU').value)||0; const ct=parseNum($('#imCostoT').value)||0, tb=parseNum($('#imBs').value)||0, tt=parseNum($('#imTasa').value)||0;
+      if(!(cu>0) && ct>0) cu=ct/q; if(!(cu>0) && tb>0 && tt>0) cu=tb/tt/q;
+      if(!(cu>0)) return err('Pon el costo: por unidad, el total en dólares, o el total en bolívares con su tasa.');
+      Object.assign(body,{costoUnit:r4(cu), proveedor:$('#imProv').value.trim(), referencia:$('#imRef').value.trim(), movId:old&&old.movId||(imPre&&imPre.movId)||''});
+    } else if(imTipo==='salida'||imTipo==='devolucion'){
+      body.trabajoId=$('#imTrab').value||''; if(imTipo==='salida') body.quienId=$('#imQuien').value||'';
+      if(imTipo==='salida'){ const e=estadoItem(it.id); const base=old&&old.itemId===it.id&&old.tipo==='salida'?e.existencia+num(old.cantidad):e.existencia; if(q>base+0.0005) return err(`Solo hay ${cant(base,it.unidad)}. Haz un conteo primero si salió más.`); }
+    }
+    try{
+      if(imTipo==='entrada' && !imEditId && $('#imGasto').checked && !body.movId){
+        const cta=cuentaDe($('#imCuenta').value), tot=r2(body.costoUnit*q), gt=parseNum($('#imGTasa').value)||0;
+        if(cta.moneda==='VES' && !(gt>0)) return err('Escribe la tasa del pago en bolívares.');
+        const gref=gDb.collection('movimientos').doc();
+        await gref.set({tipo:'gasto', fecha:f, concepto:`Compra: ${it.nombre} (${cant(q,it.unidad)})`, categoria:CAT_GASTO_INV[it.categoria]||'Materiales', aCargo:'Empresa', cuenta:cta.id, monto:cta.moneda==='VES'?r2(tot*gt):tot, tasa:cta.moneda==='VES'?gt:0, trabajoId:'', referencia:body.referencia||'', inventario:true, creado:body.creado, actualizado:body.actualizado});
+        body.movId=gref.id;
+      }
+      const ref=imEditId?iDb.collection('invMovs').doc(imEditId):iDb.collection('invMovs').doc();
+      await ref.set(body);
+      if(body.movId && imPre && imPre.movId && !old){ try{ await gDb.collection('movimientos').doc(body.movId).update({inventario:true, actualizado:new Date().toISOString()}); }catch(_){} }
+      closeSheets(); toast(TIPO_INV[imTipo]+' registrada');
+    }catch(e){ err(errMsg(e)); }
+  }
+  async function eliminarIMov(){
+    const b=$('#imDel'); if(!imEditId) return;
+    if(!b.dataset.armed){ b.dataset.armed='1'; b.textContent='Toca otra vez para eliminar'; return; }
+    const old=invMovs.find(x=>x.id===imEditId);
+    try{
+      await iDb.collection('invMovs').doc(imEditId).delete();
+      if(old&&old.movId){ try{ await gDb.collection('movimientos').doc(old.movId).update({inventario:false, actualizado:new Date().toISOString()}); }catch(_){} }
+      closeSheets(); toast('Movimiento eliminado'+(old&&old.movId?'; el gasto sigue en Gastos':''));
+    }catch(e){ $('#imErr').textContent=errMsg(e); }
+  }
+
+  /* ---------- hoja: herramienta o equipo ---------- */
+  function openActivo(id){
+    const a=id?activos.find(x=>x.id===id):null; acEditId=id||null;
+    $('#acTitle').textContent=a?'Herramienta o equipo':'Nueva herramienta o equipo';
+    $('#acResp').innerHTML='<option value="taller">En el taller</option>'+trabs.filter(t=>t.activo!==false).sort((x,y)=>x.nombre.localeCompare(y.nombre,'es')).map(t=>`<option value="${esc(t.id)}">${esc(t.nombre)}</option>`).join('');
+    $('#itUbiL').innerHTML=icfg.ubicaciones.map(u=>`<option value="${esc(u)}">`).join('');
+    $('#acNombre').value=a?a.nombre:''; $('#acCodigo').value=a&&a.codigo||''; $('#acEstado').value=a&&ESTADOS_AC.includes(a.estado)?a.estado:'Bueno'; $('#acResp').value=a&&a.responsableId&&trabs.some(t=>t.id===a.responsableId)?a.responsableId:'taller';
+    $('#acUbi').value=a&&a.ubicacion||''; $('#acFecha').value=a&&a.fechaCompra||''; $('#acCosto').value=a&&num(a.costo)>0?nf.format(num(a.costo)):''; $('#acNota').value=a&&a.nota||'';
+    $('#acHist').innerHTML = a&&Array.isArray(a.historial)&&a.historial.length ? `<div class="tip" style="border:0;margin:8px 0 0">Historial de entregas</div><div class="blist">${a.historial.slice().reverse().slice(0,8).map(h=>`<div><span>${fdate(h.fecha)}</span><b>${esc(respNombre(h.de))} → ${esc(respNombre(h.a))}</b></div>`).join('')}</div>` : '';
+    $('#acErr').textContent=''; $('#acDel').hidden=!a; $('#acDel').textContent='Eliminar'; delete $('#acDel').dataset.armed;
+    openSheet('#acSheet');
+  }
+  async function guardarActivo(){
+    const nombre=$('#acNombre').value.trim(); if(!nombre){ $('#acErr').textContent='Escribe el nombre.'; return; }
+    const old=acEditId?activos.find(x=>x.id===acEditId):null, resp=$('#acResp').value;
+    const hist=Array.isArray(old&&old.historial)?old.historial.slice():[];
+    if(old && (old.responsableId||'taller')!==resp) hist.push({fecha:today(), de:old.responsableId||'taller', a:resp});
+    const body={nombre, codigo:$('#acCodigo').value.trim(), estado:$('#acEstado').value, responsableId:resp, ubicacion:$('#acUbi').value.trim(), fechaCompra:$('#acFecha').value||'', costo:r2(parseNum($('#acCosto').value)||0), nota:$('#acNota').value.trim(), historial:hist, creado:old&&old.creado||new Date().toISOString(), actualizado:new Date().toISOString()};
+    try{ await (acEditId?iDb.collection('activos').doc(acEditId):iDb.collection('activos').doc()).set(body); closeSheets(); toast(old?'Guardado':'Agregado'); }
+    catch(e){ $('#acErr').textContent=errMsg(e); }
+  }
+  async function eliminarActivo(){
+    const b=$('#acDel'); if(!acEditId) return;
+    if(!b.dataset.armed){ b.dataset.armed='1'; b.textContent='Toca otra vez para eliminar'; return; }
+    try{ await iDb.collection('activos').doc(acEditId).delete(); closeSheets(); toast('Eliminado'); }catch(e){ $('#acErr').textContent=errMsg(e); }
+  }
+
+  /* ---------- reportes de inventario (formato de WhatsApp) ---------- */
+  function periodoInv(){
+    const hoy=today();
+    if(invRep.periodo==='mes') return [hoy.slice(0,8)+'01', hoy];
+    if(invRep.periodo==='todo') return ['0000-00-00', hoy];
+    const w=inicioSemana(hoy); return [w, finSemana(w)];
+  }
+  function buildInv(){
+    const hoy=today(), L=[], det=detallesInv();
+    if(invRep.tipo==='existencias'){
+      L.push('*WORKPROCA · Inventario*', `Al ${fdate(hoy)}`);
+      const act=itemsActivos(); let cat=null, sub=0; const tot=valorInventario();
+      if(!act.length){ L.push('', 'No hay ítems en el inventario.'); return L.join('\n'); }
+      act.forEach((it,i)=>{
+        const e=estadoItem(it.id);
+        if(it.categoria!==cat){ cat=it.categoria; const v=r2(sum(act.filter(x=>x.categoria===cat),x=>estadoItem(x.id).valor)); L.push('', `*${cat||'Sin categoría'}* (${usd(v)})`); }
+        L.push(`• ${it.nombre}: ${cant(e.existencia,it.unidad)} · ${usd(e.valor)}${bajoMinimo(it)?` ⚠️ bajo mínimo (${nq.format(num(it.minimo))})`:''}`);
+      });
+      L.push('', `*Valor total del inventario: ${usd(tot)}*`);
+      const bajos=act.filter(bajoMinimo); if(bajos.length) L.push(`Bajo mínimo: ${bajos.map(it=>`${it.nombre} (${nq.format(estadoItem(it.id).existencia)} de ${nq.format(num(it.minimo))})`).join(', ')}`);
+      return L.join('\n');
+    }
+    if(invRep.tipo==='reposicion'){
+      L.push('*WORKPROCA · Lista de reposición*', fdate(hoy), '');
+      const bajos=itemsActivos().filter(bajoMinimo); let est=0;
+      if(!bajos.length){ L.push('Nada por debajo del mínimo.'); return L.join('\n'); }
+      bajos.forEach(it=>{ const e=estadoItem(it.id), falta=r2q(num(it.minimo)-e.existencia), cu=e.ultimoCU||e.promedio; est+=falta*cu; L.push(`• ${it.nombre}: hay ${cant(e.existencia,it.unidad)}, mínimo ${nq.format(num(it.minimo))} → comprar ${cant(falta,it.unidad)}${cu>0?` (≈ ${usd(r2(falta*cu))} al último costo)`:''}${it.proveedor?' · '+it.proveedor:''}`); });
+      L.push('', `*Estimado: ${usd(r2(est))}*`);
+      return L.join('\n');
+    }
+    const [desde,hasta]=periodoInv(), per=invRep.periodo==='todo'?'Todo lo registrado':`Del ${fdate(desde)} al ${fdate(hasta)}`;
+    const enPer=m=>m.fecha>=desde && m.fecha<=hasta;
+    if(invRep.tipo==='consumo'){
+      L.push('*WORKPROCA · Consumo de materiales por orden*', per);
+      const ms=invMovs.filter(m=>enPer(m)&&(m.tipo==='salida'||m.tipo==='devolucion')).sort(byFechaCreado);
+      if(!ms.length){ L.push('', 'Sin consumo en el período.'); return L.join('\n'); }
+      const grupos={}; ms.forEach(m=>{ const k=m.trabajoId&&docs.find(x=>x.id===m.trabajoId)?m.trabajoId:''; (grupos[k]=grupos[k]||[]).push(m); });
+      let total=0;
+      Object.entries(grupos).sort((a,b)=>(a[0]===''?1:0)-(b[0]===''?1:0)).forEach(([tid,ls])=>{
+        const d=docs.find(x=>x.id===tid); L.push('', `*${d?nombreTrabajo(d):'Sin orden (consumo general del taller)'}*`);
+        let sub=0; ls.forEach(m=>{ const it=itemDe(m.itemId)||{nombre:'Ítem eliminado',unidad:'und'}; const c=(m.tipo==='salida'?1:-1)*((det[m.id]||{}).costo||0); sub+=c; L.push(`• ${m.tipo==='devolucion'?'Devolución: ':''}${cant(m.cantidad,it.unidad)} ${it.nombre}: ${m.tipo==='devolucion'?'− ':''}${usd(Math.abs(c))}`); });
+        total+=sub; L.push(`*Subtotal: ${usd(r2(sub))}*`);
+      });
+      const mer=r2(sum(invMovs.filter(m=>enPer(m)&&m.tipo==='conteo'),m=>Math.max(0,-((det[m.id]||{}).costo||0))));
+      L.push('', `*Total consumido: ${usd(r2(total))}*${mer?` · Mermas por conteo: ${usd(mer)}`:''}`);
+      return L.join('\n');
+    }
+    L.push('*WORKPROCA · Compras para inventario*', per);
+    const ms=invMovs.filter(m=>enPer(m)&&m.tipo==='entrada').sort(byFechaCreado);
+    if(!ms.length){ L.push('', 'Sin compras en el período.'); return L.join('\n'); }
+    L.push(''); let total=0;
+    ms.forEach(m=>{ const it=itemDe(m.itemId)||{nombre:'Ítem eliminado',unidad:'und'}; const c=(det[m.id]||{}).costo||0; total+=c; L.push(`• ${fdate(m.fecha).slice(0,5)} · ${cant(m.cantidad,it.unidad)} ${it.nombre} · ${usd(c)}${m.proveedor?' ('+m.proveedor+(m.referencia?', N° '+m.referencia:'')+')':m.referencia?' (N° '+m.referencia+')':''}${m.movId?'':' · sin gasto registrado'}`); });
+    L.push('', `*Total comprado: ${usd(r2(total))}*`);
+    return L.join('\n');
+  }
+  function renderInvFiltros(){
+    $('#ecFiltros').innerHTML = `
+      <div class="seg" role="group" aria-label="Reporte" style="grid-template-columns:repeat(2,minmax(0,1fr))">${[['existencias','Existencias'],['reposicion','Reposición'],['consumo','Consumo por orden'],['compras','Compras']].map(([k,l])=>`<button type="button" data-ir="${k}" class="${invRep.tipo===k?'on':''}">${l}</button>`).join('')}</div>
+      ${['consumo','compras'].includes(invRep.tipo)?`<div class="seg" role="group" aria-label="Período" style="margin-top:8px">${[['semana','Esta semana'],['mes','Este mes'],['todo','Todo']].map(([k,l])=>`<button type="button" data-iper="${k}" class="${invRep.periodo===k?'on':''}">${l}</button>`).join('')}</div>`:''}`;
+  }
+  function abrirRepInv(){
+    shareMode='inv';
+    $('#shareTitle').textContent='Reportes de inventario';
+    $('#shareDesc').textContent='Existencias valoradas, lista de reposición, consumo por orden o compras del período. Formato de WhatsApp.';
+    $('#ecFiltros').hidden=false; renderInvFiltros();
+    $('#shareText').value=buildInv(); openSheet('#shareSheet');
+  }
+
+  /* ---------- eventos de inventario ---------- */
+  $('#iTabs').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; iView=b.dataset.v; renderInv(); });
+  $('#iMain').addEventListener('click', e=>{
+    const t=e.target;
+    const nv=t.closest('[data-inuevo]'); if(nv) return openIMov(nv.dataset.inuevo, null);
+    if(t.closest('#iAI')) return abrirAI('inv');
+    if(t.closest('#iRep')) return abrirRepInv();
+    if(t.closest('#iPrev')){ iSemana=sumarDias(iSemana,-7); return renderInv(); }
+    if(t.closest('#iNext')){ iSemana=sumarDias(iSemana,7); return renderInv(); }
+    if(t.closest('#itNew')) return openItem(null);
+    if(t.closest('#acNew')) return openActivo(null);
+    const it=t.closest('[data-it]'); if(it) return openItem(it.dataset.it);
+    const im=t.closest('[data-im]'); if(im) return openIMov(null, im.dataset.im);
+    const ac=t.closest('[data-ac]'); if(ac) return openActivo(ac.dataset.ac);
+    const idl=t.closest('[data-idel]'); if(idl){ const [k,i]=idl.dataset.idel.split('|'); const n={...icfg}; n[k]=(n[k]||[]).filter((_,j)=>j!==+i); return guardarICfg(n); }
+    const iad=t.closest('[data-iadd]'); if(iad){ const k=iad.dataset.iadd; const inp=document.querySelector(`[data-inew="${k}"]`); const v=(inp.value||'').trim(); if(!v) return; const n={...icfg}; if(!(n[k]||[]).some(x=>norm(x)===norm(v))) n[k]=[...(n[k]||[]), v]; return guardarICfg(n); }
+  });
+  $('#iMain').addEventListener('change', e=>{ const t=e.target; if(t.dataset.icat!=null){ iCat=t.dataset.icat; const l=$('#iList'); if(l) l.innerHTML=listaItems(); document.querySelectorAll('#iMain [data-icat]').forEach(x=>x.closest('label').classList.toggle('on', x.checked)); } });
+  $('#iMain').addEventListener('input', e=>{ if(e.target.id==='iQ'){ iQ=e.target.value; const l=$('#iList'); if(!l) return; if(iView==='ex') l.innerHTML=listaItems(); else { const q=norm(iQ); const ls=items.filter(it=>!q||norm(it.nombre).includes(q)||norm(it.categoria).includes(q)); l.innerHTML=ls.map(tarjetaItem).join('')||'<div class="empty"><b>Nada coincide</b></div>'; } } });
+  async function guardarICfg(n){ try{ await iDb.doc('config/inventario').set(n); icfg=n; renderInv(); toast('Guardado'); }catch(e){ toast(errMsg(e)); } }
+  $('#itSave').addEventListener('click', guardarItem);
+  $('#itDel').addEventListener('click', eliminarItem);
+  $('#itEntrada').addEventListener('click', ()=>{ const id=itEditId; closeSheets(); openIMov('entrada', null, {itemId:id}); });
+  $('#itSalida').addEventListener('click', ()=>{ const id=itEditId; closeSheets(); openIMov('salida', null, {itemId:id}); });
+  $('#imTipo').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b||imEditId) return; imTipo=b.dataset.t; syncIMTipo(); });
+  $('#imItem').addEventListener('change', syncIMItem);
+  ['#imCant','#imCostoU','#imCostoT','#imBs','#imTasa','#imGTasa'].forEach(s=>$(s).addEventListener('input', ()=>{ if(s==='#imBs'||s==='#imTasa'){ const tb=parseNum($('#imBs').value)||0, tt=parseNum($('#imTasa').value)||0; if(tb>0&&tt>0){ $('#imCostoT').value=nf.format(r2(tb/tt)); $('#imCostoU').value=''; } } renderIMConv(); }));
+  ['#imGasto','#imCuenta'].forEach(s=>$(s).addEventListener('change', renderIMConv));
+  $('#imSave').addEventListener('click', guardarIMov);
+  $('#imDel').addEventListener('click', eliminarIMov);
+  $('#acSave').addEventListener('click', guardarActivo);
+  $('#acDel').addEventListener('click', eliminarActivo);
+
+  function iniciarInventario(db){
+    iDb=db;
+    const rp=()=>{ renderInv(); if(modulo==='res') renderRes(); };
+    db.collection('inventario').onSnapshot(s=>{ items=s.docs.map(d=>Object.assign({id:d.id}, d.data())); iLoaded.i=true; rp(); }, ()=>{ iLoaded.i=true; rp(); });
+    db.collection('invMovs').onSnapshot(s=>{ invMovs=s.docs.map(d=>Object.assign({id:d.id}, d.data())); iLoaded.m=true; rp(); }, ()=>{ iLoaded.m=true; rp(); });
+    db.collection('activos').onSnapshot(s=>{ activos=s.docs.map(d=>Object.assign({id:d.id}, d.data())); iLoaded.a=true; rp(); }, ()=>{ iLoaded.a=true; rp(); });
+    db.doc('config/inventario').onSnapshot(s=>{ const d=s.exists?(s.data()||{}):{}; icfg={categorias:Array.isArray(d.categorias)&&d.categorias.length?d.categorias.map(String):ICFG_DEF.categorias.slice(), ubicaciones:Array.isArray(d.ubicaciones)?d.ubicaciones.map(String):ICFG_DEF.ubicaciones.slice()}; iLoaded.c=true; rp(); }, ()=>{ iLoaded.c=true; rp(); });
+  }
+
+  /* ---------- asistente de inventario ---------- */
+  let aiInv={items:[], movs:[]};
+  function resumenInventario(){
+    return itemsActivos().map(it=>{ const e=estadoItem(it.id); return {id:it.id, nombre:it.nombre, categoria:it.categoria||'', unidad:it.unidad, existencia:e.existencia, minimo:num(it.minimo), ubicacion:it.ubicacion||''}; });
+  }
+  function promptInv(texto, textosArch, nImgs){
+    return `Eres el asistente de inventario de WORKPROCA (taller naval en Maracaibo, Venezuela). Tu único propósito: convertir el material que te paso en movimientos de inventario para que Fran los revise y guarde. No propones gastos de dinero, pagos, cobros ni nómina: de eso se ocupan otras pestañas.
+
+Qué lees y qué propones:
+- Factura, nota de entrega, recibo de compra o mensaje tipo "llegaron 10 láminas": ENTRADAS, una por cada ítem, con cantidad, unidad y costo.
+- Mensaje o nota tipo "saqué 10 discos para Lupara V", "usamos 2 láminas en la base de la planta", "Andrés se llevó 1 bombona de argón": SALIDAS, con la orden o trabajo al que va el material y quién lo retiró si se dice.
+- Foto o lista de un conteo físico del almacén ("hay 12 discos, 3 láminas, 1 bombona"): CONTEOS, con la cantidad contada de cada ítem (la app calcula la diferencia).
+- Material que regresa al almacén desde una orden ("sobraron 2 tubos de la Omega"): DEVOLUCIONES, con la orden de la que regresa.
+- Si un ítem no está en el catálogo, propón un ÍTEM NUEVO (nombre corto y claro, categoría, unidad, mínimo si se deduce) y usa ese nombre en el movimiento. No crees duplicados de ítems que ya existen con otro nombre, otra mayúscula o abreviatura: usa el registrado.
+
+Reglas:
+- Unidades: usa la del ítem del catálogo. Si el documento trae otra ("2 bombonas", "1 caja de 25 discos"), convierte solo cuando sea evidente y dilo en "motivo"; si no es evidente, deja la cantidad tal cual y ponlo en "dudas".
+- Costos siempre por unidad y en dólares (USD). Si la factura está en bolívares, pon costo_total_bs y la tasa si aparece; la app lo convierte. No inventes costos: si no aparece, 0.
+- En una factura, el total es la suma de los ítems: si no cuadra, revísalo antes de proponer.
+- Una entrada no es un gasto de dinero por sí sola: si el documento muestra que ya se pagó (recibo, comprobante, "pagué"), marca pagado=true y la cuenta ("banco" si fue en bolívares, "binance" si fue en USDT, "efectivo" si fue en dólares) para que Fran decida si registra también el gasto.
+- Asocia cada salida al trabajo activo que corresponda por descripción, unidad (embarcación) u orden de servicio. Si no se dice para qué orden, déjala sin orden (consumo general) y no lo conviertas en duda.
+- Resuelve tú lo menor (tildes, mayúsculas, formato de números). En "dudas" pon solo lo que cambia la existencia o el costo: una cantidad ilegible, una unidad que no se puede saber, un ítem que podría ser cualquiera de dos. Cada duda: una frase corta con tu propuesta.
+${REGLAS_COMUNES}
+- Fecha de hoy: ${today()}. Fechas AAAA-MM-DD. Números con punto decimal y sin separador de miles.
+
+Catálogo del inventario (JSON; usa "id" en item_id y la unidad registrada):
+${JSON.stringify(resumenInventario())}
+Categorías válidas para ítems nuevos: ${JSON.stringify(icfg.categorias)}. Unidades válidas: ${JSON.stringify(UNIDADES.map(u=>u[0]))} (${UNIDADES.map(u=>u[0]+' = '+UNI_LBL[u[0]]).join(', ')}).
+
+Trabajos activos (JSON; usa "id" en trabajo_id):
+${JSON.stringify(trabajosActivos().map(d=>({id:d.id, nombre:nombreTrabajo(d), cliente:d.cliente||''})))}
+
+Trabajadores (JSON; usa "id" en quien_id):
+${JSON.stringify(trabs.filter(t=>t.activo!==false).map(t=>({id:t.id, nombre:t.nombre})))}
+
+Material a leer:
+${texto?'Texto:\n<<<\n'+texto+'\n>>>\n':''}${textosArch.join('\n\n')}${nImgs?`\n(Además van ${nImgs} imagen(es) adjunta(s): léelas con cuidado, en especial cantidades y unidades.)`:''}
+
+Responde solo con un objeto JSON:
+{"resumen":"una frase de lo que entendiste","items_nuevos":[{"nombre":"","categoria":"","unidad":"und","minimo":0,"motivo":""}],"movimientos":[{"tipo":"entrada|salida|conteo|devolucion","fecha":"AAAA-MM-DD","item_id":"id del catálogo o vacío si es nuevo","item_nombre":"nombre tal como está en el catálogo o el del ítem nuevo","cantidad":0,"costo_unit_usd":0,"costo_total_usd":0,"costo_total_bs":0,"tasa":0,"proveedor":"","referencia":"N° de factura o nota","trabajo_id":"","quien_id":"","nota":"","pagado":false,"cuenta":"","motivo":"de dónde lo sacaste"}],"dudas":[]}
+Para "conteo", "cantidad" es la cantidad contada. Si no hay nada que registrar, "movimientos" va vacío y lo explicas en "resumen".`;
+  }
+  function renderAIInv(res){
+    const nuevos=(Array.isArray(res.items_nuevos)?res.items_nuevos:[]).filter(x=>x&&x.nombre).map(x=>({...x, nombre:String(x.nombre).trim()}));
+    const movsP=(Array.isArray(res.movimientos)?res.movimientos:[]).filter(x=>x&&['entrada','salida','conteo','devolucion'].includes(x.tipo));
+    aiInv={items:nuevos, movs:movsP};
+    const dudas=Array.isArray(res.dudas)?res.dudas.filter(Boolean):[];
+    const catOpts=v=>icfg.categorias.map(c=>`<option${norm(c)===norm(v)?' selected':''}>${esc(c)}</option>`).join('');
+    const uniOpts=v=>UNIDADES.map(([k,l])=>`<option value="${k}"${k===v?' selected':''}>${l} · ${UNI_LBL[k]}</option>`).join('');
+    const itemOpts=(x)=>{ const ex=items.filter(it=>it.activo!==false).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es')); let sel=x.item_id&&itemDe(x.item_id)?x.item_id:''; if(!sel&&x.item_nombre){ const m=items.find(it=>norm(it.nombre)===norm(x.item_nombre))||(parecido(x.item_nombre, items.map(i=>i.nombre))?items.find(it=>it.nombre===parecido(x.item_nombre, items.map(i=>i.nombre))):null); if(m) sel=m.id; }
+      const nuevo=!sel&&x.item_nombre ? (nuevos.find(n=>norm(n.nombre)===norm(x.item_nombre))||{nombre:x.item_nombre}) : null;
+      return {sel, html:(nuevo?`<option value="nuevo:${esc(nuevo.nombre)}" selected>${esc(nuevo.nombre)} (nuevo)</option>`:'')+ex.map(it=>`<option value="${esc(it.id)}"${it.id===sel?' selected':''}>${esc(it.nombre)} (${esc(uni(it.unidad))})</option>`).join('')}; };
+    const trabOpts=v=>'<option value="">Sin orden (consumo general)</option>'+trabajosActivos().map(d=>`<option value="${esc(d.id)}"${d.id===v?' selected':''}>${esc(nombreTrabajo(d))}</option>`).join('');
+    const quienOpts=v=>'<option value="">Sin especificar</option>'+trabs.filter(t=>t.activo!==false).map(t=>`<option value="${esc(t.id)}"${t.id===v?' selected':''}>${esc(t.nombre)}</option>`).join('');
+    const ctaOpts=v=>gcfg.cuentas.map(c=>`<option value="${esc(c.id)}"${c.id===v?' selected':''}>${esc(c.nombre)}</option>`).join('');
+    let h=(res.resumen?`<div class="sum">${esc(res.resumen)}</div>`:'');
+    h+=nuevos.map((n,i)=>`<div class="act tr"><input type="checkbox" data-ichk="n${i}" checked aria-label="Incluir"><div style="min-width:0;flex:1"><span class="tag">Ítem nuevo</span>
+      <div class="g"><label style="grid-column:1/-1">Nombre<input data-in="${i}" data-k="nombre" value="${esc(n.nombre)}"></label><label>Categoría<select data-in="${i}" data-k="categoria">${catOpts(n.categoria)}</select></label><label>Unidad<select data-in="${i}" data-k="unidad">${uniOpts(UNIDADES.some(u=>u[0]===n.unidad)?n.unidad:'und')}</select></label><label>Mínimo<input data-in="${i}" data-k="minimo" inputmode="decimal" value="${num(n.minimo)>0?nq.format(num(n.minimo)):''}"></label></div>
+      ${n.motivo?`<small>${esc(n.motivo)}</small>`:''}<small class="err" data-ierr="n${i}"></small></div></div>`).join('');
+    h+=movsP.map((x,i)=>{
+      const io=itemOpts(x); const it=itemDe(io.sel); const u=it?uni(it.unidad):(nuevos.find(n=>norm(n.nombre)===norm(x.item_nombre))||{}).unidad||'';
+      let cu=num(x.costo_unit_usd); if(!(cu>0)&&num(x.costo_total_usd)>0&&num(x.cantidad)>0) cu=num(x.costo_total_usd)/num(x.cantidad); if(!(cu>0)&&num(x.costo_total_bs)>0&&num(x.tasa)>0&&num(x.cantidad)>0) cu=num(x.costo_total_bs)/num(x.tasa)/num(x.cantidad);
+      const ent=x.tipo==='entrada', sal=x.tipo==='salida', con=x.tipo==='conteo', dev=x.tipo==='devolucion';
+      return `<div class="act tr"><input type="checkbox" data-ichk="m${i}" checked aria-label="Incluir"><div style="min-width:0;flex:1"><span class="tag">${TIPO_INV[x.tipo]}</span>
+        <div class="g">
+          <label style="grid-column:1/-1">Ítem<select data-im="${i}" data-k="item">${io.html}</select></label>
+          <label>Fecha<input type="date" data-im="${i}" data-k="fecha" value="${esc(x.fecha||today())}"></label>
+          <label>${con?'Cantidad contada':'Cantidad'}${u?' ('+esc(u)+')':''}<input data-im="${i}" data-k="cantidad" inputmode="decimal" value="${num(x.cantidad)?nq.format(num(x.cantidad)):''}"></label>
+          ${ent?`<label>Costo por unidad (USD)<input data-im="${i}" data-k="costo" inputmode="decimal" value="${cu>0?nf.format(r2(cu)):''}"></label><label>Proveedor<input data-im="${i}" data-k="proveedor" value="${esc(x.proveedor||'')}"></label><label>N° factura o nota<input data-im="${i}" data-k="referencia" value="${esc(x.referencia||'')}"></label>
+          <label class="chkl" style="grid-column:1/-1"><input type="checkbox" data-im="${i}" data-k="gasto"${x.pagado?' checked':''}> Registrar también el gasto</label><label>Cuenta del pago<select data-im="${i}" data-k="cuenta">${ctaOpts(['banco','binance','efectivo'].includes(x.cuenta)?x.cuenta:'binance')}</select></label><label>Tasa del pago (Bs./USD)<input data-im="${i}" data-k="tasa" inputmode="decimal" value="${num(x.tasa)>0?nfT.format(num(x.tasa)):''}"></label>`:''}
+          ${sal||dev?`<label style="grid-column:1/-1">${dev?'Orden de la que regresa':'Orden o trabajo'}<select data-im="${i}" data-k="trabajo">${trabOpts(x.trabajo_id)}</select></label>`:''}
+          ${sal?`<label style="grid-column:1/-1">Quién lo retiró<select data-im="${i}" data-k="quien">${quienOpts(x.quien_id)}</select></label>`:''}
+          <label style="grid-column:1/-1">Nota<input data-im="${i}" data-k="nota" value="${esc(x.nota||'')}"></label>
+        </div>${x.motivo?`<small>${esc(x.motivo)}</small>`:''}<small class="err" data-ierr="m${i}"></small></div></div>`;
+    }).join('');
+    h+=(dudas.length?`<div class="dudas"><b>Revisa antes de guardar</b><ul>${dudas.map(q=>`<li>${esc(q)}</li>`).join('')}</ul></div>`:'');
+    if(!nuevos.length&&!movsP.length) h+='<div class="sum">No encontré movimientos de inventario en lo que enviaste.</div>';
+    $('#aiRes').innerHTML=h;
+    $('#aiApplyRow').hidden=!(nuevos.length||movsP.length) || !canWrite;
+  }
+  async function aplicarAIInv(){
+    if(!iDb) return;
+    const btn=$('#aiApply'); let ok=0, conErr=0; btn.disabled=true; btn.textContent='Guardando…';
+    const vN=(i,k)=>{ const e=document.querySelector(`[data-in="${i}"][data-k="${k}"]`); return e?e.value.trim():''; };
+    const vM=(i,k)=>{ const e=document.querySelector(`[data-im="${i}"][data-k="${k}"]`); return e ? (e.type==='checkbox'?e.checked:e.value.trim()) : ''; };
+    const creados={};  // nombre normalizado → id del ítem nuevo
+    for(let i=0;i<aiInv.items.length;i++){
+      const chk=document.querySelector(`[data-ichk="n${i}"]`), errEl=document.querySelector(`[data-ierr="n${i}"]`); if(!chk||!chk.checked) continue;
+      const nombre=vN(i,'nombre'); if(!nombre){ errEl.textContent='Falta el nombre.'; conErr++; continue; }
+      const ex=items.find(it=>norm(it.nombre)===norm(nombre)); if(ex){ creados[norm(nombre)]=ex.id; errEl.textContent=''; chk.checked=false; chk.closest('.act').style.opacity='.5'; continue; }
+      try{ const ref=iDb.collection('inventario').doc(); await ref.set({nombre, categoria:vN(i,'categoria'), unidad:vN(i,'unidad')||'und', minimo:Math.max(0,parseNum(vN(i,'minimo'))||0), ubicacion:'', proveedor:'', activo:true, creado:new Date().toISOString(), actualizado:new Date().toISOString()}); creados[norm(nombre)]=ref.id; ok++; errEl.textContent=''; chk.checked=false; chk.closest('.act').style.opacity='.5'; }
+      catch(e){ errEl.textContent=errMsg(e); conErr++; }
+    }
+    for(let i=0;i<aiInv.movs.length;i++){
+      const chk=document.querySelector(`[data-ichk="m${i}"]`), errEl=document.querySelector(`[data-ierr="m${i}"]`); if(!chk||!chk.checked) continue;
+      const x=aiInv.movs[i]; let itemId=vM(i,'item');
+      if(String(itemId).startsWith('nuevo:')){ const nm=norm(itemId.slice(6)); itemId=creados[nm]||(items.find(it=>norm(it.nombre)===nm)||{}).id||''; if(!itemId){ errEl.textContent='El ítem nuevo no se guardó; márcalo arriba o elige uno del catálogo.'; conErr++; continue; } }
+      const it=itemDe(itemId)||{id:itemId, categoria:'', unidad:'und', nombre:vM(i,'item')};
+      if(!itemId){ errEl.textContent='Elige el ítem.'; conErr++; continue; }
+      const q=parseNum(vM(i,'cantidad')); if(isNaN(q)||q<0||(x.tipo!=='conteo'&&!(q>0))){ errEl.textContent='Falta la cantidad.'; conErr++; continue; }
+      const f=vM(i,'fecha')||today();
+      const body={tipo:x.tipo, fecha:f, itemId, nota:vM(i,'nota'), registradoPor:quienRegistra(), creado:new Date().toISOString(), actualizado:new Date().toISOString()};
+      if(x.tipo==='conteo') body.contado=r2q(q); else body.cantidad=r2q(q);
+      try{
+        if(x.tipo==='entrada'){
+          const cu=parseNum(vM(i,'costo'))||0; if(!(cu>0)){ errEl.textContent='Falta el costo por unidad.'; conErr++; continue; }
+          Object.assign(body,{costoUnit:r4(cu), proveedor:vM(i,'proveedor'), referencia:vM(i,'referencia'), movId:''});
+          if(vM(i,'gasto')){ const cta=cuentaDe(vM(i,'cuenta')), gt=parseNum(vM(i,'tasa'))||0, tot=r2(cu*q); if(cta.moneda==='VES'&&!(gt>0)){ errEl.textContent='Escribe la tasa del pago en bolívares.'; conErr++; continue; }
+            const gref=gDb.collection('movimientos').doc(); await gref.set({tipo:'gasto', fecha:f, concepto:`Compra: ${it.nombre} (${cant(q,it.unidad)})`, categoria:CAT_GASTO_INV[it.categoria]||'Materiales', aCargo:'Empresa', cuenta:cta.id, monto:cta.moneda==='VES'?r2(tot*gt):tot, tasa:cta.moneda==='VES'?gt:0, trabajoId:'', referencia:body.referencia, inventario:true, creado:body.creado, actualizado:body.creado}); body.movId=gref.id; }
+        } else if(x.tipo==='salida'||x.tipo==='devolucion'){ body.trabajoId=vM(i,'trabajo')||''; if(x.tipo==='salida'){ body.quienId=vM(i,'quien')||''; const ex=estadoItem(itemId).existencia; if(q>ex+0.0005){ errEl.textContent=`Solo hay ${cant(ex,it.unidad)}; registra primero la entrada o un conteo.`; conErr++; continue; } } }
+        await iDb.collection('invMovs').doc().set(body); ok++; errEl.textContent=''; chk.checked=false; chk.closest('.act').style.opacity='.5';
+      }catch(e){ errEl.textContent=errMsg(e); conErr++; }
+    }
+    btn.disabled=false; btn.textContent='Guardar lo marcado';
+    $('#aiStat').textContent=`${ok} ${ok===1?'registro guardado':'registros guardados'}.${conErr?` ${conErr} por corregir: revisa los mensajes en rojo.`:''}`;
+    if(ok && !conErr){ toast('Inventario actualizado'); $('#aiText').value=''; aiFiles=[]; renderChips(); }
+  }
+
+  /* =====================================================================
      RESUMEN: caja, cobranzas, nómina y órdenes en una sola pantalla, con el cruce entre ellas
      ===================================================================== */
   let resF={periodo:'semana'};
@@ -3314,8 +3990,8 @@ Responde solo con un objeto JSON:
     const ing=r2(sum(B.ing,B.u)), gEmp=r2(sum(B.gEmp,B.u)), gPapa=r2(sum(B.gPapa,B.u)), gFran=r2(sum(B.gFran,B.u));
     const rep=repartoGenerales(costF.reparto), cs=docs.map(d=>({d,c:costoTrabajo(d,rep.porTrabajo)})).filter(x=>x.c.costo>0);
     const costoTot=r2(sum(cs,x=>x.c.costo)), cobTot=r2(sum(docs,pagado)), montoTot=r2(sum(docs,d=>num(d.monto)));
-    const porRecuperar=r2(sum(cs,x=>x.c.porRecuperar));
-    return {tasa, tasaBs, hoy, sal, disponible, lf, po, so, ps, facturable, sinOrdenEj, pend, porEjecSin, nomPend, adelPend, per, ing, gEmp, gPapa, gFran, costoTot, cobTot, montoTot, cs, porRecuperar, posicion:r2(disponible+pend-nomPend), sinRepartir:rep.sinRepartir};
+    const porRecuperar=r2(sum(cs,x=>x.c.porRecuperar)), invValor=valorInventario(), invBajos=itemsActivos().filter(bajoMinimo).length;
+    return {tasa, tasaBs, hoy, sal, disponible, invValor, invBajos, lf, po, so, ps, facturable, sinOrdenEj, pend, porEjecSin, nomPend, adelPend, per, ing, gEmp, gPapa, gFran, costoTot, cobTot, montoTot, cs, porRecuperar, posicion:r2(disponible+invValor+pend-nomPend), sinRepartir:rep.sinRepartir};
   }
   const usdNeg = v => v<0 ? '− '+usd(-v) : usd(v);
   function renderRes(){
@@ -3338,7 +4014,8 @@ Responde solo con un objeto JSON:
         fila('Facturable ahora (con orden)', R.facturable, {c:'var(--c-lf)', n:R.lf.length+R.po.length})
         + fila('Ejecutado sin orden', R.sinOrdenEj, {c:'var(--c-so)', n:R.so.length})
         + `<div class="cap">No entra en el pendiente</div>` + fila('Sin orden, por ejecutar', R.porEjecSin, {c:'var(--c-ps)', n:R.ps.length}))}
-      <div class="hero"><div class="lbl">Posición</div><div class="big num">${usdHtml(R.posicion)}</div><div class="sub">Caja + pendiente por cobrar − nómina por pagar. Lo que quedaría si cobras todo lo pendiente y pagas la nómina de hoy.</div></div>
+      <div class="hero"><div class="lbl">Posición</div><div class="big num">${usdHtml(R.posicion)}</div><div class="sub">Caja + inventario + pendiente por cobrar − nómina por pagar. Lo que quedaría si cobras todo lo pendiente y pagas la nómina de hoy.</div>
+        <div class="rows num">${fila('Caja hoy', R.disponible)}${fila('Inventario valorado', R.invValor, {extra:R.invBajos?`${R.invBajos} ${R.invBajos===1?'ítem':'ítems'} bajo mínimo`:'Materiales y consumibles al costo de los lotes que quedan'})}${fila('Pendiente por cobrar', R.pend)}${fila('Nómina por pagar', R.nomPend, {neg:R.nomPend>0, raw:R.nomPend>0?'− '+usd(R.nomPend):usd(0)})}</div></div>
       <div class="hero"><div class="lbl">Movimiento del período</div>
         <div class="seg" role="group" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:8px">${[['semana','Esta semana'],['mes','Este mes']].map(([k,l])=>`<button type="button" data-rper="${k}" class="${resF.periodo===k?'on':''}">${l}</button>`).join('')}</div>
         <div class="sub">${perLbl}</div>
@@ -3353,7 +4030,7 @@ Responde solo con un objeto JSON:
         <div class="rows num">
           ${fila('Monto de todas las órdenes', R.montoTot, {n:docs.length})}
           ${fila('Cobrado hasta hoy', R.cobTot, {c:'var(--c-co)'})}
-          ${fila('Costo registrado', R.costoTot, {c:'var(--c-so)', raw:'− '+usd(R.costoTot), extra:`Mano de obra, gastos directos y generales de ${R.cs.length} ${R.cs.length===1?'orden':'órdenes'} con costos${R.sinRepartir>0?' · sin repartir '+usd(R.sinRepartir):''}`})}
+          ${fila('Costo registrado', R.costoTot, {c:'var(--c-so)', raw:'− '+usd(R.costoTot), extra:`Mano de obra, materiales, gastos directos y generales de ${R.cs.length} ${R.cs.length===1?'orden':'órdenes'} con costos${R.sinRepartir>0?' · sin repartir '+usd(R.sinRepartir):''}`})}
           ${fila('Margen esperado al cobrar todo', R.montoTot-R.costoTot, {neg:R.montoTot-R.costoTot<0, raw:usd(r2(R.montoTot-R.costoTot))+(R.montoTot>0?` (${nf.format(r2((R.montoTot-R.costoTot)/R.montoTot*100)).replace(/,00$/,'')} %)`:'')})}
           ${R.porRecuperar>0?fila('Gastado y aún no cobrado', R.porRecuperar, {extra:'Órdenes con más costo que cobros: lo están financiando los cobros de otras'}):''}
         </div></div>
@@ -3367,7 +4044,8 @@ Responde solo con un objeto JSON:
     if(R.adelPend>0) L.push(`• Adelantos por descontar: ${usd(R.adelPend)}`);
     L.push(''); L.push(`📄 *Pendiente por cobrar: ${usd(R.pend)}*`);
     L.push(`• Facturable ahora (con orden): ${usd(R.facturable)}`); L.push(`• Ejecutado sin orden de servicio: ${usd(R.sinOrdenEj)}`); L.push(`• Sin orden, por ejecutar (no incluido): ${usd(R.porEjecSin)}`);
-    L.push(''); L.push(`🧭 *Posición: ${usd(R.posicion)}* (caja + pendiente por cobrar − nómina por pagar)`);
+    L.push(''); L.push(`🧭 *Posición: ${usd(R.posicion)}* (caja + inventario + pendiente por cobrar − nómina por pagar)`);
+    if(R.invValor>0) L.push(`• Inventario valorado: ${usd(R.invValor)}${R.invBajos?` · ${R.invBajos} ${R.invBajos===1?'ítem':'ítems'} bajo mínimo`:''}`);
     L.push(''); L.push(`📊 *${resF.periodo==='mes'?'Este mes':'Esta semana'} (${fdate(R.per[0])} al ${fdate(R.per[1])})*`);
     L.push(`• Ingresos cobrados: ${usd(R.ing)}`); L.push(`• Gastos de la empresa: − ${usd(R.gEmp)}`); L.push(`• *Resultado de la empresa: ${usd(r2(R.ing-R.gEmp))}*`);
     if(R.gPapa>0||R.gFran>0) L.push(`• Gastos personales: papá ${usd(R.gPapa)} · Fran ${usd(R.gFran)}`);
@@ -3395,6 +4073,7 @@ Responde solo con un objeto JSON:
     coll=db.collection('facturas');
     iniciarNomina(db);
     iniciarGastos(db);
+    iniciarInventario(db);
     cfgRef=db.doc('config/clientes');
     uniRef=db.doc('config/unidades');
     uniRef.onSnapshot(s=>{ const l=s.exists&&Array.isArray((s.data()||{}).lista)?s.data().lista:[]; unidadesExtra=l.filter(u=>u&&u.cliente&&u.unidad).map(u=>({cliente:String(u.cliente), unidad:String(u.unidad)})); renderClientes(); }, ()=>{});
@@ -3412,7 +4091,7 @@ Responde solo con un objeto JSON:
         imgLimits=lim&&lim.images?lim.images:null;
         if(!imgLimits) $('#aiFiles').accept='.xlsx,.xls,.csv,.docx,.txt';
         $('#btnAI').hidden=!canWrite;
-        renderNom();
+        renderNom(); renderInv();
       }
     }catch(_){}
   })();
