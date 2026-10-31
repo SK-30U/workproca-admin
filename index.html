@@ -3477,6 +3477,12 @@ Responde solo con un objeto JSON:
   }
   const valorInventario = () => r2(sum(itemsActivos(), it=>estadoItem(it.id).valor));
   const bajoMinimo = it => { const e=estadoItem(it.id); return num(it.minimo)>0 && e.existencia<num(it.minimo); };
+  /* Tasa para llevar a dólares un costo en bolívares cuando no la ponen: si el pago sale del banco, la tasa a la que entraron
+     esos bolívares (orden de llegada, como en Gastos); si no, la última tasa registrada. */
+  function tasaParaBs(fecha, montoBs, cuentaId){
+    if(cuentaId==='banco'){ const f=tasaOrdenLlegada(fecha||today(), montoBs); if(f.tasa>0 && f.completa) return {tasa:f.tasa, de:'la tasa a la que entraron los bolívares del banco'}; }
+    const t=tasaSugerida(); return t>0 ? {tasa:t, de:'la última tasa registrada'} : {tasa:0, de:''};
+  }
   /* Materiales consumidos en una orden (salidas menos devoluciones), al costo de los lotes que salieron */
   function materialesTrabajo(tid){
     const det=detallesInv();
@@ -3541,7 +3547,7 @@ Responde solo con un objeto JSON:
     const q = m.tipo==='conteo' ? Math.abs(num(d.diferencia)) : num(m.cantidad);
     const color = m.tipo==='salida' || (m.tipo==='conteo'&&num(d.diferencia)<0) ? 'var(--danger)' : (m.tipo==='conteo'&&!num(d.diferencia)) ? 'var(--muted)' : 'var(--co)';
     const tj = m.trabajoId ? (docs.find(x=>x.id===m.trabajoId)||{}).descripcion : '';
-    const det=[fdate(m.fecha), m.tipo==='conteo'?`contado ${cant(m.contado,it.unidad)}`:'', tj?(m.tipo==='devolucion'?'desde ':'para ')+tj:(m.tipo==='salida'?'consumo general':''), m.quienId?nombreT(m.quienId):'', m.proveedor||'', m.referencia?'N° '+m.referencia:'', d.costo!=null&&m.tipo!=='conteo'?usd(Math.abs(d.costo)):'', m.tipo==='conteo'&&d.costo<0?'merma '+usd(-d.costo):'', m.nota||''].filter(Boolean).join(' · ');
+    const det=[fdate(m.fecha), m.tipo==='conteo'?`contado ${cant(m.contado,it.unidad)}`:'', tj?(m.tipo==='devolucion'?'desde ':'para ')+tj:(m.tipo==='salida'?'consumo general':''), m.quienId?nombreT(m.quienId):'', m.proveedor||'', m.referencia?'N° '+m.referencia:'', d.costo!=null&&m.tipo!=='conteo'?usd(Math.abs(d.costo)):'', num(m.costoUnitBs)>0&&num(m.tasa)>0?`${bs(num(m.costoUnitBs))} c/u a ${nfT.format(num(m.tasa))}`:'', m.tipo==='conteo'&&d.costo<0?'merma '+usd(-d.costo):'', m.nota||''].filter(Boolean).join(' · ');
     return `<button type="button" class="wcard" data-im="${esc(m.id)}"><div class="l"><b>${TIPO_INV[m.tipo]||m.tipo} · ${esc(it.nombre)}</b><small class="num">${esc(det)}</small>${m.movId?'<small>Con gasto registrado en Gastos</small>':''}</div><div class="r num" style="color:${color};font-weight:600">${m.tipo==='conteo'&&!num(d.diferencia)?'sin diferencia':signo+cant(q,it.unidad)}</div></button>`;
   }
   function renderIMov(el){
@@ -3649,9 +3655,10 @@ Responde solo con un objeto JSON:
     if(!it){ $('#imConv').innerHTML=''; return; }
     const e=estadoItem(it.id);
     if(imTipo==='entrada'){
-      const cu=parseNum($('#imCostoU').value)||0, ct=parseNum($('#imCostoT').value)||0;
+      const cu=parseNum($('#imCostoU').value)||0, ct=parseNum($('#imCostoT').value)||0, tb=parseNum($('#imBs').value)||0, ttIn=parseNum($('#imTasa').value)||0;
       if(q>0 && cu>0) txt=`Entra un lote de <b>${cant(q,it.unidad)}</b> a ${usd(cu)} cada ${esc(uni(it.unidad))} = <b>${usd(r2(q*cu))}</b>.`;
       else if(q>0 && ct>0) txt=`Entra un lote de <b>${cant(q,it.unidad)}</b> por ${usd(ct)} = ${usd(r2(ct/q))} cada ${esc(uni(it.unidad))}.`;
+      else if(q>0 && tb>0 && !(ttIn>0)){ const tp=tasaParaBs($('#imFecha').value||today(), tb, $('#imGasto').checked?$('#imCuenta').value:''); txt = tp.tasa>0 ? `Sin tasa escrita se usa <b>${nfT.format(tp.tasa)}</b> (${tp.de}): ${bs(tb)} = <b>${usd(r2(tb/tp.tasa))}</b>, ${usd(r2(tb/tp.tasa/q))} cada ${esc(uni(it.unidad))}.` : 'Escribe la tasa de esa compra: no hay ninguna registrada todavía.'; }
       const g=$('#imGasto').checked, cta=cuentaDe($('#imCuenta').value), tot=cu>0&&q>0?r2(q*cu):ct;
       $('#imGastoCampos').hidden=!g;
       $('#imGastoInfo').textContent = g && tot>0 ? `Se registra un gasto de ${cta.moneda==='VES'?(parseNum($('#imGTasa').value)>0?bs(r2(tot*parseNum($('#imGTasa').value)))+' ('+usd(tot)+')':'bolívares (falta la tasa)'):usd(tot)} en ${cta.nombre}, categoría ${CAT_GASTO_INV[it.categoria]||'Materiales'}, como compra para inventario.` : '';
@@ -3686,17 +3693,20 @@ Responde solo con un objeto JSON:
     const body={tipo:imTipo, fecha:f, itemId:it.id, nota:$('#imNota').value.trim(), registradoPor:old&&old.registradoPor||quienRegistra(), creado:old&&old.creado||new Date().toISOString(), actualizado:new Date().toISOString()};
     if(imTipo==='conteo') body.contado=r2q(q); else body.cantidad=r2q(q);
     if(imTipo==='entrada'){
-      let cu=parseNum($('#imCostoU').value)||0; const ct=parseNum($('#imCostoT').value)||0, tb=parseNum($('#imBs').value)||0, tt=parseNum($('#imTasa').value)||0;
-      if(!(cu>0) && ct>0) cu=ct/q; if(!(cu>0) && tb>0 && tt>0) cu=tb/tt/q;
-      if(!(cu>0)) return err('Pon el costo: por unidad, el total en dólares, o el total en bolívares con su tasa.');
+      let cu=parseNum($('#imCostoU').value)||0; const ct=parseNum($('#imCostoT').value)||0, tb=parseNum($('#imBs').value)||0; let tt=parseNum($('#imTasa').value)||0;
+      if(!(cu>0) && ct>0) cu=ct/q;
+      if(!(cu>0) && tb>0){ if(!(tt>0)) tt=tasaParaBs(f, tb, $('#imGasto').checked?$('#imCuenta').value:'').tasa; if(tt>0) cu=tb/tt/q; }
+      if(!(cu>0)) return err(tb>0 ? 'No hay ninguna tasa registrada todavía: escribe la tasa de esa compra.' : 'Pon el costo: por unidad, el total en dólares, o el total en bolívares.');
       Object.assign(body,{costoUnit:r4(cu), proveedor:$('#imProv').value.trim(), referencia:$('#imRef').value.trim(), movId:old&&old.movId||(imPre&&imPre.movId)||''});
+      if(tb>0 && tt>0) Object.assign(body,{costoUnitBs:r2(tb/q), tasa:tt});
     } else if(imTipo==='salida'||imTipo==='devolucion'){
       body.trabajoId=$('#imTrab').value||''; if(imTipo==='salida') body.quienId=$('#imQuien').value||'';
       if(imTipo==='salida'){ const e=estadoItem(it.id); const base=old&&old.itemId===it.id&&old.tipo==='salida'?e.existencia+num(old.cantidad):e.existencia; if(q>base+0.0005) return err(`Solo hay ${cant(base,it.unidad)}. Haz un conteo primero si salió más.`); }
     }
     try{
       if(imTipo==='entrada' && !imEditId && $('#imGasto').checked && !body.movId){
-        const cta=cuentaDe($('#imCuenta').value), tot=r2(body.costoUnit*q), gt=parseNum($('#imGTasa').value)||0;
+        const cta=cuentaDe($('#imCuenta').value), tot=r2(body.costoUnit*q); let gt=parseNum($('#imGTasa').value)||0;
+        if(cta.moneda==='VES' && !(gt>0)) gt=body.tasa||tasaParaBs(f, tot*(tasaSugerida()||1), 'banco').tasa;
         if(cta.moneda==='VES' && !(gt>0)) return err('Escribe la tasa del pago en bolívares.');
         const gref=gDb.collection('movimientos').doc();
         await gref.set({tipo:'gasto', fecha:f, concepto:`Compra: ${it.nombre} (${cant(q,it.unidad)})`, categoria:CAT_GASTO_INV[it.categoria]||'Materiales', aCargo:'Empresa', cuenta:cta.id, monto:cta.moneda==='VES'?r2(tot*gt):tot, tasa:cta.moneda==='VES'?gt:0, trabajoId:'', referencia:body.referencia||'', inventario:true, creado:body.creado, actualizado:body.actualizado});
@@ -3924,7 +3934,7 @@ Responde solo con un objeto JSON:
     const ctaOpts=v=>gcfg.cuentas.map(c=>`<option value="${esc(c.id)}"${c.id===v?' selected':''}>${esc(c.nombre)}</option>`).join('');
     const hayEntradas=movsP.some(x=>x.tipo==='entrada'), hayBs=movsP.some(x=>x.tipo==='entrada'&&(num(x.costo_unit_bs)>0||num(x.costo_total_bs)>0));
     let h=(res.resumen?`<div class="sum">${esc(res.resumen)}</div>`:'');
-    if(hayEntradas) h+=`<div class="panel num" style="margin:0 0 10px"><label class="f">Tasa del día (Bs. por USD)<input id="aiTasaInv" inputmode="decimal" value="${num(res.tasa)>0?nfT.format(num(res.tasa)):ts?nfT.format(ts):''}" placeholder="0,00"></label><div class="tip" style="margin:6px 0 0">${hayBs?'Los costos que vienen en bolívares se llevan a dólares con esta tasa. ':''}Vale para todas las tarjetas; puedes cambiarla en una en particular.</div></div>`;
+    if(hayEntradas) h+=`<div class="panel num" style="margin:0 0 10px"><label class="f">Tasa del día (Bs. por USD)<input id="aiTasaInv" inputmode="decimal" value="${num(res.tasa)>0?nfT.format(num(res.tasa)):ts?nfT.format(ts):''}" placeholder="0,00"></label><div class="tip" style="margin:6px 0 0">${hayBs?'Los costos que vienen en bolívares se llevan a dólares con esta tasa. ':''}Vale para todas las tarjetas; puedes cambiarla en una en particular. Si la dejas vacía, la app usa la tasa a la que entraron los bolívares del banco (si el pago sale de ahí) o la última registrada.</div></div>`;
     h+=huerfanos.map((n,i)=>`<div class="act tr"><input type="checkbox" data-ichk="n${i}" checked aria-label="Incluir"><div style="min-width:0;flex:1"><span class="tag">Ítem nuevo</span>
       <div class="g"><label style="grid-column:1/-1">Nombre<input data-in="${i}" data-k="nombre" value="${esc(n.nombre)}"></label><label>Categoría<select data-in="${i}" data-k="categoria">${catOpts(n.categoria)}</select></label><label>Unidad<select data-in="${i}" data-k="unidad">${uniOpts(UNIDADES.some(u=>u[0]===n.unidad)?n.unidad:'und')}</select></label><label>Mínimo<input data-in="${i}" data-k="minimo" inputmode="decimal" value="${num(n.minimo)>0?nq.format(num(n.minimo)):''}"></label></div>
       ${n.motivo?`<small>${esc(n.motivo)}</small>`:''}<small class="err" data-ierr="n${i}"></small></div></div>`).join('');
@@ -4013,10 +4023,13 @@ Responde solo con un objeto JSON:
         const body={tipo:x.tipo, fecha:f, itemId, nota:vM(i,'nota'), registradoPor:quienRegistra(), creado:new Date().toISOString(), actualizado:new Date().toISOString()};
         if(x.tipo==='conteo') body.contado=r2q(q); else body.cantidad=r2q(q);
         if(x.tipo==='entrada'){
-          const t=parseNum(vM(i,'tasa'))||0; let cu=parseNum(vM(i,'costo'))||0; const bs=parseNum(vM(i,'costo_bs'))||0;
-          const usdEl=document.querySelector(`[data-im="${i}"][data-k="costo"]`); if(bs>0&&t>0&&(!(cu>0)||(usdEl&&usdEl.dataset.auto))) cu=bs/t;   // el valor exacto, no el redondeado de la casilla
-          if(!(cu>0)){ errEl.textContent = bs>0 ? 'Escribe la tasa para llevar el costo en bolívares a dólares.' : 'Falta el costo por unidad. Si no lo sabes aún, desmarca esta tarjeta y regístrala después.'; conErr++; continue; }
+          let t=parseNum(vM(i,'tasa'))||0; let cu=parseNum(vM(i,'costo'))||0; const bs=parseNum(vM(i,'costo_bs'))||0;
+          const usdEl=document.querySelector(`[data-im="${i}"][data-k="costo"]`);
+          if(bs>0 && !(t>0) && (!(cu>0)||(usdEl&&usdEl.dataset.auto))) t=tasaParaBs(f, bs*q, vM(i,'gasto')?vM(i,'cuenta'):'').tasa;
+          if(bs>0&&t>0&&(!(cu>0)||(usdEl&&usdEl.dataset.auto))) cu=bs/t;   // el valor exacto, no el redondeado de la casilla
+          if(!(cu>0)){ errEl.textContent = bs>0 ? 'No hay ninguna tasa registrada todavía: escribe la tasa de esa compra.' : 'Falta el costo por unidad. Si no lo sabes aún, desmarca esta tarjeta y regístrala después.'; conErr++; continue; }
           Object.assign(body,{costoUnit:r4(cu), proveedor:vM(i,'proveedor'), referencia:vM(i,'referencia'), movId:''});
+          if(bs>0 && t>0) Object.assign(body,{costoUnitBs:r2(bs), tasa:t});
           if(vM(i,'gasto')){ const cta=cuentaDe(vM(i,'cuenta')), tot=r2(cu*q); if(cta.moneda==='VES'&&!(t>0)){ errEl.textContent='Escribe la tasa del pago en bolívares.'; conErr++; continue; }
             const gref=gDb.collection('movimientos').doc(); await gref.set({tipo:'gasto', fecha:f, concepto:`Compra: ${it.nombre} (${cant(q,it.unidad)})`, categoria:CAT_GASTO_INV[it.categoria]||'Materiales', aCargo:'Empresa', cuenta:cta.id, monto:cta.moneda==='VES'?r2(tot*t):tot, tasa:cta.moneda==='VES'?t:0, trabajoId:'', referencia:body.referencia, inventario:true, creado:body.creado, actualizado:body.creado}); body.movId=gref.id; }
         } else if(x.tipo==='salida'||x.tipo==='devolucion'){ body.trabajoId=vM(i,'trabajo')||''; if(x.tipo==='salida'){ body.quienId=vM(i,'quien')||''; const ex=estadoItem(itemId).existencia; if(q>ex+0.0005){ errEl.textContent=`Solo hay ${cant(ex,it.unidad)}; registra primero la entrada o un conteo.`; conErr++; continue; } } }
