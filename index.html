@@ -2514,9 +2514,11 @@ Responde solo con un objeto JSON:
     try{ await nDb.collection('trabajadores').doc(wEditId).delete(); closeSheets(); toast('Trabajador eliminado'); }catch(err){ $('#wErr').textContent=errMsg(err); }
   }
   function openAdelanto(){
-    const ls=trabs.filter(t=>t.activo!==false).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
+    /* Todos los trabajadores, también los que no están activos hoy: un adelanto se descuenta en su próximo corte */
+    const porNombre=(a,b)=>a.nombre.localeCompare(b.nombre,'es');
+    const ls=[...trabs.filter(t=>t.activo!==false).sort(porNombre), ...trabs.filter(t=>t.activo===false).sort(porNombre)];
     if(!ls.length){ toast('Primero agrega trabajadores'); return; }
-    $('#adTrab').innerHTML=ls.map(t=>`<option value="${esc(t.id)}">${esc(t.nombre)}</option>`).join('');
+    $('#adTrab').innerHTML=ls.map(t=>`<option value="${esc(t.id)}">${esc(t.nombre)}${t.activo===false?' (inactivo)':''}</option>`).join('');
     $('#adFecha').value=today(); $('#adMonto').value=''; $('#adNota').value=''; $('#adErr').textContent='';
     openSheet('#adSheet');
   }
