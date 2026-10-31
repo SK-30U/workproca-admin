@@ -582,8 +582,8 @@ textarea.share{min-height:38vh}
         </button>
         <div class="grid">
           <label class="f full">Descripción<input id="iDesc" placeholder="Corta, por ejemplo: Reemplazo de 6 rubber bearings"></label>
-          <label class="f">Cliente<select id="iCliente"></select></label>
-          <label class="f">Unidad (embarcación)<select id="iUnidad"></select></label>
+          <label class="f">Cliente<input class="selq" data-filtra="#iCliente" placeholder="Buscar cliente…" autocomplete="off" aria-label="Buscar cliente…"><select id="iCliente"></select></label>
+          <label class="f">Unidad (embarcación)<input class="selq" data-filtra="#iUnidad" placeholder="Buscar unidad…" autocomplete="off" aria-label="Buscar unidad…"><select id="iUnidad"></select></label>
           <div class="full" id="newCli" hidden>
             <div class="ncrow"><input id="iNewCli" placeholder="Nombre del cliente nuevo" aria-label="Nombre del cliente nuevo"><button type="button" class="btn sec" id="btnNewCli">Agregar</button></div>
             <div class="tip" id="newCliMsg"></div>
@@ -760,7 +760,7 @@ textarea.share{min-height:38vh}
     <div class="grid" style="margin-top:12px">
       <label class="f">Fecha<input id="mvFecha" type="date"></label>
       <label class="f" id="mvACargoL">A cargo de<select id="mvACargo"><option>Empresa</option><option>Papá</option><option>Fran</option></select></label>
-      <label class="f full" id="mvCatL">Categoría<select id="mvCat"></select></label>
+      <label class="f full" id="mvCatL">Categoría<input class="selq" data-filtra="#mvCat" placeholder="Buscar categoría…" autocomplete="off" aria-label="Buscar categoría…"><select id="mvCat"></select></label>
       <label class="f full" id="mvFactTrabL" hidden>Trabajo facturado<input class="selq" data-filtra="#mvFactTrab" placeholder="Buscar trabajo, unidad u orden…" autocomplete="off" aria-label="Buscar trabajo, unidad u orden…"><select id="mvFactTrab"></select></label>
       <label class="f full" id="mvModoL" hidden>Modalidad de pago<select id="mvModo"><option value="banco">Bolívares (banco)</option><option value="binance">Binance (USDT)</option><option value="efectivo">Efectivo (dólares)</option></select></label>
       <label class="f" id="mvFactNumL" hidden>N° de factura (vacío si es adelanto)<input id="mvFactNum" inputmode="numeric"></label>
@@ -792,7 +792,7 @@ textarea.share{min-height:38vh}
     <div class="grab"></div>
     <div class="sh-head"><h3 id="adTitle">Registrar adelanto</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
     <div class="grid">
-      <label class="f full">Trabajador<select id="adTrab"></select></label>
+      <label class="f full">Trabajador<input class="selq" data-filtra="#adTrab" placeholder="Buscar trabajador…" autocomplete="off" aria-label="Buscar trabajador…"><select id="adTrab"></select></label>
       <label class="f">Fecha<input id="adFecha" type="date"></label>
       <label class="f">Monto (USD)<input id="adMonto" inputmode="decimal" placeholder="0,00"></label>
       <label class="f full">Nota (opcional)<input id="adNota"></label>
@@ -810,7 +810,7 @@ textarea.share{min-height:38vh}
     <div class="sh-head"><h3 id="itTitle">Ítem del inventario</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
     <div class="grid" style="margin-top:4px">
       <label class="f full">Nombre<input id="itNombre" autocomplete="off" placeholder="Por ejemplo: Disco de corte 4½ pulgadas"></label>
-      <label class="f">Categoría<select id="itCat"></select></label>
+      <label class="f">Categoría<input class="selq" data-filtra="#itCat" placeholder="Buscar categoría…" autocomplete="off" aria-label="Buscar categoría…"><select id="itCat"></select></label>
       <label class="f">Unidad<select id="itUni"></select></label>
       <label class="f">Mínimo en existencia<input id="itMin" inputmode="decimal" placeholder="Avisa al bajar de aquí"></label>
       <label class="f">Ubicación<input id="itUbi" list="itUbiL" autocomplete="off" placeholder="Almacén"><datalist id="itUbiL"></datalist></label>
@@ -849,7 +849,7 @@ textarea.share{min-height:38vh}
       <label class="f" id="imProvL">Proveedor<input id="imProv" autocomplete="off"></label>
       <label class="f" id="imRefL">N° de factura o nota<input id="imRef" autocomplete="off"></label>
       <label class="f full" id="imTrabL">Orden o trabajo (centro de costo)<input class="selq" data-filtra="#imTrab" placeholder="Buscar trabajo, unidad u orden…" autocomplete="off" aria-label="Buscar trabajo, unidad u orden…"><select id="imTrab"></select></label>
-      <label class="f full" id="imQuienL">Quién lo retiró<select id="imQuien"></select></label>
+      <label class="f full" id="imQuienL">Quién lo retiró<input class="selq" data-filtra="#imQuien" placeholder="Buscar trabajador…" autocomplete="off" aria-label="Buscar trabajador…"><select id="imQuien"></select></label>
       <label class="f full">Nota (opcional)<input id="imNota" autocomplete="off"></label>
     </div>
     <div id="imGastoBox" class="panel" style="margin-top:10px">
@@ -879,7 +879,7 @@ textarea.share{min-height:38vh}
       <label class="f full">Nombre<input id="acNombre" autocomplete="off" placeholder="Por ejemplo: Esmeril angular DeWalt 4½"></label>
       <label class="f">Código o serial<input id="acCodigo" autocomplete="off"></label>
       <label class="f">Estado<select id="acEstado"><option>Bueno</option><option>En reparación</option><option>Dañado</option><option>Perdido</option></select></label>
-      <label class="f full">Responsable (quién lo tiene)<select id="acResp"></select></label>
+      <label class="f full">Responsable (quién lo tiene)<input class="selq" data-filtra="#acResp" placeholder="Buscar persona…" autocomplete="off" aria-label="Buscar persona…"><select id="acResp"></select></label>
       <label class="f">Ubicación<input id="acUbi" list="itUbiL" autocomplete="off" placeholder="Almacén"></label>
       <label class="f">Fecha de compra<input id="acFecha" type="date"></label>
       <label class="f">Costo (USD)<input id="acCosto" inputmode="decimal" placeholder="0,00"></label>
@@ -901,7 +901,7 @@ textarea.share{min-height:38vh}
     <div class="sh-head"><h3 id="cqTitle">Cuadrar compra con lo pagado</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
     <div class="tip">Para facturas en bolívares pagadas en dólares: reparte lo pagado entre los ítems en proporción a su precio de lista, guarda el costo en dólares y en bolívares de cada entrada y las enlaza al gasto. A los ítems sin precio ponles uno estimado.</div>
     <div class="grid" style="margin-top:8px">
-      <label class="f full">Compra (entradas del mismo proveedor y factura)<select id="cqGrupo"></select></label>
+      <label class="f full">Compra (entradas del mismo proveedor y factura)<input class="selq" data-filtra="#cqGrupo" placeholder="Buscar compra…" autocomplete="off" aria-label="Buscar compra…"><select id="cqGrupo"></select></label>
       <label class="f full">Gasto con el que se pagó<input class="selq" data-filtra="#cqGasto" placeholder="Buscar gasto…" autocomplete="off" aria-label="Buscar gasto…"><select id="cqGasto"></select></label>
       <label class="f full">Total pagado (USD)<input id="cqPagado" inputmode="decimal" placeholder="0,00"></label>
     </div>
@@ -1161,8 +1161,8 @@ textarea.share{min-height:38vh}
   }
 
   function visibles(){
-    const q=query.toLowerCase();
-    return byClient().filter(d => !q || [d.descripcion,d.unidad,d.ods,d.nota,d.cliente,...(d.cobros||[]).map(c=>c.numFactura)].join(' ').toLowerCase().includes(q));
+    const q=norm(query);
+    return byClient().filter(d => !q || norm([d.descripcion,d.unidad,d.ods,d.nota,d.cliente,...(d.cobros||[]).map(c=>c.numFactura)].join(' ')).includes(q));
   }
 
   function renderList(){
@@ -1175,7 +1175,7 @@ textarea.share{min-height:38vh}
     const groups = filtro==='todas' ? ORDEN : filtro==='sinOrden' ? ['sinOrden','peSinOrden'] : [filtro];
     const secDe = g => g==='peSinOrden' ? {sec:'Sin orden de servicio, por ejecutar', pred:d=>etapa(d)==='porEjecutar'&&!tieneOrden(d)} : {sec:ETAPAS[g].sec, pred:d=>etapa(d)===g};
     const pagos = filtro==='cobrado' ? pagosRecibidos(list) : '';
-    const html = pagos + groups.map(g=>{
+    const html = resumenBusqueda(list) + pagos + groups.map(g=>{
       const {sec,pred}=secDe(g), items=list.filter(pred).sort(byOrden);
       if(!items.length) return (filtro==='todas'||g==='peSinOrden') ? '' : `<div class="empty"><b>Nada en “${sec}”</b>${query||cliente?'Prueba quitando el filtro o la búsqueda.':'Cuando un trabajo llegue a esta etapa aparecerá aquí.'}</div>`;
       const sub = g==='cobrado' ? sum(items,pagado) : sum(items,saldo);
@@ -1184,6 +1184,21 @@ textarea.share{min-height:38vh}
     el.innerHTML = html || `<div class="empty"><b>Sin resultados</b>Prueba con otra búsqueda.</div>`;
   }
 
+  /* Totales de lo que se está buscando o filtrando por cliente: cuántos trabajos, cuánto suman, cuánto está pendiente y cuánto cobrado */
+  function resumenBusqueda(list){
+    if(!query && !cliente) return '';
+    const enPend=d=>['listo','sinOrden'].includes(etapa(d)) || (etapa(d)==='porEjecutar'&&tieneOrden(d));
+    const pend=sum(list.filter(enPend),saldo), sinO=sum(list.filter(d=>etapa(d)==='porEjecutar'&&!tieneOrden(d)),saldo), cob=sum(list,pagado), tot=sum(list,d=>num(d.monto));
+    const que=[query?`“${esc(query)}”`:'', cliente?esc(cliente):''].filter(Boolean).join(' · ');
+    if(!list.length) return `<div class="panel num" style="margin-bottom:12px"><b>Nada coincide con ${que}</b></div>`;
+    return `<div class="panel num" style="margin-bottom:12px"><div style="font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;color:var(--muted)">${que} · ${list.length} ${list.length===1?'trabajo':'trabajos'}</div>
+      <div class="rows" style="margin-top:6px">
+        <div class="row"><i class="sw" style="width:0"></i><span class="nm">Pendiente por cobrar (ejecutado o con orden)</span><b>${usd(pend)}</b></div>
+        ${sinO>0?`<div class="row"><i class="sw" style="width:0"></i><span class="nm">Sin orden, por ejecutar</span><b>${usd(sinO)}</b></div>`:''}
+        <div class="row"><i class="sw" style="width:0"></i><span class="nm">Cobrado</span><b>${usd(cob)}</b></div>
+        <div class="row"><i class="sw" style="width:0"></i><span class="nm">Total de esos trabajos</span><b>${usd(tot)}</b></div>
+      </div></div>`;
+  }
   /* Pagos recibidos: cada cobro registrado sobre un trabajo, con su modalidad; los abonos parciales también, aunque el trabajo siga pendiente */
   function pagosRecibidos(list){
     const ps=[]; list.forEach(d=>(d.cobros||[]).forEach((c,i)=>ps.push({d,c,i})));
@@ -1232,7 +1247,7 @@ textarea.share{min-height:38vh}
     syncEjec(); renderPagos();
     [...$('#form').elements].forEach(x=>{ x.disabled=!canWrite; });
     syncOds();
-    openSheet('#sheet');
+    limpiarFiltros('#sheet'); openSheet('#sheet');
   }
   function syncEjec(){ $('#ejecFields').hidden=!$('#iEjecutado').checked; }
   function syncOds(){
@@ -1480,8 +1495,8 @@ textarea.share{min-height:38vh}
     if(ecF.unidad && !uns.includes(ecF.unidad)) ecF.unidad='';
     $('#ecFiltros').innerHTML = `
       <div class="grid">
-        <label class="f">Cliente<select id="ecCli"><option value="">Todos</option>${cls.map(c=>`<option value="${esc(c)}"${c===ecF.cliente?' selected':''}>${esc(c)}</option>`).join('')}</select></label>
-        <label class="f">Unidad<select id="ecUni"><option value="">Todas</option>${uns.map(u=>`<option value="${esc(u)}"${u===ecF.unidad?' selected':''}>${esc(u)}</option>`).join('')}</select></label>
+        <label class="f">Cliente<input class="selq" data-filtra="#ecCli" placeholder="Buscar cliente…" autocomplete="off" aria-label="Buscar cliente…"><select id="ecCli"><option value="">Todos</option>${cls.map(c=>`<option value="${esc(c)}"${c===ecF.cliente?' selected':''}>${esc(c)}</option>`).join('')}</select></label>
+        <label class="f">Unidad<input class="selq" data-filtra="#ecUni" placeholder="Buscar unidad…" autocomplete="off" aria-label="Buscar unidad…"><select id="ecUni"><option value="">Todas</option>${uns.map(u=>`<option value="${esc(u)}"${u===ecF.unidad?' selected':''}>${esc(u)}</option>`).join('')}</select></label>
       </div>
       <div class="seg ecfmt" role="group" aria-label="Formato" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px">${[['detallado','Detallado'],['corto','Corto']].map(([k,l])=>`<button type="button" data-fmt="${k}" class="${ecF.formato===k?'on':''}">${l}</button>`).join('')}</div>
       <div class="ecchips">${EC_SECS.map(([k,,lbl])=>`<label class="${ecF.etapas.includes(k)?'on':''}"><input type="checkbox" data-ec="${k}"${ecF.etapas.includes(k)?' checked':''}> ${lbl}</label>`).join('')}</div>
@@ -1590,7 +1605,7 @@ textarea.share{min-height:38vh}
     const cls=listaClientes();
     const chip=(k,l,on)=>`<label class="${on?'on':''}"><input type="checkbox" data-cf="${k}"${on?' checked':''}> ${l}</label>`;
     $('#ecFiltros').innerHTML = `
-      <div class="grid"><label class="f full">Cliente<select id="cfCli"><option value="">Todos</option>${cls.map(c=>`<option value="${esc(c)}"${c===costF.cliente?' selected':''}>${esc(c)}</option>`).join('')}</select></label></div>
+      <div class="grid"><label class="f full">Cliente<input class="selq" data-filtra="#cfCli" placeholder="Buscar cliente…" autocomplete="off" aria-label="Buscar cliente…"><select id="cfCli"><option value="">Todos</option>${cls.map(c=>`<option value="${esc(c)}"${c===costF.cliente?' selected':''}>${esc(c)}</option>`).join('')}</select></label></div>
       <div class="seg" role="group" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px">${[['corto','Corto'],['detallado','Detallado']].map(([k,l])=>`<button type="button" data-cfmt="${k}" class="${costF.formato===k?'on':''}">${l}</button>`).join('')}</div>
       <div class="seg" role="group" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:8px">${[['dias','Generales según días trabajados'],['igual','Generales por igual']].map(([k,l])=>`<button type="button" data-crep="${k}" class="${costF.reparto===k?'on':''}">${l}</button>`).join('')}</div>
       <div class="ecchips">${chip('soloConCosto','Solo con costos registrados',costF.soloConCosto)}${chip('cobrados','Incluir cobrados',costF.cobrados)}</div>
@@ -2496,7 +2511,7 @@ Responde solo con un objeto JSON:
           return `<div class="seg" role="group" aria-label="Asistencia de todos"><button type="button" id="dTodos" class="${tipoC==='completo'?'on':''}">Día completo</button><button type="button" id="dMedio" class="${tipoC==='medio'?'on':''}">Medio día</button><button type="button" id="dNinguno" class="${tipoC==='no'?'on':''}">No trabajó</button></div>
         <div class="wex" style="margin-top:8px">
           <label>Horas extra para todos<input type="text" inputmode="decimal" id="dTodosHx" value="${hxC!=null&&num(hxC)?nf.format(num(hxC)).replace(/,00$/,''):''}" placeholder="${hxC==null?'varían':'0'}"></label>
-          <label>Orden o trabajo para todos<select id="dTodosTrab"><option value="">${tjC==null?'Varían…':'Elige…'}</option>${trabajosAbiertos.map(d=>`<option value="${esc(d.id)}"${tjC===d.id?' selected':''}>${esc(d.descripcion)}${d.unidad?' · '+esc(d.unidad):''}${tieneOrden(d)?' · '+esc(d.ods):''}</option>`).join('')}<option value="__ninguno"${tjC===''?' selected':''}>Sin asignar</option></select></label>
+          <label>Orden o trabajo para todos<input class="selq" data-filtra="#dTodosTrab" placeholder="Buscar trabajo…" autocomplete="off" aria-label="Buscar trabajo…"><select id="dTodosTrab"><option value="">${tjC==null?'Varían…':'Elige…'}</option>${trabajosAbiertos.map(d=>`<option value="${esc(d.id)}"${tjC===d.id?' selected':''}>${esc(d.descripcion)}${d.unidad?' · '+esc(d.unidad):''}${tieneOrden(d)?' · '+esc(d.ods):''}</option>`).join('')}<option value="__ninguno"${tjC===''?' selected':''}>Sin asignar</option></select></label>
         </div>`; })()}
         <div class="tip" style="margin-top:6px">Se aplica a todos; después ajustas el que sea distinto en su fila.</div>
       </div>`:''}
@@ -2714,7 +2729,7 @@ Responde solo con un objeto JSON:
     if(!ls.length){ toast('Primero agrega trabajadores'); return; }
     $('#adTrab').innerHTML=ls.map(t=>`<option value="${esc(t.id)}">${esc(t.nombre)}${t.activo===false?' (inactivo)':''}</option>`).join('');
     $('#adFecha').value=today(); $('#adMonto').value=''; $('#adNota').value=''; $('#adErr').textContent='';
-    openSheet('#adSheet');
+    limpiarFiltros('#adSheet'); openSheet('#adSheet');
   }
   async function guardarAdelanto(){
     const m=parseNum($('#adMonto').value);
@@ -3730,7 +3745,7 @@ Responde solo con un objeto JSON:
       $('#itEstado').innerHTML=`<div class="panel num" style="margin-top:10px"><div class="brk"><div><span>Existencia</span><b>${cant(e.existencia,it.unidad)}</b></div><div><span>Valor al costo de los lotes</span><b>${usd(e.valor)}</b></div>${e.lotes.length?`<div><span>Lotes</span><b>${e.lotes.map(l=>`${nq.format(l.q)} a ${usd(l.cu)}`).join(' · ')}</b></div>`:''}</div>
         ${ms.length?`<div class="tip" style="border:0;margin:8px 0 0">Últimos movimientos</div><div class="blist" style="margin-bottom:0">${ms.map(m=>{ const d=det[m.id]||{}; const q=m.tipo==='conteo'?`contado ${nq.format(num(m.contado))} (${num(d.diferencia)>0?'+':''}${nq.format(num(d.diferencia))})`:`${m.tipo==='salida'?'−':'+'}${nq.format(num(m.cantidad))}`; return `<div><span>${fdate(m.fecha)} · ${TIPO_INV[m.tipo]}${m.trabajoId&&docs.find(x=>x.id===m.trabajoId)?' · '+esc(docs.find(x=>x.id===m.trabajoId).descripcion):''}</span><b>${q} ${esc(uni(it.unidad))}</b></div>`; }).join('')}</div>`:''}</div>`;
     } else $('#itEstado').innerHTML='';
-    openSheet('#itSheet');
+    limpiarFiltros('#itSheet'); openSheet('#itSheet');
   }
   async function guardarItem(){
     const nombre=$('#itNombre').value.trim(); if(!nombre){ $('#itErr').textContent='Escribe el nombre del ítem.'; return; }
@@ -3866,7 +3881,7 @@ Responde solo con un objeto JSON:
     $('#acUbi').value=a&&a.ubicacion||''; $('#acFecha').value=a&&a.fechaCompra||''; $('#acCosto').value=a&&num(a.costo)>0?nf.format(num(a.costo)):''; $('#acNota').value=a&&a.nota||'';
     $('#acHist').innerHTML = a&&Array.isArray(a.historial)&&a.historial.length ? `<div class="tip" style="border:0;margin:8px 0 0">Historial de entregas</div><div class="blist">${a.historial.slice().reverse().slice(0,8).map(h=>`<div><span>${fdate(h.fecha)}</span><b>${esc(respNombre(h.de))} → ${esc(respNombre(h.a))}</b></div>`).join('')}</div>` : '';
     $('#acErr').textContent=''; $('#acDel').hidden=!a; $('#acDel').textContent='Eliminar'; delete $('#acDel').dataset.armed;
-    openSheet('#acSheet');
+    limpiarFiltros('#acSheet'); openSheet('#acSheet');
   }
   async function guardarActivo(){
     const nombre=$('#acNombre').value.trim(); if(!nombre){ $('#acErr').textContent='Escribe el nombre.'; return; }
