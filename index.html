@@ -860,6 +860,7 @@ textarea.share{min-height:38vh}
     <div class="err" id="imErr"></div>
     <div class="row-btns" style="margin-top:12px">
       <button type="button" class="btn pri" id="imSave">Guardar</button>
+      <button type="button" class="btn sec" id="imCuadrar" hidden>Cuadrar la compra</button>
       <button type="button" class="btn del" id="imDel">Eliminar</button>
     </div>
   </div>
@@ -889,6 +890,24 @@ textarea.share{min-height:38vh}
   </div>
 </section>
 
+<!-- Inventario: cuadrar una compra con lo pagado -->
+<section class="sheet" id="cqSheet" hidden aria-modal="true" role="dialog" aria-labelledby="cqTitle">
+  <div class="wrap">
+    <div class="grab"></div>
+    <div class="sh-head"><h3 id="cqTitle">Cuadrar compra con lo pagado</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
+    <div class="tip">Para facturas en bolívares pagadas en dólares: reparte lo pagado entre los ítems en proporción a su precio de lista, guarda el costo en dólares y en bolívares de cada entrada y las enlaza al gasto. A los ítems sin precio ponles uno estimado.</div>
+    <div class="grid" style="margin-top:8px">
+      <label class="f full">Compra (entradas del mismo proveedor y factura)<select id="cqGrupo"></select></label>
+      <label class="f full">Gasto con el que se pagó<select id="cqGasto"></select></label>
+      <label class="f full">Total pagado (USD)<input id="cqPagado" inputmode="decimal" placeholder="0,00"></label>
+    </div>
+    <div id="cqLineas"></div>
+    <div class="conv num" id="cqTot"></div>
+    <div class="err" id="cqErr"></div>
+    <div class="row-btns" style="margin-top:12px"><button type="button" class="btn pri" id="cqSave">Cuadrar y guardar</button></div>
+  </div>
+</section>
+
 <div class="toast" id="toast" hidden></div>
 
 <script>
@@ -911,7 +930,8 @@ textarea.share{min-height:38vh}
 
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const num = v => { const n=+v; return isFinite(n)?n:0; };
-  const parseNum = s => { s=String(s||'').trim().replace(/\s/g,''); if(!s) return 0; if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.'); const n=parseFloat(s); return isFinite(n)?n:NaN; };
+  /* Números como se escriben aquí: coma decimal y punto de millar ("1.234,56"); sin coma, "56.900" o "1.234.567" son millares; "2.5" o "0.125" siguen siendo decimales */
+  const parseNum = s => { s=String(s||'').trim().replace(/\s/g,''); if(!s) return 0; if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.'); else if(/^-?(?!0\.)\d{1,3}(\.\d{3})+$/.test(s)) s=s.replace(/\./g,''); const n=parseFloat(s); return isFinite(n)?n:NaN; };
   const r2 = n => Math.round(n*100)/100;
   const usd = n => `USD ${nf.format(n)}`;
   const bs = n => `Bs. ${nf.format(n)}`;
@@ -1165,7 +1185,7 @@ textarea.share{min-height:38vh}
 
   /* ---------- hojas ---------- */
   function openSheet(id){ $('#scrim').hidden=false; $(id).hidden=false; document.body.style.overflow='hidden'; }
-  function closeSheets(){ ['#sheet','#bulkSheet','#shareSheet','#aiSheet','#wSheet','#adSheet','#mvSheet','#itSheet','#imSheet','#acSheet'].forEach(s=>$(s).hidden=true); $('#scrim').hidden=true; document.body.style.overflow=''; draft=null; editingId=null; }
+  function closeSheets(){ ['#sheet','#bulkSheet','#shareSheet','#aiSheet','#wSheet','#adSheet','#mvSheet','#itSheet','#imSheet','#acSheet','#cqSheet'].forEach(s=>$(s).hidden=true); $('#scrim').hidden=true; document.body.style.overflow=''; draft=null; editingId=null; }
 
   function openEditor(id){
     const src = id ? docs.find(d=>d.id===id) : null;
@@ -3618,6 +3638,7 @@ Responde solo con un objeto JSON:
       ${btnsInv()}
       <div class="daynav"><button type="button" id="iPrev" aria-label="Semana anterior">‹</button><div class="panel num" style="flex:1;text-align:center;padding:10px">Semana del ${fdate(ini)} al ${fdate(fin)}</div><button type="button" id="iNext" aria-label="Semana siguiente">›</button></div>
       <div class="tip num">Compras ${usd(ent)} · Consumo ${usd(sal)}${mer?` · Mermas por conteo ${usd(mer)}`:''}</div>
+      ${canWrite&&gruposCompra().length?`<div class="row-btns" style="margin-top:4px"><button type="button" class="btn sec" id="iCuadrar">Cuadrar una compra con lo pagado</button></div>`:''}
       <div class="lns">${ms.length?ms.map(tarjetaMov).join(''):`<div class="empty"><b>Sin movimientos esta semana</b>Registra una entrada, una salida o un conteo.</div>`}</div>
       <div style="height:24px"></div>`;
   }
@@ -3742,6 +3763,7 @@ Responde solo con un objeto JSON:
     $('#imTrab').value = m ? m.trabajoId||'' : ''; $('#imQuien').value = m ? m.quienId||'' : ''; $('#imNota').value = m ? m.nota||'' : (pre&&pre.nota)||'';
     $('#imGasto').checked=false; $('#imGastoCampos').hidden=true; $('#imGTasa').value=tasaSugerida()?nfT.format(tasaSugerida()):''; $('#imCuenta').value='binance';
     $('#imErr').textContent=''; $('#imDel').hidden=!m; $('#imDel').textContent='Eliminar'; delete $('#imDel').dataset.armed;
+    $('#imCuadrar').hidden = !(m && m.tipo==='entrada' && (m.proveedor||m.referencia) && canWrite);
     syncIMTipo(); openSheet('#imSheet');
   }
   async function guardarIMov(){
@@ -3891,6 +3913,7 @@ Responde solo con un objeto JSON:
     const nv=t.closest('[data-inuevo]'); if(nv) return openIMov(nv.dataset.inuevo, null);
     if(t.closest('#iAI')) return abrirAI('inv');
     if(t.closest('#iRep')) return abrirRepInv();
+    if(t.closest('#iCuadrar')) return openCuadrar();
     if(t.closest('#iPrev')){ iSemana=sumarDias(iSemana,-7); return renderInv(); }
     if(t.closest('#iNext')){ iSemana=sumarDias(iSemana,7); return renderInv(); }
     if(t.closest('#itNew')) return openItem(null);
@@ -3915,6 +3938,67 @@ Responde solo con un objeto JSON:
   ['#imGasto','#imCuenta'].forEach(s=>$(s).addEventListener('change', renderIMConv));
   $('#imSave').addEventListener('click', guardarIMov);
   $('#imDel').addEventListener('click', eliminarIMov);
+  $('#imCuadrar').addEventListener('click', ()=>{ const m=invMovs.find(x=>x.id===imEditId); closeSheets(); openCuadrar(m?claveCompra(m):undefined); });
+  $('#cqGrupo').addEventListener('change', ()=>openCuadrar($('#cqGrupo').value));
+  $('#cqGasto').addEventListener('change', ()=>{ $('#cqPagado').value=''; recalcCuadrar(); });
+  $('#cqPagado').addEventListener('input', recalcCuadrar);
+  $('#cqLineas').addEventListener('input', e=>{ if(e.target.dataset.cqbs!=null) recalcCuadrar(); });
+  $('#cqSave').addEventListener('click', guardarCuadrar);
+
+  /* ---------- cuadrar una compra con lo pagado ----------
+     Facturas en bolívares pagadas en dólares (a una tasa efectiva distinta de la del día): lo pagado se reparte entre las entradas
+     de la misma compra en proporción a su precio de lista; cada entrada guarda costo en USD y en Bs con la tasa implícita, y queda
+     enlazada al gasto, que se marca como compra para inventario (no es gasto general). */
+  const claveCompra = m => `${norm(m.proveedor||'')}|${String(m.referencia||'').trim().toLowerCase()}`;
+  function gruposCompra(){
+    const g={};
+    invMovs.filter(m=>m.tipo==='entrada' && (m.proveedor||m.referencia)).forEach(m=>{ const k=claveCompra(m); const o=g[k]||(g[k]={k, proveedor:m.proveedor||'', referencia:m.referencia||'', fecha:m.fecha||'', ms:[]}); o.ms.push(m); if(String(m.fecha||'')>o.fecha) o.fecha=m.fecha; });
+    return Object.values(g).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+  }
+  const etiquetaCompra = g => `${g.proveedor||'Sin proveedor'}${g.referencia?' · N° '+g.referencia:''} · ${g.ms.length} ${g.ms.length===1?'ítem':'ítems'} · ${fdate(g.fecha)}`;
+  function gastosCompra(){ const desde=sumarDias(today(),-180); return movs.filter(m=>m.tipo==='gasto' && String(m.fecha||'')>=desde && (m.aCargo||'Empresa')==='Empresa' && !['Nómina','Sueldos de supervisores'].includes(m.categoria)).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))); }
+  function openCuadrar(grupoKey){
+    const gs=gruposCompra(); if(!gs.length){ toast('No hay entradas con proveedor o factura para cuadrar'); return; }
+    const g=gs.find(x=>x.k===grupoKey)||gs[0], t=tasaSugerida();
+    $('#cqGrupo').innerHTML=gs.map(x=>`<option value="${esc(x.k)}"${x.k===g.k?' selected':''}>${esc(etiquetaCompra(x))}</option>`).join('');
+    $('#cqGasto').innerHTML=`<option value="">Sin gasto registrado (escribo el total)</option>`+gastosCompra().map(m=>`<option value="${esc(m.id)}">${fdate(m.fecha).slice(0,5)} ${esc(m.concepto||m.categoria||'Gasto')} · ${usd(usdDe(m,t))} (${esc(cuentaDe(m.cuenta).nombre)})</option>`).join('');
+    const enlazado=g.ms.map(m=>m.movId).find(id=>id&&movs.some(x=>x.id===id)), porNombre=(gastosCompra().find(m=>g.proveedor&&norm(m.concepto||'').includes(norm(g.proveedor)))||{}).id;
+    $('#cqGasto').value=enlazado||porNombre||''; $('#cqPagado').value=''; $('#cqErr').textContent='';
+    const it=id=>itemDe(id)||{nombre:'Ítem eliminado',unidad:'und'};
+    $('#cqLineas').innerHTML = `<div style="margin-top:8px">${g.ms.map(m=>{ const x=it(m.itemId), bs=num(m.costoUnitBs); return `<div class="num" style="display:grid;grid-template-columns:minmax(0,1fr) 128px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)"><div style="min-width:0"><b>${esc(x.nombre)}</b><br><small>${cant(m.cantidad,x.unidad)}${num(m.costoUnit)>0?' · hoy '+usd(num(m.costoUnit))+' c/u':' · sin costo'}${m.movId&&m.movId!==(enlazado||porNombre)?' · enlazada a otro gasto':''}</small><div data-cqusd="${m.id}" style="color:var(--muted);font-size:12.5px"></div></div><label class="f" style="margin:0"><span style="font-size:11px">Bs. c/u (lista)</span><input data-cqbs="${m.id}" inputmode="decimal" value="${bs>0?nf.format(bs):''}" placeholder="0,00" aria-label="Precio de lista de ${esc(x.nombre)}"></label></div>`; }).join('')}</div>`;
+    recalcCuadrar(); openSheet('#cqSheet');
+  }
+  function cqDatos(){
+    const g=gruposCompra().find(x=>x.k===$('#cqGrupo').value)||null, gasto=movs.find(m=>m.id===$('#cqGasto').value)||null;
+    let pagado=parseNum($('#cqPagado').value)||0; if(gasto && !$('#cqPagado').value.trim()) pagado=usdDe(gasto,tasaSugerida());
+    return {g, gasto, pagado};
+  }
+  function recalcCuadrar(){
+    const {g, gasto, pagado}=cqDatos(); if(!g) return {};
+    $('#cqPagado').placeholder = gasto ? nf.format(usdDe(gasto,tasaSugerida())) : '0,00';
+    const filas=g.ms.map(m=>{ const inp=document.querySelector(`[data-cqbs="${m.id}"]`); const bs=inp?parseNum(inp.value)||0:0; return {m, bs, tot:bs*num(m.cantidad)}; });
+    const totalBs=sum(filas,f=>f.tot), tasa=pagado>0&&totalBs>0?totalBs/pagado:0, sinBs=filas.filter(f=>!(f.bs>0)), tRef=tasaSugerida();
+    filas.forEach(f=>{ const el=document.querySelector(`[data-cqusd="${f.m.id}"]`); if(el) el.textContent = f.bs>0&&tasa>0 ? `→ ${usd(r2(f.bs/tasa))} c/u · ${usd(r2(f.tot/tasa))}` : (f.bs>0?'':'Sin precio: ponle uno estimado o quedará sin costo'); });
+    $('#cqTot').textContent = totalBs>0
+      ? `Lista: ${bs(r2(totalBs))}${pagado>0?` · Pagado: ${usd(pagado)} · Tasa implícita: ${nfT.format(r4(tasa))} Bs/USD${tRef>0&&totalBs/tRef>pagado+0.005?` · Ahorro frente a la última tasa (${nfT.format(tRef)}): ${usd(r2(totalBs/tRef-pagado))}`:''}`:' · Falta el total pagado'}${sinBs.length?` · ${sinBs.length} sin precio`:''}`
+      : 'Escribe los precios de lista en bolívares.';
+    return {filas, totalBs, tasa, sinBs};
+  }
+  async function guardarCuadrar(){
+    const err=x=>{ $('#cqErr').textContent=x; };
+    const {g, gasto, pagado}=cqDatos(); if(!g) return err('Elige la compra.');
+    if(!(pagado>0)) return err('Elige el gasto con el que se pagó o escribe el total pagado en dólares.');
+    const {filas, totalBs, tasa}=recalcCuadrar(); if(!(totalBs>0)||!(tasa>0)) return err('Escribe los precios de lista en bolívares.');
+    const con=filas.filter(f=>f.bs>0&&num(f.m.cantidad)>0); if(!con.length) return err('Ningún ítem tiene precio.');
+    con.forEach(f=>{ f.cu=r4(f.bs/tasa); });
+    const dif=r2(pagado-sum(con,f=>f.cu*num(f.m.cantidad))); if(Math.abs(dif)>=0.005){ const mayor=con.slice().sort((a,b)=>b.tot-a.tot)[0]; mayor.cu=r4(mayor.cu+dif/num(mayor.m.cantidad)); }
+    const ahora=new Date().toISOString();
+    try{
+      for(const f of con) await iDb.collection('invMovs').doc(f.m.id).update({costoUnit:f.cu, costoUnitBs:r2(f.bs), tasa:r4(tasa), sinCosto:false, movId:gasto?gasto.id:(f.m.movId||''), actualizado:ahora});
+      if(gasto && !gasto.inventario) await gDb.collection('movimientos').doc(gasto.id).update({inventario:true, actualizado:ahora});
+      closeSheets(); toast(`Compra cuadrada: ${con.length} ${con.length===1?'ítem':'ítems'} a ${nfT.format(r4(tasa))} Bs/USD`);
+    }catch(e){ err(errMsg(e)); }
+  }
   $('#acSave').addEventListener('click', guardarActivo);
   $('#acDel').addEventListener('click', eliminarActivo);
 
@@ -4266,7 +4350,7 @@ Responde solo con un objeto JSON:
     etapa, saldo, pagado, pagadoPropio, tieneOrden, pagoDia, horaExtraDe, factorDe, tarifaDe, sueldoSup, tipoDia, calcCorte, semanasPagadasSup, pagadoHastaDe, semanasDe, calcPrefill, reciboTrabajador, detalleDias,
     tasaOrdenLlegada, tasaParaBs, tasaSugerida, tasaSaldoBanco, saldoCuenta, inicioCaja, saldoIni, usdDe, movsAuto, todosMovs, calcBalance, buildBalance,
     estadoItem, detallesInv, materialesTrabajo, mermasPorSemana, valorInventario, bajoMinimo, buildInv,
-    costoTrabajo, generalesPorSemana, actividadPorSemana, repartoGenerales, buildCostos, datosResumen, textoResumen, buildShare, respaldoJSON, saldoIA, usoIA, lineaConsultaIA, textoUsoIA,
+    costoTrabajo, generalesPorSemana, actividadPorSemana, repartoGenerales, buildCostos, datosResumen, textoResumen, buildShare, respaldoJSON, saldoIA, usoIA, lineaConsultaIA, textoUsoIA, gruposCompra, claveCompra,
     inicioSemana, finSemana, sumarDias, today, parseNum, norm, parecido, listaClientes, listaUnidades, mapUnidad, clienteExacto, r2,
     TODOS_F, get cfgN(){ return cfgN; }, get gcfg(){ return gcfg; }, get icfg(){ return icfg; }, get docs(){ return docs; }, get trabs(){ return trabs; }, get movs(){ return movs; }, get invMovs(){ return invMovs; }, get items(){ return items; }, get cortes(){ return cortes; },
     set(o){ for(const [k,v] of Object.entries(o)){
