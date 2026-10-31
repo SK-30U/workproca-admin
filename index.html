@@ -777,6 +777,7 @@ textarea.share{min-height:38vh}
     <div class="row-btns" style="margin-top:12px">
       <button type="button" class="btn pri" id="mvSave">Guardar</button>
       <button type="button" class="btn sec" id="mvInv" hidden>Pasar a inventario</button>
+      <button type="button" class="btn sec" id="mvAplicar" hidden>Aplicar como pago de un trabajo</button>
       <button type="button" class="btn del" id="mvDel">Eliminar</button>
     </div>
   </div>
@@ -1158,7 +1159,8 @@ textarea.share{min-height:38vh}
     /* La pestaña "Sin orden" muestra todo lo que no tiene orden de servicio: ejecutado y por ejecutar, en dos bloques */
     const groups = filtro==='todas' ? ORDEN : filtro==='sinOrden' ? ['sinOrden','peSinOrden'] : [filtro];
     const secDe = g => g==='peSinOrden' ? {sec:'Sin orden de servicio, por ejecutar', pred:d=>etapa(d)==='porEjecutar'&&!tieneOrden(d)} : {sec:ETAPAS[g].sec, pred:d=>etapa(d)===g};
-    const html = groups.map(g=>{
+    const pagos = filtro==='cobrado' ? pagosRecibidos(list) : '';
+    const html = pagos + groups.map(g=>{
       const {sec,pred}=secDe(g), items=list.filter(pred).sort(byOrden);
       if(!items.length) return (filtro==='todas'||g==='peSinOrden') ? '' : `<div class="empty"><b>Nada en “${sec}”</b>${query||cliente?'Prueba quitando el filtro o la búsqueda.':'Cuando un trabajo llegue a esta etapa aparecerá aquí.'}</div>`;
       const sub = g==='cobrado' ? sum(items,pagado) : sum(items,saldo);
@@ -1167,6 +1169,20 @@ textarea.share{min-height:38vh}
     el.innerHTML = html || `<div class="empty"><b>Sin resultados</b>Prueba con otra búsqueda.</div>`;
   }
 
+  /* Pagos recibidos: cada cobro registrado sobre un trabajo, con su modalidad; los abonos parciales también, aunque el trabajo siga pendiente */
+  function pagosRecibidos(list){
+    const ps=[]; list.forEach(d=>(d.cobros||[]).forEach((c,i)=>ps.push({d,c,i})));
+    if(!ps.length) return '';
+    ps.sort((a,b)=>String(b.c.fecha||'').localeCompare(String(a.c.fecha||'')) || b.i-a.i);
+    const tot=sum(ps,x=>num(x.c.monto));
+    return `<section class="sec"><h2>Pagos recibidos <span class="num">${ps.length} · ${usd(tot)}</span></h2><div class="list">${ps.map(({d,c})=>{ const completo=etapa(d)==='cobrado', cruce=esCruce(c);
+      const meta=[c.fecha?fdate(c.fecha):'Sin fecha', c.numFactura?`Factura <span class="code">${esc(c.numFactura)}</span>`:'', tieneOrden(d)?`Orden <span class="code">${esc(d.ods)}</span>`:'', esc(comoCobro(c)), cruce?'cruce con otra factura':''].filter(Boolean);
+      return `<button class="card" type="button" data-id="${esc(d.id)}"><div class="body">
+        <div class="r1"><div class="desc">${esc(d.descripcion)}${d.unidad?' · '+esc(d.unidad):''}</div><div class="money num">${usdHtml(num(c.monto))}</div></div>
+        <div class="meta num">${meta.map(m=>`<span>${m}</span>`).join('')}</div>
+        <div class="r3"><span class="pill ${completo?'co':'lf'}">${completo?'Cobrado completo':'Abono parcial'}</span>${completo?'':`<span class="num">Quedan ${usd(saldo(d))} por cobrar</span>`}</div>
+      </div></button>`; }).join('')}</div></section>`;
+  }
   function renderTabs(){
     const counts={}; ORDEN.forEach(k=>counts[k]=0); byClient().forEach(d=>{ const e=etapa(d); counts[e]++; if(e==='porEjecutar'&&!tieneOrden(d)) counts.sinOrden++; });
     $('#tabs').innerHTML = [['todas','Todas'],...ORDEN.map(k=>[k,ETAPAS[k].tab])].map(([k,l])=>
@@ -3090,7 +3106,7 @@ Responde solo con un objeto JSON:
   const COBRO_FACT='Cobro de factura';
   function catsPara(tipo, ac){ return tipo==='ingreso' ? [COBRO_FACT, ...(gcfg.catIngreso||[]).filter(c=>!['cobro a cliente','cobro de factura'].includes(String(c).toLowerCase()))] : (ac==='Empresa' ? gcfg.catEmpresa : gcfg.catPersonal); }
   const esCobroFact = () => mvTipo==='ingreso' && $('#mvCat').value===COBRO_FACT;
-  function fillFactTrab(){ const ls=docs.filter(d=>tieneOrden(d) && saldo(d)>0).sort(byOrden); $('#mvFactTrab').innerHTML = ls.length ? ls.map(d=>`<option value="${esc(d.id)}">${esc(d.ods)} · ${esc(d.descripcion)}${d.unidad?' ('+esc(d.unidad)+')':''} · saldo ${usd(saldo(d))}</option>`).join('') : '<option value="">No hay trabajos con orden de servicio y saldo</option>'; }
+  function fillFactTrab(sel){ const ls=docs.filter(d=>saldo(d)>0).sort((a,b)=>(tieneOrden(b)-tieneOrden(a)) || byOrden(a,b)); $('#mvFactTrab').innerHTML = ls.length ? ls.map(d=>`<option value="${esc(d.id)}">${tieneOrden(d)?esc(d.ods):'Sin orden'} · ${esc(d.descripcion)}${d.unidad?' ('+esc(d.unidad)+')':''} · saldo ${usd(saldo(d))}</option>`).join('') : '<option value="">No hay trabajos con saldo por cobrar</option>'; if(sel && ls.some(d=>d.id===sel)) $('#mvFactTrab').value=sel; }
   function fillMvSelects(){
     const opts=gcfg.cuentas.map(c=>`<option value="${esc(c.id)}">${esc(c.nombre)} (${c.moneda==='VES'?'Bs.':'USD'})</option>`).join('');
     ['#mvCuenta','#mvOrig','#mvDest'].forEach(s=>{ const v=$(s).value; $(s).innerHTML=opts; if(v) $(s).value=v; });
@@ -3159,6 +3175,7 @@ Responde solo con un objeto JSON:
     const ts=mvTipo==='ingreso' ? ((ultimaTasa()||{}).tasa||tasaSugerida()) : tasaSugerida(); $('#mvTasa').value = m ? (num(m.tasa)?nfT.format(num(m.tasa)):'') : (ts?nfT.format(ts):'');
     $('#mvErr').textContent=''; $('#mvDel').hidden=!m; $('#mvDel').textContent='Eliminar'; delete $('#mvDel').dataset.armed;
     $('#mvInv').hidden = !(m && m.tipo==='gasto' && (m.aCargo||'Empresa')==='Empresa' && !m.inventario);
+    $('#mvAplicar').hidden = !(m && m.tipo==='ingreso' && m.categoria!==COBRO_FACT && docs.some(d=>saldo(d)>0));
     $('#mvFactNum').value=''; $('#mvModo').value='banco';
     fillCats(m&&m.categoria); syncMvTipo();
     openSheet('#mvSheet');
@@ -3181,7 +3198,9 @@ Responde solo con un objeto JSON:
       const md=$('#mvModo').value;
       if(md==='banco' && !(t>0)) return err('Escribe la tasa a la que se cobró.');
       if(m>saldo(d)+0.005) return err(`El monto pasa del saldo del trabajo (${usd(saldo(d))}).`);
-      try{ await coll.doc(d.id).update({cobros:[...(d.cobros||[]), {monto:r2(m), tasa:md==='banco'?t:0, cuenta:md, numFactura:$('#mvFactNum').value.trim(), fecha:f, ref:$('#mvRef').value.trim()}], actualizado:new Date().toISOString()}); closeSheets(); toast('Cobro registrado en Cobranzas'); }
+      try{ await coll.doc(d.id).update({cobros:[...(d.cobros||[]), {monto:r2(m), tasa:md==='banco'?t:0, cuenta:md, numFactura:$('#mvFactNum').value.trim(), fecha:f, ref:$('#mvRef').value.trim()}], actualizado:new Date().toISOString()});
+        const suelto=mvEditId&&movs.find(x=>x.id===mvEditId&&x.tipo==='ingreso'); if(suelto){ await gDb.collection('movimientos').doc(mvEditId).delete(); closeSheets(); toast('Pago registrado en Cobranzas; el ingreso suelto se reemplazó'); return; }
+        closeSheets(); toast('Cobro registrado en Cobranzas'); }
       catch(e){ err(errMsg(e)); }
       return;
     } else {
@@ -3376,6 +3395,18 @@ Responde solo con un objeto JSON:
   $('#mvACargo').addEventListener('change', ()=>{ fillCats(); syncMvTipo(); });
   $('#mvCat').addEventListener('change', ()=>{ const antes=$('#mvMontoLbl').textContent.includes('cobrado'); if(antes!==esCobroFact()) $('#mvMonto').value=''; syncMvTipo(); });
   $('#mvModo').addEventListener('change', syncMvMoneda);
+  $('#mvAplicar').addEventListener('click', ()=>{
+    const m=movs.find(x=>x.id===mvEditId); if(!m) return;
+    const md=['banco','binance','efectivo'].includes(m.cuenta)?m.cuenta:'banco', enBs=cuentaDe(m.cuenta).moneda==='VES', t=num(m.tasa);
+    const usdM = enBs ? (t>0 ? r2(num(m.monto)/t) : 0) : r2(num(m.monto));
+    fillCats(COBRO_FACT); $('#mvModo').value=md; $('#mvMonto').value = usdM>0 ? nf.format(usdM) : ''; $('#mvTasa').value = t>0 ? nfT.format(t) : ''; $('#mvTasa').dataset.manual='1';
+    /* trabajo sugerido: el que tenga ese mismo saldo, o el que se nombre en el concepto; si no, el primero con orden */
+    const k=norm(m.concepto||''), cand=docs.filter(d=>saldo(d)>0);
+    const sug=(cand.find(d=>Math.abs(saldo(d)-usdM)<0.005)||cand.find(d=>k&&(k.includes(norm(d.descripcion).slice(0,12))||(d.ods&&k.includes(norm(d.ods)))))||{}).id;
+    syncMvTipo(); fillFactTrab(sug); syncMvMoneda();
+    $('#mvAplicar').hidden=true; $('#mvErr').textContent='';
+    $('#mvConv').innerHTML=($('#mvConv').innerHTML?$('#mvConv').innerHTML+'<br>':'')+`Elige la orden y toca Guardar: este ingreso pasa a ser un pago de ese trabajo en Cobranzas y deja de estar suelto aquí (la caja no lo cuenta dos veces).`;
+  });
   $('#mvFactTrab').addEventListener('change', ()=>{ const d=docs.find(x=>x.id===$('#mvFactTrab').value); if(d) $('#mvMonto').value=nf.format(saldo(d)); renderMvConv(); });
   ['#mvCuenta','#mvOrig','#mvDest'].forEach(s=>$(s).addEventListener('change', ()=>{ delete $('#mvDestMonto').dataset.manual; syncMvMoneda(); }));
   ['#mvMonto','#mvOrigMonto'].forEach(s=>$(s).addEventListener('input', renderMvConv));
