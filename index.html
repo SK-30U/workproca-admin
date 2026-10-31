@@ -1549,7 +1549,7 @@ textarea.share{min-height:38vh}
     Object.values(asis).forEach(a=>Object.entries(a.registros||{}).forEach(([id,r])=>{
       if(r.trabajoId!==d.id) return; const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return;
       const p=pagoDia(t,r,a.fecha), v=p.montoDias+p.montoExtra; if(v<=0) return;
-      mo+=v; dias+=p.dias; horas+=p.horas; porT[t.nombre]=r2((porT[t.nombre]||0)+v);
+      mo+=v; dias+=p.dias; horas+=p.horas; const o=porT[t.nombre]||(porT[t.nombre]={v:0,dias:0,horas:0}); o.v=r2(o.v+v); o.dias+=p.dias; o.horas+=p.horas;
     }));
     const tasaRep=tasaSugerida();
     const gs=movs.filter(m=>m.tipo==='gasto' && m.trabajoId===d.id && !m.inventario).map(m=>({m, usd:usdDe(m,tasaRep)}));
@@ -1596,9 +1596,10 @@ textarea.share{min-height:38vh}
     base.forEach(({d,c})=>{
       L.push(''); L.push(`*${d.descripcion}${d.unidad?' · '+d.unidad:''}${tieneOrden(d)?' · '+d.ods:d.nota?' · '+d.nota:''}*`);
       L.push(`Monto: ${usd(c.monto)}${c.cobrado>0?` · Cobrado: ${usd(c.cobrado)}`:''}`);
-      const det=[c.dias?`${nf.format(c.dias).replace(/,00$/,'')} ${c.dias===1?'día':'días'}`:'', c.horas?`${nf.format(c.horas).replace(/,00$/,'')} h extra`:''].filter(Boolean).join(', ');
+      const nT=Object.keys(c.porT).length, fmt=n=>nf.format(n).replace(/,00$/,'');
+      const det=[c.dias?`${fmt(c.dias)} ${c.dias===1?'día-hombre':'días-hombre'}`:'', c.horas?`${fmt(c.horas)} h extra`:'', nT?`${nT} ${nT===1?'trabajador':'trabajadores'}`:''].filter(Boolean).join(', ');
       L.push(`Mano de obra: ${usd(c.mo)}${det?' ('+det+')':''}`);
-      if(costF.formato==='detallado') Object.entries(c.porT).sort((a,b)=>b[1]-a[1]).forEach(([n,v])=>L.push(`  • ${n}: ${usd(v)}`));
+      if(costF.formato==='detallado') Object.entries(c.porT).sort((a,b)=>b[1].v-a[1].v).forEach(([n,o])=>L.push(`  • ${n}: ${usd(o.v)} (${[o.dias?`${fmt(o.dias)} ${o.dias===1?'día':'días'}`:'', o.horas?`${fmt(o.horas)} h extra`:''].filter(Boolean).join(', ')})`));
       if(c.mat||c.matL.length){ L.push(`Materiales del inventario: ${usd(c.mat)}`); if(costF.formato==='detallado') c.matL.forEach(x=>{ const it=itemDe(x.m.itemId)||{nombre:'Ítem eliminado',unidad:'und'}; L.push(`  • ${fdate(x.m.fecha).slice(0,5)} ${x.m.tipo==='devolucion'?'devolución de ':''}${cant(x.m.cantidad,it.unidad)} ${it.nombre}: ${x.costo<0?'− ':''}${usd(Math.abs(x.costo))}`); }); }
       L.push(`${c.mat||c.matL.length?'Otros gastos directos':'Materiales y gastos directos'}: ${usd(c.gastos)}`);
       if(costF.formato==='detallado') c.gs.forEach(x=>L.push(`  • ${fdate(x.m.fecha).slice(0,5)} ${x.m.concepto}: ${usd(x.usd)}`));
@@ -1612,6 +1613,8 @@ textarea.share{min-height:38vh}
     L.push(`*Costo: ${usd(r2(tC))} · Margen: ${usd(r2(tM-tC))}${tM>0?' ('+pctTxt(r2((tM-tC)/tM*100))+')':''}*`);
     if(rep.tot.total>0){
       L.push(''); L.push(`_Gastos generales de la empresa: ${usd(rep.tot.total)} (gastos sin orden ${usd(rep.tot.gastos)} · mano de obra sin asignar ${usd(rep.tot.mo)} · supervisores ${usd(rep.tot.sup)}), repartidos ${costF.reparto==='igual'?'por igual':'según los días trabajados'} entre las órdenes activas cada semana.${rep.sinRepartir>0?` Sin repartir: ${usd(rep.sinRepartir)} de semanas sin ninguna orden activa.`:''}_`);
+      if(costF.formato==='detallado'){ const tR=tasaSugerida(), gs=movs.filter(m=>m.tipo==='gasto' && m.fecha && (m.aCargo||'Empresa')==='Empresa' && !m.inventario && !['Nómina','Sueldos de supervisores'].includes(m.categoria) && !tieneTrabajo(m.trabajoId)).map(m=>({m,u:usdDe(m,tR)})).sort((a,b)=>b.u-a.u);
+        if(gs.length){ L.push('_Gastos sin orden (los más grandes):_'); gs.slice(0,8).forEach(x=>L.push(`  • ${fdate(x.m.fecha).slice(0,5)} ${x.m.concepto||x.m.categoria}: ${usd(x.u)}`)); if(gs.length>8) L.push(`  • … y ${gs.length-8} más`); const mer=sum(Object.values(mermasPorSemana()),v=>v); if(mer>0) L.push(`  • Mermas de inventario por conteo: ${usd(r2(mer))}`); L.push('_Una compra de materiales para inventario deja de ser gasto general al enlazarla desde Inventario (Pasar a inventario o Cuadrar compra); desde ahí el costo va a cada orden según el material que retira._'); } }
     }
     return L.join('\n');
   }
