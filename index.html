@@ -819,6 +819,9 @@ textarea.share{min-height:38vh}
       <label class="f">Mínimo en existencia<input id="itMin" inputmode="decimal" placeholder="Avisa al bajar de aquí"></label>
       <label class="f">Ubicación<input id="itUbi" list="itUbiL" autocomplete="off" placeholder="Almacén"><datalist id="itUbiL"></datalist></label>
       <label class="f full">Proveedor habitual (opcional)<input id="itProv" autocomplete="off"></label>
+      <label class="f">Precio de referencia (USD por unidad)<input id="itPrecio" inputmode="decimal" placeholder="0,00"></label>
+      <label class="f">o en bolívares por unidad<input id="itPrecioBs" inputmode="decimal" placeholder="0,00"></label>
+      <div class="tip full" id="itPrecioTip" style="margin:-4px 0 0">Se propone al registrar entradas. Si hay unidades que entraron sin precio, al guardar se les pone este costo.</div>
       <label class="chk full"><input type="checkbox" id="itActivo" checked> Activo (se lleva en inventario)</label>
     </div>
     <div id="itEstado"></div>
@@ -3759,6 +3762,8 @@ Responde solo con un objeto JSON:
     $('#itNombre').value=it?it.nombre:''; $('#itCat').value=it&&it.categoria||icfg.categorias[0]; if(it&&it.categoria&&!icfg.categorias.includes(it.categoria)){ $('#itCat').insertAdjacentHTML('afterbegin',`<option value="${esc(it.categoria)}">${esc(it.categoria)}</option>`); $('#itCat').value=it.categoria; }
     $('#itUni').value=it&&it.unidad||'und'; $('#itMin').value=it&&num(it.minimo)>0?nq.format(num(it.minimo)):''; $('#itUbi').value=it&&it.ubicacion||''; $('#itProv').value=it&&it.proveedor||''; $('#itActivo').checked=!it||it.activo!==false;
     $('#itErr').textContent=''; $('#itDel').hidden=!it; $('#itDel').textContent='Eliminar'; delete $('#itDel').dataset.armed; $('#itEntrada').hidden=!it; $('#itSalida').hidden=!it;
+    $('#itPrecio').value=it&&num(it.precioRef)>0?nf.format(num(it.precioRef)):''; $('#itPrecioBs').value='';
+    { const sc=it?estadoItem(it.id).sinCosto:0; $('#itPrecioTip').textContent = sc>0 ? `Hay ${cant(sc,it.unidad)} que entraron sin precio: al guardar con un precio aquí, esas entradas quedan con ese costo (en dólares, o en bolívares a la tasa que corresponda).` : 'Se propone al registrar entradas.'; }
     if(it){
       const e=estadoItem(it.id), ms=invMovs.filter(m=>m.itemId===it.id).sort(byFechaCreado).reverse().slice(0,8), det=detallesInv();
       $('#itEstado').innerHTML=`<div class="panel num" style="margin-top:10px"><div class="brk"><div><span>Existencia</span><b>${cant(e.existencia,it.unidad)}</b></div><div><span>Valor al costo de los lotes</span><b>${usd(e.valor)}</b></div>${e.lotes.length?`<div><span>Lotes</span><b>${e.lotes.map(l=>`${nq.format(l.q)} a ${usd(l.cu)}`).join(' · ')}</b></div>`:''}</div>
@@ -3770,8 +3775,14 @@ Responde solo con un objeto JSON:
     const nombre=$('#itNombre').value.trim(); if(!nombre){ $('#itErr').textContent='Escribe el nombre del ítem.'; return; }
     const rep=items.find(x=>x.id!==itEditId && norm(x.nombre)===norm(nombre)); if(rep){ $('#itErr').textContent=`Ya existe «${rep.nombre}».`; return; }
     const old=itEditId?itemDe(itEditId):null;
-    const body={nombre, categoria:$('#itCat').value, unidad:$('#itUni').value, minimo:Math.max(0,parseNum($('#itMin').value)||0), ubicacion:$('#itUbi').value.trim(), proveedor:$('#itProv').value.trim(), activo:$('#itActivo').checked, creado:old&&old.creado||new Date().toISOString(), actualizado:new Date().toISOString()};
-    try{ await (itEditId?iDb.collection('inventario').doc(itEditId):iDb.collection('inventario').doc()).set(body); closeSheets(); toast(old?'Ítem guardado':'Ítem agregado'); }
+    let pUsd=parseNum($('#itPrecio').value)||0, pBs=parseNum($('#itPrecioBs').value)||0, pTasa=0;
+    if(pBs>0 && !(pUsd>0)){ pTasa=tasaSugerida(); if(!(pTasa>0)){ $('#itErr').textContent='No hay tasa registrada para llevar los bolívares a dólares: pon el precio en dólares.'; return; } pUsd=r4(pBs/pTasa); }
+    const body={nombre, precioRef:pUsd>0?pUsd:0, categoria:$('#itCat').value, unidad:$('#itUni').value, minimo:Math.max(0,parseNum($('#itMin').value)||0), ubicacion:$('#itUbi').value.trim(), proveedor:$('#itProv').value.trim(), activo:$('#itActivo').checked, creado:old&&old.creado||new Date().toISOString(), actualizado:new Date().toISOString()};
+    try{ await (itEditId?iDb.collection('inventario').doc(itEditId):iDb.collection('inventario').doc()).set(body);
+      let n=0;
+      if(old && pUsd>0){ const ahora=new Date().toISOString();
+        for(const m of invMovs.filter(m=>m.itemId===old.id && m.tipo==='entrada' && !(num(m.costoUnit)>0))){ const g=m.movId&&movs.find(x=>x.id===m.movId); const t=pBs>0?pTasa:(g?tasaParaBs(m.fecha,0,g.cuenta).tasa:tasaSugerida()); await iDb.collection('invMovs').doc(m.id).update({costoUnit:pUsd, costoUnitBs:pBs>0?r2(pBs):(t>0?r2(pUsd*t):0), tasa:t>0?r4(t):0, sinCosto:false, actualizado:ahora}); n++; } }
+      closeSheets(); toast(n?`Ítem guardado · ${n} ${n===1?'entrada sin precio costeada':'entradas sin precio costeadas'} a ${usd(pUsd)}`:(old?'Ítem guardado':'Ítem agregado')); }
     catch(e){ $('#itErr').textContent=errMsg(e); }
   }
   async function eliminarItem(){
@@ -3807,7 +3818,7 @@ Responde solo con un objeto JSON:
     const e=it?estadoItem(it.id):null;
     $('#imCantLbl').textContent = `${imTipo==='conteo'?'Cantidad contada':'Cantidad'}${u?' ('+u+')':''}`;
     $('#imExist').textContent = it ? `Existencia hoy: ${cant(e.existencia,it.unidad)}${e.promedio>0?' · costo promedio '+usd(e.promedio)+' por '+u:''}${num(it.minimo)>0?' · mínimo '+cant(it.minimo,it.unidad):''}` : '';
-    if(imTipo==='entrada' && it && !$('#imCostoU').value && !imEditId && e.ultimoCU>0) $('#imCostoU').placeholder=`Último: ${nf.format(e.ultimoCU)}`;
+    if(imTipo==='entrada' && it && !$('#imCostoU').value && !imEditId){ const ref=e.ultimoCU>0?e.ultimoCU:num(it.precioRef); if(ref>0) $('#imCostoU').placeholder=`${e.ultimoCU>0?'Último':'Referencia'}: ${nf.format(ref)}`; }
     renderIMConv();
   }
   function renderIMConv(){
@@ -4033,9 +4044,10 @@ Responde solo con un objeto JSON:
   function gruposCompra(){
     const g={};
     invMovs.filter(m=>m.tipo==='entrada' && (m.proveedor||m.referencia)).forEach(m=>{ const k=claveCompra(m); const o=g[k]||(g[k]={k, proveedor:m.proveedor||'', referencia:m.referencia||'', fecha:m.fecha||'', ms:[]}); o.ms.push(m); if(String(m.fecha||'')>o.fecha) o.fecha=m.fecha; });
-    return Object.values(g).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+    const porFecha={}; invMovs.filter(m=>m.tipo==='entrada' && m.fecha).forEach(m=>{ const k='fecha|'+m.fecha; (porFecha[k]=porFecha[k]||{k, proveedor:'', referencia:'', fecha:m.fecha, porFecha:true, ms:[]}).ms.push(m); });
+    return [...Object.values(g), ...Object.values(porFecha).filter(x=>x.ms.length>1)].sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)) || (a.porFecha?1:0)-(b.porFecha?1:0));
   }
-  const etiquetaCompra = g => `${g.proveedor||'Sin proveedor'}${g.referencia?' · N° '+g.referencia:''} · ${g.ms.length} ${g.ms.length===1?'ítem':'ítems'} · ${fdate(g.fecha)}`;
+  const etiquetaCompra = g => g.porFecha ? `Todas las entradas del ${fdate(g.fecha)} · ${g.ms.length} ítems` : `${g.proveedor||'Sin proveedor'}${g.referencia?' · N° '+g.referencia:''} · ${g.ms.length} ${g.ms.length===1?'ítem':'ítems'} · ${fdate(g.fecha)}`;
   function gastosCompra(){ const desde=sumarDias(today(),-180); return movs.filter(m=>m.tipo==='gasto' && String(m.fecha||'')>=desde && (m.aCargo||'Empresa')==='Empresa' && !['Nómina','Sueldos de supervisores'].includes(m.categoria)).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))); }
   function openCuadrar(grupoKey){
     const gs=gruposCompra(); if(!gs.length){ toast('No hay entradas con proveedor o factura para cuadrar'); return; }
