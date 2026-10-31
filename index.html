@@ -238,6 +238,7 @@ main{padding-bottom:130px}
 .pill.so{background:var(--so-bg);color:var(--so)}
 .pill.lf{background:var(--lf-bg);color:var(--lf)}
 .pill.co{background:var(--co-bg);color:var(--co)}
+.pill.ej{background:color-mix(in srgb,var(--c-po) 16%,transparent);color:var(--c-po)}
 .hbtns{display:flex;gap:8px;flex-wrap:wrap}
 .topnav{position:sticky;top:env(safe-area-inset-top,0px);z-index:8;background:var(--bg);padding-block:14px 10px;border-bottom:1px solid var(--line)}
 /* Instalada en la pantalla de inicio, la barra de estado del teléfono queda pegada arriba: más aire para las pestañas */
@@ -601,6 +602,9 @@ textarea.share{min-height:38vh}
 
       <fieldset>
         <legend>Ejecución</legend>
+        <label class="chk"><input type="checkbox" id="iEnEjec"> En ejecución (ya se empezó)</label>
+        <div class="grid" id="enEjecFields" style="margin:8px 0 10px"><label class="f full">Fecha de inicio<input id="iFechaIni" type="date"></label></div>
+        <div class="tip" id="enEjecTip" style="margin:-4px 0 10px"></div>
         <label class="chk"><input type="checkbox" id="iEjecutado"> El trabajo ya se ejecutó</label>
         <div class="grid" id="ejecFields" style="margin-top:10px">
           <label class="f full">Fecha de culminación<input id="iFechaEjec" type="date"></label>
@@ -958,6 +962,14 @@ textarea.share{min-height:38vh}
     if(!d.ejecutado) return 'porEjecutar';
     return tieneOrden(d) ? 'listo' : 'sinOrden';
   }
+  /* "En ejecución": lo marcó Fran, o ya tiene gente asignada en la asistencia o material retirado del inventario, y aún no está ejecutado */
+  function actividadDe(id){
+    const dias=Object.values(typeof asis==='object'&&asis||{}).filter(a=>Object.values(a.registros||{}).some(r=>r.trabajoId===id && r.tipo!=='no')).length;
+    const mats=(Array.isArray(typeof invMovs!=='undefined'?invMovs:null)?invMovs:[]).filter(m=>m.tipo==='salida' && m.trabajoId===id).length;
+    const p=[dias?`${dias} ${dias===1?'día':'días'} de asistencia`:'', mats?`${mats} ${mats===1?'retiro':'retiros'} de material`:''].filter(Boolean);
+    return p.join(' y ');
+  }
+  const enEjecucion = d => !d.ejecutado && (d.enEjecucion===true || !!actividadDe(d.id));
   const byOrden = (a,b) => (num(a.orden)-num(b.orden)) || String(a.creado||'').localeCompare(String(b.creado||''));
   const sum = (list,fn) => list.reduce((s,d)=>s+fn(d),0);
   const esCruce = c => Array.isArray(c.compensa) && c.compensa.length>0;
@@ -1025,9 +1037,9 @@ textarea.share{min-height:38vh}
     /* Una barra segmentada (una sola pieza, partida en sus partes) y debajo una fila por parte con su cifra. Colores validados para daltonismo en claro y oscuro. */
     const partes=[
       {f:'listo',      c:'var(--c-lf)', lbl:'Listos para facturar',            n:lf.length,      v:sLf},
-      {f:'porEjecutar',c:'var(--c-po)', lbl:'Con orden, por ejecutar',         n:peOrden.length, v:sPo},
+      {f:'porEjecutar',c:'var(--c-po)', lbl:'Con orden, por ejecutar',         n:peOrden.length, v:sPo, extra:(k=>k?`${k} en ejecución`:'')(peOrden.filter(enEjecucion).length)},
       {f:'sinOrden',   c:'var(--c-so)', lbl:'Ejecutados sin orden',n:so.length,      v:sSo},
-      {f:'sinOrden',   c:'var(--c-ps)', lbl:'Sin orden, por ejecutar',         n:peSin.length,   v:sPs},
+      {f:'sinOrden',   c:'var(--c-ps)', lbl:'Sin orden, por ejecutar',         n:peSin.length,   v:sPs, extra:(k=>k?`${k} en ejecución`:'')(peSin.filter(enEjecucion).length)},
       {f:'cobrado',    c:'var(--c-co)', lbl:'Cobrado',                         n:null,           v:cobUsd, extra:`${cobBs>0?bs(cobBs)+' · ':''}${co.length} ${co.length===1?'trabajo completo':'trabajos completos'}`}];
     const fila=x=>`<button type="button" class="row" data-f="${x.f}"><i class="sw" style="background:${x.c}"></i><span class="nm">${x.lbl}${x.n!=null?`<em>${x.n}</em>`:''}</span><b>${usd(x.v)}</b>${x.extra?`<small>${x.extra}</small>`:''}</button>`;
     $('#hero').innerHTML = `<div class="lbl">Pendiente por cobrar</div>
@@ -1143,6 +1155,7 @@ textarea.share{min-height:38vh}
     const meta=[d.cliente&&esc(d.cliente), d.unidad&&esc(d.unidad), tieneOrden(d)?`Orden <span class="code">${esc(d.ods)}</span>`:'Sin orden de servicio', d.nota&&`Requisición <span class="code">${esc(d.nota)}</span>`].filter(Boolean);
     const extra=[];
     if(d.ejecutado && d.fechaEjecucion) extra.push(`Culminado el ${fdate(d.fechaEjecucion)}`);
+    const enEj=enEjecucion(d); if(enEj) extra.push(d.fechaInicio?`En ejecución desde el ${fdate(d.fechaInicio)}`:`En ejecución (${actividadDe(d.id)||'marcado'})`);
     const comoHost=crucesComoHost(d), comoDest=crucesComoDestino(d);
     if(e!=='cobrado' && pg>0 && !comoHost.length) extra.push(`${np} ${np===1?'pago':'pagos'}: ${usd(pg)} · Saldo <b>${usd(saldo(d))}</b>`);
     const notas=[...comoHost.map(textoHost), ...comoDest.map(x=>textoDestino(x,d))].filter(Boolean);
@@ -1154,7 +1167,7 @@ textarea.share{min-height:38vh}
       <div class="body">
         <div class="r1"><div class="desc">${esc(d.descripcion)}</div><div class="money num">${usdHtml(num(d.monto))}</div></div>
         <div class="meta">${meta.map(m=>`<span>${m}</span>`).join('')}</div>
-        <div class="r3"><span class="pill ${ETAPAS[e].cls}">${ETAPAS[e].lbl}</span>${extra.map(x=>`<span class="num">${x}</span>`).join('')}</div>
+        <div class="r3"><span class="pill ${enEj?'ej':ETAPAS[e].cls}">${enEj?'En ejecución':ETAPAS[e].lbl}</span>${extra.map(x=>`<span class="num">${x}</span>`).join('')}</div>
         ${e!=='cobrado'?notas.map(n=>`<div class="cruce num">${n}</div>`).join(''):''}
       </div>
     </button>`;
@@ -1176,7 +1189,7 @@ textarea.share{min-height:38vh}
     const secDe = g => g==='peSinOrden' ? {sec:'Sin orden de servicio, por ejecutar', pred:d=>etapa(d)==='porEjecutar'&&!tieneOrden(d)} : {sec:ETAPAS[g].sec, pred:d=>etapa(d)===g};
     const pagos = filtro==='cobrado' ? pagosRecibidos(list) : '';
     const html = resumenBusqueda(list) + pagos + groups.map(g=>{
-      const {sec,pred}=secDe(g), items=list.filter(pred).sort(byOrden);
+      const {sec,pred}=secDe(g), items=list.filter(pred).sort((a,b)=>(enEjecucion(b)-enEjecucion(a)) || byOrden(a,b));
       if(!items.length) return (filtro==='todas'||g==='peSinOrden') ? '' : `<div class="empty"><b>Nada en “${sec}”</b>${query||cliente?'Prueba quitando el filtro o la búsqueda.':'Cuando un trabajo llegue a esta etapa aparecerá aquí.'}</div>`;
       const sub = g==='cobrado' ? sum(items,pagado) : sum(items,saldo);
       return `<section class="sec"><h2>${sec} <span class="num">${items.length} · ${usd(sub)}</span></h2><div class="list">${items.map(card).join('')}</div></section>`;
@@ -1242,6 +1255,7 @@ textarea.share{min-height:38vh}
     $('#iOds').value=draft.ods||''; $('#iNota').value=draft.nota||'';
     $('#iMonto').value = draft.monto ? nf.format(num(draft.monto)) : '';
     $('#iFecha').value=draft.fecha||''; $('#iEjecutado').checked=!!draft.ejecutado; $('#iFechaEjec').value=draft.fechaEjecucion||'';
+    $('#iEnEjec').checked=!!draft.enEjecucion; $('#iFechaIni').value=draft.fechaInicio||''; { const auto=editingId&&!draft.ejecutado&&!draft.enEjecucion&&actividadDe(editingId); $('#enEjecTip').textContent = auto ? `Ya tiene ${auto}: se muestra como en ejecución aunque no marques la casilla.` : ''; }
     resetPayForm();
     $('#formErr').textContent=''; $('#btnDel').hidden=!src; $('#btnResumen').hidden=!src; $('#iAI').hidden=!!src||!sampleFn||!canWrite; disarmDel();
     syncEjec(); renderPagos();
@@ -1249,7 +1263,7 @@ textarea.share{min-height:38vh}
     syncOds();
     limpiarFiltros('#sheet'); openSheet('#sheet');
   }
-  function syncEjec(){ $('#ejecFields').hidden=!$('#iEjecutado').checked; }
+  function syncEjec(){ const ej=$('#iEjecutado').checked; $('#ejecFields').hidden=!ej; $('#iEnEjec').closest('label').hidden=ej; $('#enEjecFields').hidden=ej||!$('#iEnEjec').checked; $('#enEjecTip').hidden=ej; }
   function syncOds(){
     const ok=!!$('#iOds').value.trim();
     $('#odsHint').hidden=ok; $('#payFields').hidden=!ok; $('#payBtns').hidden=!ok; $('#pConv').hidden=!ok;
@@ -1335,7 +1349,7 @@ textarea.share{min-height:38vh}
     const orden = editingId ? num(draft.orden) : docs.reduce((m,d)=>Math.max(m,num(d.orden)),0)+1;
     const body={ orden, descripcion:desc, cliente:$('#iCliente').value.trim(), unidad:$('#iUnidad').value.trim(),
       ods:$('#iOds').value.trim(), nota:$('#iNota').value.trim(), monto:r2(monto), moneda:'USD', fecha:$('#iFecha').value||'',
-      ejecutado:ej, fechaEjecucion: ej?($('#iFechaEjec').value||''):'',
+      ejecutado:ej, fechaEjecucion: ej?($('#iFechaEjec').value||''):'', enEjecucion: !ej && $('#iEnEjec').checked, fechaInicio: $('#iEnEjec').checked?($('#iFechaIni').value||''):'',
       cobros:(draft.cobros||[]).map(c=>Object.assign({monto:num(c.monto), tasa:num(c.tasa), cuenta:modoDe(c), numFactura:c.numFactura||'', fecha:c.fecha||'', ref:c.ref||''}, esCruce(c)?{compensa:c.compensa.slice()}:{})),
       creado:draft.creado||new Date().toISOString(), actualizado:new Date().toISOString() };
     const btn=$('#btnSave'); btn.disabled=true; btn.textContent='Guardando…';
@@ -1464,7 +1478,7 @@ textarea.share{min-height:38vh}
   let ecCampos={ods:true, req:true, unidad:false, desc:false, monto:true, estado:false, subt:false};
   try{ const g=JSON.parse(localStorage.getItem('ecCampos')||'null'); if(g&&typeof g==='object') ecCampos={...ecCampos, ...g}; }catch(_){}
   function guardarCampos(){ try{ localStorage.setItem('ecCampos', JSON.stringify(ecCampos)); }catch(_){} }
-  const estatusDe = d => { const e=etapa(d); return e==='listo'?'Ejecutado, listo para facturar' : e==='sinOrden'?'Ejecutado, sin orden de servicio' : e==='porEjecutar'?(tieneOrden(d)?'Con orden, por ejecutar':'Por ejecutar') : 'Cobrado'; };
+  const estatusDe = d => { const e=etapa(d); return e==='listo'?'Ejecutado, listo para facturar' : e==='sinOrden'?'Ejecutado, sin orden de servicio' : e==='porEjecutar'?(enEjecucion(d)?'En ejecución':tieneOrden(d)?'Con orden, por ejecutar':'Por ejecutar') : 'Cobrado'; };
   function buildCorto(){
     const base=docs.filter(d=>(!ecF.cliente||(d.cliente||'')===ecF.cliente) && (!ecF.unidad||(d.unidad||'')===ecF.unidad)).sort(byOrden);
     const sel=k=>ecF.etapas.includes(k), pred=k=>EC_SECS.find(x=>x[0]===k)[3], C=ecCampos;
@@ -1691,6 +1705,7 @@ textarea.share{min-height:38vh}
   document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', closeSheets));
   document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeSheets(); });
   $('#iEjecutado').addEventListener('change', ()=>{ syncEjec(); if($('#iEjecutado').checked && !$('#iFechaEjec').value) $('#iFechaEjec').value=today(); });
+  $('#iEnEjec').addEventListener('change', ()=>{ syncEjec(); if($('#iEnEjec').checked && !$('#iFechaIni').value) $('#iFechaIni').value=today(); });
   $('#iOds').addEventListener('input', syncOds);
   $('#iUnidad').addEventListener('change', e=>{ if(e.target.value==='__nuevo') abrirNuevaUnidad(); else $('#newUni').hidden=true; });
   $('#btnNewUni').addEventListener('click', agregarUnidad);
@@ -2854,7 +2869,7 @@ Responde solo con un objeto JSON:
     nDb=db; nCfgRef=db.doc('config/nomina');
     nCfgRef.onSnapshot(s=>{ const d=s.exists?s.data():null; cfgN = d ? {...CFG_DEF, ...d, cargos:Array.isArray(d.cargos)&&d.cargos.length?d.cargos:CFG_DEF.cargos, feriados:Array.isArray(d.feriados)?d.feriados:CFG_DEF.feriados} : JSON.parse(JSON.stringify(CFG_DEF)); if(nView!=='ajustes') renderNom(); }, ()=>{});
     db.collection('trabajadores').onSnapshot(s=>{ trabs=s.docs.map(d=>Object.assign({id:d.id}, d.data())); nLoaded.t=true; if(!(nView==='dia'&&dayDirty)) renderNom(); }, ()=>{ nLoaded.t=true; renderNom(); });
-    db.collection('asistencia').onSnapshot(s=>{ asis={}; s.docs.forEach(d=>{ const v=d.data(); asis[v.fecha||d.id]=v; }); nLoaded.a=true; if(!(nView==='dia'&&dayDirty)){ dayDraft=null; renderNom(); } }, ()=>{ nLoaded.a=true; renderNom(); });
+    db.collection('asistencia').onSnapshot(s=>{ asis={}; s.docs.forEach(d=>{ const v=d.data(); asis[v.fecha||d.id]=v; }); nLoaded.a=true; if(!(nView==='dia'&&dayDirty)){ dayDraft=null; renderNom(); } if(modulo==='cob'){ renderStats(); renderList(); } }, ()=>{ nLoaded.a=true; renderNom(); });
     db.collection('adelantos').onSnapshot(s=>{ adels=s.docs.map(d=>Object.assign({id:d.id}, d.data())); nLoaded.d=true; if(!(nView==='dia'&&dayDirty)) renderNom(); }, ()=>{ nLoaded.d=true; renderNom(); });
     db.collection('cortes').onSnapshot(s=>{ cortes=s.docs.map(d=>Object.assign({id:d.id}, d.data())); nLoaded.c=true; if(!(nView==='dia'&&dayDirty)) renderNom(); renderGas(); }, ()=>{ nLoaded.c=true; renderNom(); renderGas(); });
   }
@@ -4067,7 +4082,7 @@ Responde solo con un objeto JSON:
     iDb=db;
     const rp=()=>{ renderInv(); if(modulo==='res') renderRes(); };
     db.collection('inventario').onSnapshot(s=>{ items=s.docs.map(d=>Object.assign({id:d.id}, d.data())); iLoaded.i=true; rp(); }, ()=>{ iLoaded.i=true; rp(); });
-    db.collection('invMovs').onSnapshot(s=>{ invMovs=s.docs.map(d=>Object.assign({id:d.id}, d.data())); iLoaded.m=true; rp(); }, ()=>{ iLoaded.m=true; rp(); });
+    db.collection('invMovs').onSnapshot(s=>{ invMovs=s.docs.map(d=>Object.assign({id:d.id}, d.data())); iLoaded.m=true; rp(); if(modulo==='cob'){ renderStats(); renderList(); } }, ()=>{ iLoaded.m=true; rp(); });
     db.collection('activos').onSnapshot(s=>{ activos=s.docs.map(d=>Object.assign({id:d.id}, d.data())); iLoaded.a=true; rp(); }, ()=>{ iLoaded.a=true; rp(); });
     db.doc('config/inventario').onSnapshot(s=>{ const d=s.exists?(s.data()||{}):{}; icfg={categorias:Array.isArray(d.categorias)&&d.categorias.length?d.categorias.map(String):ICFG_DEF.categorias.slice(), ubicaciones:Array.isArray(d.ubicaciones)?d.ubicaciones.map(String):ICFG_DEF.ubicaciones.slice()}; iLoaded.c=true; rp(); }, ()=>{ iLoaded.c=true; rp(); });
   }
@@ -4411,7 +4426,7 @@ Responde solo con un objeto JSON:
     etapa, saldo, pagado, pagadoPropio, tieneOrden, pagoDia, horaExtraDe, factorDe, tarifaDe, sueldoSup, tipoDia, calcCorte, semanasPagadasSup, pagadoHastaDe, semanasDe, calcPrefill, reciboTrabajador, detalleDias,
     tasaOrdenLlegada, tasaParaBs, tasaSugerida, tasaSaldoBanco, saldoCuenta, inicioCaja, saldoIni, usdDe, movsAuto, todosMovs, calcBalance, buildBalance,
     estadoItem, detallesInv, materialesTrabajo, mermasPorSemana, valorInventario, bajoMinimo, buildInv,
-    costoTrabajo, generalesPorSemana, actividadPorSemana, repartoGenerales, buildCostos, datosResumen, textoResumen, buildShare, respaldoJSON, saldoIA, usoIA, lineaConsultaIA, textoUsoIA, gruposCompra, claveCompra,
+    costoTrabajo, generalesPorSemana, actividadPorSemana, repartoGenerales, buildCostos, datosResumen, textoResumen, buildShare, respaldoJSON, saldoIA, usoIA, lineaConsultaIA, textoUsoIA, gruposCompra, claveCompra, enEjecucion, actividadDe,
     inicioSemana, finSemana, sumarDias, today, parseNum, norm, parecido, listaClientes, listaUnidades, mapUnidad, clienteExacto, r2,
     TODOS_F, get cfgN(){ return cfgN; }, get gcfg(){ return gcfg; }, get icfg(){ return icfg; }, get docs(){ return docs; }, get trabs(){ return trabs; }, get movs(){ return movs; }, get invMovs(){ return invMovs; }, get items(){ return items; }, get cortes(){ return cortes; },
     set(o){ for(const [k,v] of Object.entries(o)){
