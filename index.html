@@ -397,6 +397,7 @@ legend{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;font-weigh
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .full{grid-column:1/-1}
 label.f{display:flex;flex-direction:column;gap:4px;font-size:12.5px;font-weight:600;color:var(--muted);min-width:0}
+label.f input.selq{font-size:14px;padding:7px 10px;margin-bottom:6px;background:var(--surface)}
 label.f input,label.f select{border:1px solid var(--line);background:var(--sunk);border-radius:10px;padding:10px 11px;font-size:16px;font-weight:500;color:var(--ink);width:100%;min-width:0}
 label.f input[type=date]{min-height:44px;-webkit-appearance:none;appearance:none;display:block;text-align:left}
 label.f input[type=date]::-webkit-date-and-time-value{text-align:left}
@@ -760,7 +761,7 @@ textarea.share{min-height:38vh}
       <label class="f">Fecha<input id="mvFecha" type="date"></label>
       <label class="f" id="mvACargoL">A cargo de<select id="mvACargo"><option>Empresa</option><option>Papá</option><option>Fran</option></select></label>
       <label class="f full" id="mvCatL">Categoría<select id="mvCat"></select></label>
-      <label class="f full" id="mvFactTrabL" hidden>Trabajo facturado<select id="mvFactTrab"></select></label>
+      <label class="f full" id="mvFactTrabL" hidden>Trabajo facturado<input class="selq" data-filtra="#mvFactTrab" placeholder="Buscar trabajo, unidad u orden…" autocomplete="off" aria-label="Buscar trabajo, unidad u orden…"><select id="mvFactTrab"></select></label>
       <label class="f full" id="mvModoL" hidden>Modalidad de pago<select id="mvModo"><option value="banco">Bolívares (banco)</option><option value="binance">Binance (USDT)</option><option value="efectivo">Efectivo (dólares)</option></select></label>
       <label class="f" id="mvFactNumL" hidden>N° de factura (vacío si es adelanto)<input id="mvFactNum" inputmode="numeric"></label>
       <label class="f full" id="mvConceptoL">Concepto<input id="mvConcepto" autocomplete="off"></label>
@@ -771,7 +772,7 @@ textarea.share{min-height:38vh}
       <label class="f" id="mvDestL">Entra a<select id="mvDest"></select></label>
       <label class="f" id="mvDestMontoL"><span id="mvDestMontoLbl">Monto que entra</span><input id="mvDestMonto" inputmode="decimal" placeholder="0,00"></label>
       <label class="f full" id="mvTasaL">Tasa (Bs. por USD)<input id="mvTasa" inputmode="decimal" placeholder="0,00"></label>
-      <label class="f full" id="mvTrabL">Centro de costo: orden o trabajo (opcional)<select id="mvTrab"></select></label>
+      <label class="f full" id="mvTrabL">Centro de costo: orden o trabajo (opcional)<input class="selq" data-filtra="#mvTrab" placeholder="Buscar trabajo, unidad u orden…" autocomplete="off" aria-label="Buscar trabajo, unidad u orden…"><select id="mvTrab"></select></label>
       <label class="f full">Referencia (opcional)<input id="mvRef" autocomplete="off"></label>
     </div>
     <div class="conv num" id="mvConv"></div>
@@ -837,7 +838,7 @@ textarea.share{min-height:38vh}
     </div>
     <div class="tip" id="imTipoTip" style="margin-top:8px"></div>
     <div class="grid" style="margin-top:10px">
-      <label class="f full">Ítem<select id="imItem"></select></label>
+      <label class="f full">Ítem<input class="selq" data-filtra="#imItem" placeholder="Buscar ítem…" autocomplete="off" aria-label="Buscar ítem…"><select id="imItem"></select></label>
       <div class="tip num full" id="imExist" style="margin-top:-4px"></div>
       <label class="f">Fecha<input id="imFecha" type="date"></label>
       <label class="f"><span id="imCantLbl">Cantidad</span><input id="imCant" inputmode="decimal" placeholder="0"></label>
@@ -847,7 +848,7 @@ textarea.share{min-height:38vh}
       <label class="f" id="imTasaL">Tasa (Bs. por USD)<input id="imTasa" inputmode="decimal" placeholder="0,00"></label>
       <label class="f" id="imProvL">Proveedor<input id="imProv" autocomplete="off"></label>
       <label class="f" id="imRefL">N° de factura o nota<input id="imRef" autocomplete="off"></label>
-      <label class="f full" id="imTrabL">Orden o trabajo (centro de costo)<select id="imTrab"></select></label>
+      <label class="f full" id="imTrabL">Orden o trabajo (centro de costo)<input class="selq" data-filtra="#imTrab" placeholder="Buscar trabajo, unidad u orden…" autocomplete="off" aria-label="Buscar trabajo, unidad u orden…"><select id="imTrab"></select></label>
       <label class="f full" id="imQuienL">Quién lo retiró<select id="imQuien"></select></label>
       <label class="f full">Nota (opcional)<input id="imNota" autocomplete="off"></label>
     </div>
@@ -901,7 +902,7 @@ textarea.share{min-height:38vh}
     <div class="tip">Para facturas en bolívares pagadas en dólares: reparte lo pagado entre los ítems en proporción a su precio de lista, guarda el costo en dólares y en bolívares de cada entrada y las enlaza al gasto. A los ítems sin precio ponles uno estimado.</div>
     <div class="grid" style="margin-top:8px">
       <label class="f full">Compra (entradas del mismo proveedor y factura)<select id="cqGrupo"></select></label>
-      <label class="f full">Gasto con el que se pagó<select id="cqGasto"></select></label>
+      <label class="f full">Gasto con el que se pagó<input class="selq" data-filtra="#cqGasto" placeholder="Buscar gasto…" autocomplete="off" aria-label="Buscar gasto…"><select id="cqGasto"></select></label>
       <label class="f full">Total pagado (USD)<input id="cqPagado" inputmode="decimal" placeholder="0,00"></label>
     </div>
     <div id="cqLineas"></div>
@@ -997,6 +998,18 @@ textarea.share{min-height:38vh}
     return `<b>${usd(parte)}</b> cobrados a través de ${fac}; en realidad quedan <b>${usd(r2(monto-parte))}</b>. Se factura completo.`;
   }
 
+  /* Buscador encima de un select largo: filtra las opciones por lo escrito (sin acentos ni mayúsculas); vacío = todas */
+  document.addEventListener('input', e=>{
+    const inp=e.target; if(!inp.classList||!inp.classList.contains('selq')) return;
+    const sel=$(inp.dataset.filtra); if(!sel) return;
+    if(!sel.__full) sel.__full=[...sel.options].map(o=>({value:o.value, text:o.textContent}));
+    const k=norm(inp.value), val=sel.value;
+    const ls=sel.__full.filter((o,i)=>!k || i===0 && !o.value || norm(o.text).includes(k));
+    sel.innerHTML=ls.map(o=>`<option value="${esc(o.value)}">${esc(o.text)}</option>`).join('')||'<option value="">Nada coincide</option>';
+    const primero=ls.find(o=>o.value); if(ls.some(o=>o.value===val) && !(k && !val && primero)) sel.value=val; else if(k && primero) sel.value=primero.value;
+    sel.dispatchEvent(new Event('change',{bubbles:true}));
+  });
+  function limpiarFiltros(sheet){ document.querySelectorAll(`${sheet} .selq`).forEach(i=>{ i.value=''; const sel=$(i.dataset.filtra); if(sel) sel.__full=null; }); }
   function toast(msg){ const t=$('#toast'); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,2400); }
   function byClient(){ return docs.filter(d => !cliente || (d.cliente||'')===cliente); }
 
@@ -3179,7 +3192,7 @@ Responde solo con un objeto JSON:
     $('#mvInv').hidden = !(m && m.tipo==='gasto' && (m.aCargo||'Empresa')==='Empresa' && !m.inventario);
     $('#mvAplicar').hidden = !(m && m.tipo==='ingreso' && m.categoria!==COBRO_FACT && docs.some(d=>saldo(d)>0));
     $('#mvFactNum').value=''; $('#mvModo').value='banco';
-    fillCats(m&&m.categoria); syncMvTipo();
+    limpiarFiltros('#mvSheet'); fillCats(m&&m.categoria); syncMvTipo();
     openSheet('#mvSheet');
   }
   async function guardarMov(){
@@ -3797,7 +3810,7 @@ Responde solo con un objeto JSON:
     $('#imGasto').checked=false; $('#imGastoCampos').hidden=true; $('#imGTasa').value=tasaSugerida()?nfT.format(tasaSugerida()):''; $('#imCuenta').value='binance';
     $('#imErr').textContent=''; $('#imDel').hidden=!m; $('#imDel').textContent='Eliminar'; delete $('#imDel').dataset.armed;
     $('#imCuadrar').hidden = !(m && m.tipo==='entrada' && (m.proveedor||m.referencia) && canWrite);
-    syncIMTipo(); openSheet('#imSheet');
+    limpiarFiltros('#imSheet'); syncIMTipo(); openSheet('#imSheet');
   }
   async function guardarIMov(){
     const err=x=>{ $('#imErr').textContent=x; };
@@ -3999,7 +4012,7 @@ Responde solo con un objeto JSON:
     $('#cqGasto').value=enlazado||porNombre||''; $('#cqPagado').value=''; $('#cqErr').textContent='';
     const it=id=>itemDe(id)||{nombre:'Ítem eliminado',unidad:'und'};
     $('#cqLineas').innerHTML = `<div style="margin-top:8px">${g.ms.map(m=>{ const x=it(m.itemId), bs=num(m.costoUnitBs); return `<div class="num" style="display:grid;grid-template-columns:minmax(0,1fr) 128px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)"><div style="min-width:0"><b>${esc(x.nombre)}</b><br><small>${cant(m.cantidad,x.unidad)}${num(m.costoUnit)>0?' · hoy '+usd(num(m.costoUnit))+' c/u':' · sin costo'}${m.movId&&m.movId!==(enlazado||porNombre)?' · enlazada a otro gasto':''}</small><div data-cqusd="${m.id}" style="color:var(--muted);font-size:12.5px"></div></div><label class="f" style="margin:0"><span style="font-size:11px">Bs. c/u (lista)</span><input data-cqbs="${m.id}" inputmode="decimal" value="${bs>0?nf.format(bs):''}" placeholder="0,00" aria-label="Precio de lista de ${esc(x.nombre)}"></label></div>`; }).join('')}</div>`;
-    recalcCuadrar(); openSheet('#cqSheet');
+    limpiarFiltros('#cqSheet'); recalcCuadrar(); openSheet('#cqSheet');
   }
   function cqDatos(){
     const g=gruposCompra().find(x=>x.k===$('#cqGrupo').value)||null, gasto=movs.find(m=>m.id===$('#cqGasto').value)||null;
