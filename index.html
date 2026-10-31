@@ -2886,7 +2886,7 @@ Responde solo con un objeto JSON:
     const sal=saldoCuenta('banco', hasta||today()); if(!(sal>0)) return tasaSugerida();
     const o=tasaOrdenLlegada(sumarDias(hasta||today(),1), sal); return o.tasa>0 ? o.tasa : tasaSugerida();
   }
-  function tasaSugerida(){ const ms=movs.filter(m=>num(m.tasa)>0).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))); if(ms[0]) return num(ms[0].tasa); const u=ultimoCorte(); if(u&&num(u.tasa)>0) return num(u.tasa); const ut=ultimaTasa(); return ut?ut.tasa:0; }
+  function tasaSugerida(){ const ms=movs.filter(m=>num(m.tasa)>0).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)) || String(b.actualizado||b.creado||'').localeCompare(String(a.actualizado||a.creado||''))); if(ms[0]) return num(ms[0].tasa); const u=ultimoCorte(); if(u&&num(u.tasa)>0) return num(u.tasa); const ut=ultimaTasa(); return ut?ut.tasa:0; }
 
   function renderMov(el){
     const hoy=today(), sinSaldos=!gcfg.cuentas.some(c=>((gcfg.saldos||{})[c.id]||{}).fecha);
@@ -3455,17 +3455,17 @@ Responde solo con un objeto JSON:
      más viejo y se lleva ese costo; un conteo ajusta la existencia (lo que falta es merma, lo que sobra entra al costo promedio). */
   function estadoItem(id, hasta){
     const ms=invMovs.filter(m=>m.itemId===id && (!hasta||m.fecha<=hasta)).sort(byFechaCreado);
-    const lotes=[], det={}; let exist=0, ultimoCU=0;
+    const lotes=[], det={}; let exist=0, ultimoCU=0, sinCosto=0;
     const promedio=()=>{ const q=sum(lotes,l=>l.q), v=sum(lotes,l=>l.q*l.cu); return q>0 ? v/q : ultimoCU; };
     const consumir=q=>{ let r=q, c=0; for(const l of lotes){ if(r<=0) break; if(l.q<=0) continue; const u=Math.min(l.q,r); l.q=r2q(l.q-u); r=r2q(r-u); c+=u*l.cu; } if(r>0) c+=r*promedio(); return c; };
     for(const m of ms){
       const q=num(m.cantidad);
-      if(m.tipo==='entrada'||m.tipo==='devolucion'){ const cu=num(m.costoUnit)>0?num(m.costoUnit):promedio(); lotes.push({q, cu, fecha:m.fecha, id:m.id}); exist=r2q(exist+q); if(m.tipo==='entrada'&&num(m.costoUnit)>0) ultimoCU=num(m.costoUnit); det[m.id]={costo:r2(q*cu), cu:r2(cu)}; }
+      if(m.tipo==='entrada'||m.tipo==='devolucion'){ const sc=m.tipo==='entrada'&&!(num(m.costoUnit)>0); const cu=sc?0:(num(m.costoUnit)>0?num(m.costoUnit):promedio()); lotes.push({q, cu, fecha:m.fecha, id:m.id, sc}); exist=r2q(exist+q); if(m.tipo==='entrada'&&num(m.costoUnit)>0) ultimoCU=num(m.costoUnit); det[m.id]={costo:r2(q*cu), cu:r2(cu), sinCosto:sc}; }
       else if(m.tipo==='salida'){ const c=consumir(q); exist=r2q(exist-q); det[m.id]={costo:r2(c), cu:q>0?r2(c/q):0}; }
       else if(m.tipo==='conteo'){ const d=r2q(num(m.contado)-exist); let c=0; if(d<0) c=-consumir(-d); else if(d>0){ const cu=promedio(); lotes.push({q:d, cu, fecha:m.fecha, id:m.id}); c=d*cu; } exist=r2q(num(m.contado)); det[m.id]={costo:r2(c), diferencia:d, cu:d!==0?r2(Math.abs(c/d)):0}; }
     }
     const vivos=lotes.filter(l=>l.q>0.0001);
-    return {existencia:exist, lotes:vivos, valor:r2(sum(vivos,l=>l.q*l.cu)), promedio:r2(promedio()), ultimoCU:r2(ultimoCU), det};
+    return {existencia:exist, lotes:vivos, valor:r2(sum(vivos,l=>l.q*l.cu)), promedio:r2(promedio()), ultimoCU:r2(ultimoCU), sinCosto:r2q(sum(vivos.filter(l=>l.sc),l=>l.q)), det};
   }
   /* Costo de cada movimiento de inventario (por id), calculado una vez por juego de datos */
   let _invCache={ref:null, items:null, map:null};
@@ -3518,7 +3518,7 @@ Responde solo con un objeto JSON:
       </div>`;
   function tarjetaItem(it){
     const e=estadoItem(it.id), bajo=bajoMinimo(it);
-    return `<button type="button" class="wcard${it.activo===false?' off':''}" data-it="${esc(it.id)}"><div class="l"><b>${esc(it.nombre)}${bajo?' <span class="pill so">Bajo mínimo</span>':''}${it.activo===false?' <span class="pill">Inactivo</span>':''}</b><small class="num">${esc(it.categoria||'Sin categoría')}${it.ubicacion?' · '+esc(it.ubicacion):''}${e.promedio>0?' · '+usd(e.promedio)+' por '+esc(uni(it.unidad)):''}${num(it.minimo)>0?' · mín. '+cant(it.minimo,it.unidad):''}</small></div><div class="r num"><b style="display:block;font-size:16px;color:${bajo?'var(--so)':'var(--ink)'}">${cant(e.existencia,it.unidad)}</b>${usd(e.valor)}</div></button>`;
+    return `<button type="button" class="wcard${it.activo===false?' off':''}" data-it="${esc(it.id)}"><div class="l"><b>${esc(it.nombre)}${bajo?' <span class="pill so">Bajo mínimo</span>':''}${e.sinCosto>0?` <span class="pill" style="background:var(--sunk);color:var(--muted)">${cant(e.sinCosto,it.unidad)} sin costo</span>`:''}${it.activo===false?' <span class="pill">Inactivo</span>':''}</b><small class="num">${esc(it.categoria||'Sin categoría')}${it.ubicacion?' · '+esc(it.ubicacion):''}${e.promedio>0?' · '+usd(e.promedio)+' por '+esc(uni(it.unidad)):''}${num(it.minimo)>0?' · mín. '+cant(it.minimo,it.unidad):''}</small></div><div class="r num"><b style="display:block;font-size:16px;color:${bajo?'var(--so)':'var(--ink)'}">${cant(e.existencia,it.unidad)}</b>${usd(e.valor)}</div></button>`;
   }
   function listaItems(){
     const q=norm(iQ);
@@ -3529,11 +3529,11 @@ Responde solo con un objeto JSON:
     return h;
   }
   function renderEx(el){
-    const act=itemsActivos(), bajos=act.filter(bajoMinimo), total=valorInventario();
+    const act=itemsActivos(), bajos=act.filter(bajoMinimo), total=valorInventario(), sinC=act.filter(it=>estadoItem(it.id).sinCosto>0).length;
     const porCat={}; act.forEach(it=>{ porCat[it.categoria||'Sin categoría']=r2((porCat[it.categoria||'Sin categoría']||0)+estadoItem(it.id).valor); });
     el.innerHTML = `
       <div class="hero"><div class="lbl">Inventario valorado</div><div class="big num">${usdHtml(total)}</div>
-        <div class="sub">${act.length} ${act.length===1?'ítem':'ítems'} en existencia · al costo de los lotes que quedan${bajos.length?` · <b style="color:var(--so)">${bajos.length} bajo mínimo</b>`:''}</div>
+        <div class="sub">${act.length} ${act.length===1?'ítem':'ítems'} en existencia · al costo de los lotes que quedan${bajos.length?` · <b style="color:var(--so)">${bajos.length} bajo mínimo</b>`:''}${sinC?` · ${sinC} ${sinC===1?'ítem con unidades sin costo':'ítems con unidades sin costo'} (valen 0 hasta que pongas el precio)`:''}</div>
         ${Object.keys(porCat).length?`<div class="brk num" style="margin-top:8px">${Object.entries(porCat).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div><span>${esc(c)}</span><b>${usd(v)}</b></div>`).join('')}</div>`:''}</div>
       ${btnsInv()}
       <div class="filters" style="margin-top:12px"><input id="iQ" type="search" placeholder="Buscar ítem" aria-label="Buscar ítem" value="${esc(iQ)}" style="grid-column:1/-1"></div>
@@ -3547,7 +3547,7 @@ Responde solo con un objeto JSON:
     const q = m.tipo==='conteo' ? Math.abs(num(d.diferencia)) : num(m.cantidad);
     const color = m.tipo==='salida' || (m.tipo==='conteo'&&num(d.diferencia)<0) ? 'var(--danger)' : (m.tipo==='conteo'&&!num(d.diferencia)) ? 'var(--muted)' : 'var(--co)';
     const tj = m.trabajoId ? (docs.find(x=>x.id===m.trabajoId)||{}).descripcion : '';
-    const det=[fdate(m.fecha), m.tipo==='conteo'?`contado ${cant(m.contado,it.unidad)}`:'', tj?(m.tipo==='devolucion'?'desde ':'para ')+tj:(m.tipo==='salida'?'consumo general':''), m.quienId?nombreT(m.quienId):'', m.proveedor||'', m.referencia?'N° '+m.referencia:'', d.costo!=null&&m.tipo!=='conteo'?usd(Math.abs(d.costo)):'', num(m.costoUnitBs)>0&&num(m.tasa)>0?`${bs(num(m.costoUnitBs))} c/u a ${nfT.format(num(m.tasa))}`:'', m.tipo==='conteo'&&d.costo<0?'merma '+usd(-d.costo):'', m.nota||''].filter(Boolean).join(' · ');
+    const det=[fdate(m.fecha), m.tipo==='conteo'?`contado ${cant(m.contado,it.unidad)}`:'', tj?(m.tipo==='devolucion'?'desde ':'para ')+tj:(m.tipo==='salida'?'consumo general':''), m.quienId?nombreT(m.quienId):'', m.proveedor||'', m.referencia?'N° '+m.referencia:'', d.sinCosto?'sin costo':(d.costo!=null&&m.tipo!=='conteo'?usd(Math.abs(d.costo)):''), num(m.costoUnitBs)>0&&num(m.tasa)>0?`${bs(num(m.costoUnitBs))} c/u a ${nfT.format(num(m.tasa))}`:'', m.tipo==='conteo'&&d.costo<0?'merma '+usd(-d.costo):'', m.nota||''].filter(Boolean).join(' · ');
     return `<button type="button" class="wcard" data-im="${esc(m.id)}"><div class="l"><b>${TIPO_INV[m.tipo]||m.tipo} · ${esc(it.nombre)}</b><small class="num">${esc(det)}</small>${m.movId?'<small>Con gasto registrado en Gastos</small>':''}</div><div class="r num" style="color:${color};font-weight:600">${m.tipo==='conteo'&&!num(d.diferencia)?'sin diferencia':signo+cant(q,it.unidad)}</div></button>`;
   }
   function renderIMov(el){
@@ -3658,7 +3658,8 @@ Responde solo con un objeto JSON:
       const cu=parseNum($('#imCostoU').value)||0, ct=parseNum($('#imCostoT').value)||0, tb=parseNum($('#imBs').value)||0, ttIn=parseNum($('#imTasa').value)||0;
       if(q>0 && cu>0) txt=`Entra un lote de <b>${cant(q,it.unidad)}</b> a ${usd(cu)} cada ${esc(uni(it.unidad))} = <b>${usd(r2(q*cu))}</b>.`;
       else if(q>0 && ct>0) txt=`Entra un lote de <b>${cant(q,it.unidad)}</b> por ${usd(ct)} = ${usd(r2(ct/q))} cada ${esc(uni(it.unidad))}.`;
-      else if(q>0 && tb>0 && !(ttIn>0)){ const tp=tasaParaBs($('#imFecha').value||today(), tb, $('#imGasto').checked?$('#imCuenta').value:''); txt = tp.tasa>0 ? `Sin tasa escrita se usa <b>${nfT.format(tp.tasa)}</b> (${tp.de}): ${bs(tb)} = <b>${usd(r2(tb/tp.tasa))}</b>, ${usd(r2(tb/tp.tasa/q))} cada ${esc(uni(it.unidad))}.` : 'Escribe la tasa de esa compra: no hay ninguna registrada todavía.'; }
+      else if(q>0 && tb>0 && !(ttIn>0)){ const tp=tasaParaBs($('#imFecha').value||today(), tb, $('#imGasto').checked?$('#imCuenta').value:''); txt = tp.tasa>0 ? `Sin tasa escrita se usa <b>${nfT.format(tp.tasa)}</b> (${tp.de}): ${bs(tb)} = <b>${usd(r2(tb/tp.tasa))}</b>, ${usd(r2(tb/tp.tasa/q))} cada ${esc(uni(it.unidad))}.` : 'No hay ninguna tasa registrada todavía: entra sin costo hasta que la pongas.'; }
+      else if(q>0) txt=`Entra <b>${cant(q,it.unidad)}</b> <b>sin costo</b>: cuenta en la existencia y vale 0 hasta que le pongas el precio (puedes editar la entrada después).`;
       const g=$('#imGasto').checked, cta=cuentaDe($('#imCuenta').value), tot=cu>0&&q>0?r2(q*cu):ct;
       $('#imGastoCampos').hidden=!g;
       $('#imGastoInfo').textContent = g && tot>0 ? `Se registra un gasto de ${cta.moneda==='VES'?(parseNum($('#imGTasa').value)>0?bs(r2(tot*parseNum($('#imGTasa').value)))+' ('+usd(tot)+')':'bolívares (falta la tasa)'):usd(tot)} en ${cta.nombre}, categoría ${CAT_GASTO_INV[it.categoria]||'Materiales'}, como compra para inventario.` : '';
@@ -3696,15 +3697,14 @@ Responde solo con un objeto JSON:
       let cu=parseNum($('#imCostoU').value)||0; const ct=parseNum($('#imCostoT').value)||0, tb=parseNum($('#imBs').value)||0; let tt=parseNum($('#imTasa').value)||0;
       if(!(cu>0) && ct>0) cu=ct/q;
       if(!(cu>0) && tb>0){ if(!(tt>0)) tt=tasaParaBs(f, tb, $('#imGasto').checked?$('#imCuenta').value:'').tasa; if(tt>0) cu=tb/tt/q; }
-      if(!(cu>0)) return err(tb>0 ? 'No hay ninguna tasa registrada todavía: escribe la tasa de esa compra.' : 'Pon el costo: por unidad, el total en dólares, o el total en bolívares.');
-      Object.assign(body,{costoUnit:r4(cu), proveedor:$('#imProv').value.trim(), referencia:$('#imRef').value.trim(), movId:old&&old.movId||(imPre&&imPre.movId)||''});
+      Object.assign(body,{costoUnit:cu>0?r4(cu):0, sinCosto:!(cu>0), proveedor:$('#imProv').value.trim(), referencia:$('#imRef').value.trim(), movId:old&&old.movId||(imPre&&imPre.movId)||''});
       if(tb>0 && tt>0) Object.assign(body,{costoUnitBs:r2(tb/q), tasa:tt});
     } else if(imTipo==='salida'||imTipo==='devolucion'){
       body.trabajoId=$('#imTrab').value||''; if(imTipo==='salida') body.quienId=$('#imQuien').value||'';
       if(imTipo==='salida'){ const e=estadoItem(it.id); const base=old&&old.itemId===it.id&&old.tipo==='salida'?e.existencia+num(old.cantidad):e.existencia; if(q>base+0.0005) return err(`Solo hay ${cant(base,it.unidad)}. Haz un conteo primero si salió más.`); }
     }
     try{
-      if(imTipo==='entrada' && !imEditId && $('#imGasto').checked && !body.movId){
+      if(imTipo==='entrada' && !imEditId && $('#imGasto').checked && !body.movId && body.costoUnit>0){
         const cta=cuentaDe($('#imCuenta').value), tot=r2(body.costoUnit*q); let gt=parseNum($('#imGTasa').value)||0;
         if(cta.moneda==='VES' && !(gt>0)) gt=body.tasa||tasaParaBs(f, tot*(tasaSugerida()||1), 'banco').tasa;
         if(cta.moneda==='VES' && !(gt>0)) return err('Escribe la tasa del pago en bolívares.');
@@ -3772,7 +3772,7 @@ Responde solo con un objeto JSON:
       act.forEach((it,i)=>{
         const e=estadoItem(it.id);
         if(it.categoria!==cat){ cat=it.categoria; const v=r2(sum(act.filter(x=>x.categoria===cat),x=>estadoItem(x.id).valor)); L.push('', `*${cat||'Sin categoría'}* (${usd(v)})`); }
-        L.push(`• ${it.nombre}: ${cant(e.existencia,it.unidad)} · ${usd(e.valor)}${bajoMinimo(it)?` ⚠️ bajo mínimo (${nq.format(num(it.minimo))})`:''}`);
+        L.push(`• ${it.nombre}: ${cant(e.existencia,it.unidad)} · ${usd(e.valor)}${e.sinCosto>0?` (${cant(e.sinCosto,it.unidad)} sin costo)`:''}${bajoMinimo(it)?` ⚠️ bajo mínimo (${nq.format(num(it.minimo))})`:''}`);
       });
       L.push('', `*Valor total del inventario: ${usd(tot)}*`);
       const bajos=act.filter(bajoMinimo); if(bajos.length) L.push(`Bajo mínimo: ${bajos.map(it=>`${it.nombre} (${nq.format(estadoItem(it.id).existencia)} de ${nq.format(num(it.minimo))})`).join(', ')}`);
@@ -3807,7 +3807,7 @@ Responde solo con un objeto JSON:
     const ms=invMovs.filter(m=>enPer(m)&&m.tipo==='entrada').sort(byFechaCreado);
     if(!ms.length){ L.push('', 'Sin compras en el período.'); return L.join('\n'); }
     L.push(''); let total=0;
-    ms.forEach(m=>{ const it=itemDe(m.itemId)||{nombre:'Ítem eliminado',unidad:'und'}; const c=(det[m.id]||{}).costo||0; total+=c; L.push(`• ${fdate(m.fecha).slice(0,5)} · ${cant(m.cantidad,it.unidad)} ${it.nombre} · ${usd(c)}${m.proveedor?' ('+m.proveedor+(m.referencia?', N° '+m.referencia:'')+')':m.referencia?' (N° '+m.referencia+')':''}${m.movId?'':' · sin gasto registrado'}`); });
+    ms.forEach(m=>{ const it=itemDe(m.itemId)||{nombre:'Ítem eliminado',unidad:'und'}; const c=(det[m.id]||{}).costo||0; total+=c; L.push(`• ${fdate(m.fecha).slice(0,5)} · ${cant(m.cantidad,it.unidad)} ${it.nombre} · ${(det[m.id]||{}).sinCosto?'sin costo':usd(c)}${m.proveedor?' ('+m.proveedor+(m.referencia?', N° '+m.referencia:'')+')':m.referencia?' (N° '+m.referencia+')':''}${m.movId?'':' · sin gasto registrado'}`); });
     L.push('', `*Total comprado: ${usd(r2(total))}*`);
     return L.join('\n');
   }
@@ -4027,10 +4027,9 @@ Responde solo con un objeto JSON:
           const usdEl=document.querySelector(`[data-im="${i}"][data-k="costo"]`);
           if(bs>0 && !(t>0) && (!(cu>0)||(usdEl&&usdEl.dataset.auto))) t=tasaParaBs(f, bs*q, vM(i,'gasto')?vM(i,'cuenta'):'').tasa;
           if(bs>0&&t>0&&(!(cu>0)||(usdEl&&usdEl.dataset.auto))) cu=bs/t;   // el valor exacto, no el redondeado de la casilla
-          if(!(cu>0)){ errEl.textContent = bs>0 ? 'No hay ninguna tasa registrada todavía: escribe la tasa de esa compra.' : 'Falta el costo por unidad. Si no lo sabes aún, desmarca esta tarjeta y regístrala después.'; conErr++; continue; }
-          Object.assign(body,{costoUnit:r4(cu), proveedor:vM(i,'proveedor'), referencia:vM(i,'referencia'), movId:''});
+          Object.assign(body,{costoUnit:cu>0?r4(cu):0, sinCosto:!(cu>0), proveedor:vM(i,'proveedor'), referencia:vM(i,'referencia'), movId:''});
           if(bs>0 && t>0) Object.assign(body,{costoUnitBs:r2(bs), tasa:t});
-          if(vM(i,'gasto')){ const cta=cuentaDe(vM(i,'cuenta')), tot=r2(cu*q); if(cta.moneda==='VES'&&!(t>0)){ errEl.textContent='Escribe la tasa del pago en bolívares.'; conErr++; continue; }
+          if(vM(i,'gasto') && cu>0){ const cta=cuentaDe(vM(i,'cuenta')), tot=r2(cu*q); if(cta.moneda==='VES'&&!(t>0)){ errEl.textContent='Escribe la tasa del pago en bolívares.'; conErr++; continue; }
             const gref=gDb.collection('movimientos').doc(); await gref.set({tipo:'gasto', fecha:f, concepto:`Compra: ${it.nombre} (${cant(q,it.unidad)})`, categoria:CAT_GASTO_INV[it.categoria]||'Materiales', aCargo:'Empresa', cuenta:cta.id, monto:cta.moneda==='VES'?r2(tot*t):tot, tasa:cta.moneda==='VES'?t:0, trabajoId:'', referencia:body.referencia, inventario:true, creado:body.creado, actualizado:body.creado}); body.movId=gref.id; }
         } else if(x.tipo==='salida'||x.tipo==='devolucion'){ body.trabajoId=vM(i,'trabajo')||''; if(x.tipo==='salida'){ body.quienId=vM(i,'quien')||''; const ex=estadoItem(itemId).existencia; if(q>ex+0.0005){ errEl.textContent=`Solo hay ${cant(ex,it.unidad)}; registra primero la entrada o un conteo.`; conErr++; continue; } } }
         await iDb.collection('invMovs').doc().set(body); ok++; errEl.textContent=''; chk.checked=false; chk.closest('.act').style.opacity='.5';
