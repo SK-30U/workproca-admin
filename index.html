@@ -3895,13 +3895,13 @@ Responde solo con un objeto JSON:
     const fN=n=>nf.format(r2(n)), fT=n=>nf.format(n).replace(/,00$/,'');
     const cifra=(bsv,usv)=>mon==='bs'?`${fN(bsv)} Bs`:mon==='usd'?`$${fN(usv)}`:`${fN(bsv)} Bs = $${fN(usv)}`;
     /* lo pagado en bolívares vale en dólares a la tasa del reporte; lo pagado en dólares vale lo que salió (y en bolívares, a la tasa) */
-    const val=m=>{ const c=cuentaDe(m.cuenta); if(c.moneda==='VES'){ const b=num(m.monto); return {bs:b, usd:t>0?b/t:0}; } const u=num(m.monto); return {bs:num(m.montoBs)>0?num(m.montoBs):u*t, usd:u}; };
+    const val=m=>{ const c=cuentaDe(m.cuenta); if(c.moneda==='VES'){ const b=num(m.monto); return {bs:b, usd:t>0?b/t:0}; } const u=num(m.monto), mb=String(m.concepto||'').match(/\(Bs\.?\s*([\d.,]+)\s+a\s+[\d.,]+\)/i), bsC=mb?parseNum(mb[1]):0; return {bs:num(m.montoBs)>0?num(m.montoBs):bsC>0?bsC:u*t, usd:u}; };   /* registros viejos: los bolívares venían escritos en el concepto */
     const ms=todosMovs().filter(m=>m.fecha>=desde && m.fecha<=hasta);
     const ac={empresa:'Empresa', papa:'Papá', fran:'Fran'};
     const gas=ms.filter(m=>m.tipo==='gasto' && (todo || P.some(k=>ac[k]===(m.aCargo||'Empresa'))));
     const ingT=ms.filter(m=>m.tipo==='ingreso'), ing=ingT.filter(m=>!esFinanciamiento(m)), finz=ingT.filter(esFinanciamiento);
     const sumV=ls=>ls.reduce((o,m)=>{ const v=val(m); o.bs+=v.bs; o.usd+=v.usd; return o; },{bs:0,usd:0});
-    const nombreG=m=>String(m.concepto||m.categoria||'Gasto').replace(/^(Nómina|Sueldos de supervisores), corte del (\d\d\/\d\d)\/\d{4} al (\d\d\/\d\d)\/\d{4}$/,'$1 del $2 al $3');
+    const nombreG=m=>String(m.concepto||m.categoria||'Gasto').replace(/\s*\(Bs\.?\s*[\d.,]+\s+a\s+[\d.,]+\)/i,'').replace(/^(Nómina|Sueldos de supervisores), corte del (\d\d\/\d\d)\/\d{4} al (\d\d\/\d\d)\/\d{4}$/,'$1 del $2 al $3');
     const grupos=[]; gas.forEach(m=>{ const n=nombreG(m), k=normTxt(n); let g=grupos.find(x=>x.k===k); if(!g){ g={k, n, ms:[]}; grupos.push(g); } g.ms.push(m); });
     const L=['*RESUMEN ACTUALIZADO*', `_Del ${fdate(desde)} al ${fdate(hasta)}${mon!=='usd'||t>0?` · Tasa: ${fT(t)} Bs por dólar`:''}_`];
     const valCuentas=f=>gcfg.cuentas.reduce((s0,c)=>{ const v=saldoCuenta(c.id,f); return s0+(c.moneda==='VES'?(t>0?v/t:0):v); },0);
