@@ -3838,10 +3838,15 @@ Responde solo con un objeto JSON:
     }
     // General
     L.push('*BALANCE GENERAL*'); L.push(`_${per}_`);
+    /* El balance general es de caja: solo cuentan los movimientos desde que cada cuenta tiene saldo (su saldo inicial); lo anterior no está en el disponible */
+    const enCaja=m=>{ const c=m.tipo==='cambio'?(m.cuentaOrigen||m.cuentaDestino):m.cuenta; return !m.fecha || m.fecha>=saldoIni(c).fecha; };
+    const fuera=B.ms.filter(m=>!enCaja(m)); ['ing','finz','gEmp','gOper','gInv','gPapa','gFran','cam'].forEach(k=>{ B[k]=(B[k]||[]).filter(enCaja); });
+    const totIngG=sum(B.ing,B.u), hastaSaldo=hasta>today()?today():hasta;
+    if(fuera.length){ const ini=[...new Set(gcfg.cuentas.map(c=>saldoIni(c.id).fecha))].sort()[0]; L.push(`_La caja se lleva desde el ${fdate(ini)}: ${fuera.length} ${fuera.length===1?'movimiento anterior no entra':'movimientos anteriores no entran'} en este balance (${fuera.slice(0,4).map(m=>`${fdate(m.fecha).slice(0,5)} ${m.concepto||m.categoria||m.tipo}`).join('; ')}${fuera.length>4?'; …':''}). Para incluirlos, pon el saldo inicial con una fecha anterior en Ajustes._`); }
     /* Saldos: con la tasa a la que entraron los bolívares (igual que en Gastos y Resumen); con «tasa única», a la tasa del reporte */
     const unica=balF.tasaModo==='unica', tIni=unica?tasa:((tasaDelDia(sumarDias(desde,-1))||{}).tasa||tasaSaldoBanco(sumarDias(desde,-1))), tFin=unica?tasa:((tasaDelDia(hasta)||{}).tasa||tasaSaldoBanco(hasta));
     const usdIni=r2(totalUsdCuentas(B.ini,tIni)), usdFin=r2(totalUsdCuentas(B.fin,tFin)), totGas=sum([...B.gEmp,...B.gPapa,...B.gFran],B.u), totFin=sum(B.finz,B.u);
-    const difT=r2(usdFin-(usdIni+totIng+totFin-totGas));
+    const difT=r2(usdFin-(usdIni+totIngG+totFin-totGas));
     /* De dónde sale la diferencia cambiaria: los bolívares del saldo inicial valuados a la tasa final, y cada movimiento en bolívares a su tasa contra la tasa final */
     const explicaDif=(()=>{ if(Math.abs(difT)<0.01||unica||!(tFin>0)) return []; const out=[]; const bsIni=sum(gcfg.cuentas.filter(c=>c.moneda==='VES'),c=>B.ini[c.id]||0);
       if(Math.abs(bsIni)>0.004 && tIni>0){ const d=r2(bsIni/tFin-bsIni/tIni); if(Math.abs(d)>=0.01) out.push(`  • Saldo inicial en bolívares (${mBs(bsIni)}) de ${nfT.format(tIni)} a ${nfT.format(tFin)} Bs/$: ${d<0?'− ':''}${m$(Math.abs(d))}`); }
@@ -3852,22 +3857,22 @@ Responde solo con un objeto JSON:
     const lineaDif = Math.abs(difT)>=0.01 ? `🔄 Diferencia cambiaria: ${difT<0?'− ':''}${m$(Math.abs(difT))}${explicaDif.length?'\n'+explicaDif.join('\n'):''}` : '';
     if(corto){
       L.push('');
-      L.push(`💼 Saldo inicial: ${m$(usdIni)}`);
-      L.push(`💰 Ingresos: ${m$(totIng)}`);
+      L.push(`💼 Saldo inicial al ${fdate(sumarDias(desde,-1))}: ${m$(usdIni)}`);
+      L.push(`💰 Ingresos: ${m$(totIngG)}`);
       if(B.finz.length) L.push(`🏦 Financiamiento recibido: ${m$(totFin)}`);
       L.push(`Gastos de la empresa: ${m$(sum(B.gOper,B.u))}`);
       if(B.gInv.length) L.push(`Compras para inventario: ${m$(sum(B.gInv,B.u))}`);
       if(B.gPapa.length) L.push(`Gastos de papá: ${m$(sum(B.gPapa,B.u))}`);
       if(B.gFran.length) L.push(`Gastos de Fran: ${m$(sum(B.gFran,B.u))}`);
       if(lineaDif) L.push(lineaDif);
-      L.push(''); L.push(`✅ *DISPONIBLE: ${m$(usdFin)}*`);
+      L.push(''); L.push(`✅ *DISPONIBLE AL ${fdate(hastaSaldo)}: ${m$(usdFin)}*`);
       L.push(gcfg.cuentas.map(c=>`${c.nombre} ${c.moneda==='VES'?mBs(B.fin[c.id]||0):m$(B.fin[c.id]||0)}`).join(' · '));
       return L.join('\n');
     }
-    saldosTxt(L,'Saldo inicial',B.ini,tIni,'💼');
+    saldosTxt(L,`Saldo inicial al ${fdate(sumarDias(desde,-1))}`,B.ini,tIni,'💼');
     L.push(''); L.push('💰 *Ingresos*');
     if(B.ing.length) B.ing.forEach(m=>L.push(lineaMov(m,B,tasa))); else L.push('• Sin ingresos');
-    L.push(`*Total ingresos: ${m$(totIng)}*`);
+    L.push(`*Total ingresos: ${m$(totIngG)}*`);
     if(B.finz.length){ L.push(''); L.push('🏦 *Financiamiento (no es ingreso de la operación)*'); B.finz.forEach(m=>L.push(lineaMov(m,B,tasa))); L.push(`*Total financiamiento: ${m$(totFin)}*`); }
     bloqueGastos(L,'Gastos de la empresa',B.gOper,B,tasa,false);
     bloqueGastos(L,'Compras de materiales para inventario',B.gInv,B,tasa,false);
@@ -3875,7 +3880,7 @@ Responde solo con un objeto JSON:
     bloqueGastos(L,'Gastos de Fran',B.gFran,B,tasa,false);
     if(B.cam.length){ L.push(''); L.push('🔁 *Cambios entre cuentas*'); B.cam.forEach(m=>{ const o=cuentaDe(m.cuentaOrigen), d=cuentaDe(m.cuentaDestino); L.push(`• ${fdate(m.fecha).slice(0,5)} ${o.nombre} → ${d.nombre}: ${enMoneda(num(m.montoOrigen),o.moneda)} → ${enMoneda(num(m.montoDestino),d.moneda)}${num(m.tasa)?' (tasa '+nfT.format(num(m.tasa))+')':''}`); }); }
     if(lineaDif){ L.push(''); L.push(lineaDif); }
-    saldosTxt(L,'DISPONIBLE',B.fin,tFin,'✅');
+    saldosTxt(L,`DISPONIBLE AL ${fdate(hastaSaldo)}`,B.fin,tFin,'✅');
     return L.join('\n');
   }
   function renderBal(el){
