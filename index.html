@@ -3421,6 +3421,7 @@ Responde solo con un objeto JSON:
   }
   function pintarUsoIA(){ const e=$('#iaUso'); if(e) e.textContent=textoUsoIA(); }
   let gBuscar='', gDup=false;
+  try{ setTimeout(()=>{ const f=localStorage.getItem('balFormato'), m=localStorage.getItem('balMoneda'); if(f) balF.formato=f; if(m) balF.moneda=m; },0); }catch(_){}
   document.addEventListener('input', e=>{ if(e.target.id!=='gBuscar') return; gBuscar=e.target.value; clearTimeout(renderMov._t); renderMov._t=setTimeout(()=>{ renderGas(); const n=$('#gBuscar'); if(n){ n.focus(); const L=n.value.length; try{ n.setSelectionRange(L,L); }catch(_){} } },350); });
   let gView='mov', gSemana=null, mvEditId=null, mvAplicando=false, mvTipo='gasto', balF={modo:'semana', semana:null, desde:'', hasta:'', partes:['general'], formato:'detallado', tasa:'', tasaModo:'propia'};
   const m$ = n => `USD ${nf.format(n)}`, mBs = n => `Bs. ${nf.format(n)}`;
@@ -3888,8 +3889,41 @@ Responde solo con un objeto JSON:
     gcfg.cuentas.forEach(c=>{ const v=saldos[c.id]||0; L.push(`• ${c.nombre}: ${c.moneda==='VES' ? `${mBs(v)}${tasa>0?' = '+m$(r2(v/tasa)):''}` : m$(v)}`); });
     L.push(`*Total: ${m$(r2(totalUsdCuentas(saldos,tasa)))}*`);
   }
+  /* Reporte corto (el formato de Fran): todo a una sola tasa; cada gasto en una línea, en bolívares, en dólares o en los dos */
+  function balanceCorto(desde, hasta, tasa){
+    const t=tasa>0?tasa:(tasaSugerida()||0), mon=balF.moneda||'ambas', P=balF.partes, todo=P.includes('general')||['empresa','papa','fran'].every(k=>P.includes(k));
+    const fN=n=>nf.format(r2(n)), fT=n=>nf.format(n).replace(/,00$/,'');
+    const cifra=(bsv,usv)=>mon==='bs'?`${fN(bsv)} Bs`:mon==='usd'?`$${fN(usv)}`:`${fN(bsv)} Bs = $${fN(usv)}`;
+    /* lo pagado en bolívares vale en dólares a la tasa del reporte; lo pagado en dólares vale lo que salió (y en bolívares, a la tasa) */
+    const val=m=>{ const c=cuentaDe(m.cuenta); if(c.moneda==='VES'){ const b=num(m.monto); return {bs:b, usd:t>0?b/t:0}; } const u=num(m.monto); return {bs:num(m.montoBs)>0?num(m.montoBs):u*t, usd:u}; };
+    const ms=todosMovs().filter(m=>m.fecha>=desde && m.fecha<=hasta);
+    const ac={empresa:'Empresa', papa:'Papá', fran:'Fran'};
+    const gas=ms.filter(m=>m.tipo==='gasto' && (todo || P.some(k=>ac[k]===(m.aCargo||'Empresa'))));
+    const ingT=ms.filter(m=>m.tipo==='ingreso'), ing=ingT.filter(m=>!esFinanciamiento(m)), finz=ingT.filter(esFinanciamiento);
+    const sumV=ls=>ls.reduce((o,m)=>{ const v=val(m); o.bs+=v.bs; o.usd+=v.usd; return o; },{bs:0,usd:0});
+    const nombreG=m=>String(m.concepto||m.categoria||'Gasto').replace(/^(Nómina|Sueldos de supervisores), corte del (\d\d\/\d\d)\/\d{4} al (\d\d\/\d\d)\/\d{4}$/,'$1 del $2 al $3');
+    const grupos=[]; gas.forEach(m=>{ const n=nombreG(m), k=normTxt(n); let g=grupos.find(x=>x.k===k); if(!g){ g={k, n, ms:[]}; grupos.push(g); } g.ms.push(m); });
+    const L=['*RESUMEN ACTUALIZADO*', `_Del ${fdate(desde)} al ${fdate(hasta)}${mon!=='usd'||t>0?` · Tasa: ${fT(t)} Bs por dólar`:''}_`];
+    const valCuentas=f=>gcfg.cuentas.reduce((s0,c)=>{ const v=saldoCuenta(c.id,f); return s0+(c.moneda==='VES'?(t>0?v/t:0):v); },0);
+    const ant=todo?valCuentas(sumarDias(desde,-1)):0;
+    if(todo && Math.abs(ant)>=0.005) { L.push(''); L.push(`*Saldo anterior:* ${mon==='bs'?`${fN(ant*t)} Bs`:`$${fN(ant)}`}`); }
+    const vi=sumV(ing); L.push(''); L.push(`💰 *Ingresos:* ${cifra(vi.bs,vi.usd)}`);
+    if(finz.length){ const vf=sumV(finz); L.push(`🏦 *Financiamiento:* ${cifra(vf.bs,vf.usd)}`); }
+    const vg=sumV(gas); let gBs=vg.bs, gUsd=vg.usd;
+    const lineas=grupos.map(g=>{ const v=sumV(g.ms); return `• ${g.n}${g.ms.length>1?` (${g.ms.length})`:''}: ${cifra(v.bs,v.usd)}`; });
+    let disp=null;
+    if(todo){ const real=valCuentas(hasta), calc=ant+vi.usd+sumV(finz).usd-vg.usd, dif=r2(real-calc);
+      if(dif<=-0.01){ lineas.push(`• Diferencias de cambio y comisiones: ${cifra(-dif*t,-dif)}`); gBs+=-dif*t; gUsd+=-dif; }
+      else if(dif>=0.01) L.push(`• Diferencias de cambio a favor: ${cifra(dif*t,dif)}`);
+      disp=real; }
+    L.push(''); L.push('*Gastos*'); if(lineas.length) L.push(...lineas); else L.push('• Sin gastos');
+    L.push(`*Total gastos: ${cifra(gBs,gUsd)}*`);
+    if(disp!=null){ L.push(''); L.push(`✅ *DISPONIBLE: ${mon==='bs'?`${fN(disp*t)} Bs`:`$${fN(disp)}`}*`); }
+    return L.join('\n');
+  }
   function buildBalance(){
     const [desde,hasta]=periodoBal(), tasa=parseNum(balF.tasa)||0, corto=balF.formato==='corto';
+    if(corto) return balanceCorto(desde, hasta, tasa);
     const B=calcBalance(desde,hasta,tasa), L=[];
     const per=`Del ${fdate(desde)} al ${fdate(hasta)}${tasa>0?(balF.tasaModo==='unica'?` · Todo a tasa ${nfT.format(tasa)} Bs. por USD`:` · Bolívares a la tasa de cada movimiento; saldos a la tasa del día de cada fecha`):''}`;
     const totIng=sum(B.ing,B.u);
@@ -3978,8 +4012,9 @@ Responde solo con un objeto JSON:
       <div class="ecchips">${[['general','General'],['empresa','Empresa'],['papa','Gastos de papá'],['fran','Gastos de Fran']].map(([k,l])=>{ const on=balF.partes.includes(k); return `<label class="${on?'on':''}"><input type="checkbox" data-btipo="${k}"${on?' checked':''}> ${l}</label>`; }).join('')}</div>
       <div class="tip" style="border:0;margin-top:4px">Puedes marcar varios para combinarlos. General incluye todo con los saldos de las cuentas.</div>
       ${seg('bfmt',[['detallado','Detallado'],['corto','Corto']],balF.formato)}
-      ${seg('btasa',[['propia','Tasa del cliente'],['unica','Tasa Binance (única)']],balF.tasaModo)}
-      <div class="tip" style="border:0;margin-top:4px">${balF.tasaModo==='unica'?'Todo lo que está en bolívares se lleva a dólares a la tasa de arriba: lo que vale hoy en dólares reales.':'Cada cobro y cada gasto en bolívares se lleva a dólares a la tasa a la que se cobró al cliente. La tasa de arriba solo se usa para los saldos de las cuentas y lo que no tenga tasa propia.'}</div>
+      ${balF.formato==='corto'?seg('bmon',[['ambas','Bs y $'],['usd','Solo $'],['bs','Solo Bs']],balF.moneda||'ambas'):''}
+      ${balF.formato==='corto'?'':seg('btasa',[['propia','Tasa del cliente'],['unica','Tasa Binance (única)']],balF.tasaModo)}
+      <div class="tip" style="border:0;margin-top:4px"${balF.formato==='corto'?' hidden':''}>${balF.tasaModo==='unica'?'Todo lo que está en bolívares se lleva a dólares a la tasa de arriba: lo que vale hoy en dólares reales.':'Cada cobro y cada gasto en bolívares se lleva a dólares a la tasa a la que se cobró al cliente. La tasa de arriba solo se usa para los saldos de las cuentas y lo que no tenga tasa propia.'}</div>
       </details>
       <div class="ctot">
         <div class="stat s-co"><div class="lbl"><i></i>Ingresos</div><div class="amt num"><small>USD</small>${nf.format(sum(B.ing,B.u))}</div></div>
@@ -4068,7 +4103,8 @@ Responde solo con un objeto JSON:
     const ad=t.closest('[data-accdel]'); if(ad){ if(!ad.dataset.armed){ ad.dataset.armed='1'; ad.textContent='Toca otra vez'; return; } return gDb.collection('acceso').doc(ad.dataset.accdel).delete().then(()=>toast('Eliminado'), e=>toast(errMsg(e))); }
     if(t.closest('#gSalir') && window.__cerrarSesion) return window.__cerrarSesion();
     const bm=t.closest('[data-bmodo]'); if(bm){ balF.modo=bm.dataset.bmodo; return renderGas(); }
-    const bf=t.closest('[data-bfmt]'); if(bf){ balF.formato=bf.dataset.bfmt; return renderGas(); }
+    const bf=t.closest('[data-bfmt]'); if(bf){ balF.formato=bf.dataset.bfmt; try{ localStorage.setItem('balFormato',balF.formato); }catch(_){} return renderGas(); }
+    const bmo=t.closest('[data-bmon]'); if(bmo){ balF.moneda=bmo.dataset.bmon; try{ localStorage.setItem('balMoneda',balF.moneda); }catch(_){} return renderGas(); }
     const bt=t.closest('[data-btasa]'); if(bt){ balF.tasaModo=bt.dataset.btasa; return renderGas(); }
     if(t.closest('#bPrev')){ balF.semana=sumarDias(balF.semana,-7); return renderGas(); }
     if(t.closest('#bNext')){ balF.semana=sumarDias(balF.semana,7); return renderGas(); }
