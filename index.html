@@ -1015,6 +1015,7 @@ select.combo-oculto{display:none}
     <div class="grid" style="margin-top:8px">
       <label class="f full">Proveedor<input id="rcProv" list="provL" autocomplete="off" placeholder="Ej.: MEOCA"></label>
       <label class="f">N° de factura o nota<input id="rcRef" autocomplete="off"></label>
+      <label class="f full">Comprado para la orden (opcional)<select data-combo id="rcOrden"></select></label>
       <label class="f">Fecha<input id="rcFecha" type="date"></label>
     </div>
     <div class="seg" id="rcMon" role="group" aria-label="Moneda de los precios" style="margin-top:10px;grid-template-columns:repeat(2,minmax(0,1fr))"><button type="button" data-m="bs" class="on">Precios en bolívares</button><button type="button" data-m="usd">Precios en dólares</button></div>
@@ -1795,6 +1796,14 @@ select.combo-oculto{display:none}
     return {porTrabajo, sinRepartir:r2(sinRepartir), tot:{gastos:r2(tot.gastos), mo:r2(tot.mo), sup:r2(tot.sup), total:r2(tot.gastos+tot.mo+tot.sup)}};
   }
   const pctTxt = v => `${nf.format(v).replace(/,00$/,'')} %`;
+  /* Compras de material asignadas a una orden (gasto de compra con esa orden): cuánto costaron, cuánto ya se usó y cuánto queda en el almacén */
+  function comprasDeOrden(tid){
+    const gs=movs.filter(m=>m.tipo==='gasto'&&m.inventario&&m.trabajoId===tid); if(!gs.length) return {total:0, usado:0, queda:0};
+    const ids=new Set(gs.map(m=>m.id)), ent=invMovs.filter(m=>m.tipo==='entrada'&&(ids.has(m.movId)||(m.movIds||[]).some(x=>ids.has(x))));
+    const total=r2(sum(gs,m=>usdDe(m,tasaSugerida()))); let queda=0;
+    [...new Set(ent.map(m=>m.itemId))].forEach(it=>{ const e=estadoItem(it); e.lotes.forEach(l=>{ if(ent.some(m=>m.id===l.id)) queda+=l.q*l.cu; }); });
+    queda=r2(Math.min(total,queda)); return {total, usado:r2(total-queda), queda};
+  }
   function buildCostos(){
     const rep=repartoGenerales(costF.reparto), gen=costF.generales?rep.porTrabajo:{};
     const base=docs.filter(d=>(!costF.cliente||(d.cliente||'')===costF.cliente) && (!costF.trabajo||d.id===costF.trabajo) && (costF.cobrados || etapa(d)!=='cobrado')).sort(byOrden)
@@ -1821,16 +1830,25 @@ select.combo-oculto{display:none}
       if(costF.generales) L.push(`Parte de los gastos generales de la empresa: ${usd(c.gen)}`);
       const realizado=r2(c.cobrado-c.costo);
       L.push(`*Costo ${enEj?'hasta hoy':'total'}: ${usd(c.costo)}*`);
+      /* Compras de material hechas para esta orden: la plata ya salió, pero lo que no se ha usado sigue en el almacén y tiene valor */
+      const cp=comprasDeOrden(d.id);
+      if(cp.total>0){ L.push(''); L.push(`_Dinero y material de esta orden_`);
+        L.push(`Material comprado para esta orden: ${usd(cp.total)} · usado ${usd(cp.usado)} · sigue en el almacén ${usd(cp.queda)}`);
+        const matOtro=r2(Math.max(0,c.mat-cp.usado)), salio=r2(c.mo+c.gastos+cp.total+matOtro);
+        L.push(`Plata que ha salido por esta orden: ${usd(salio)} (mano de obra ${usd(c.mo)} + otros gastos ${usd(c.gastos)} + compras ${usd(cp.total)}${matOtro?` + material de otras compras ${usd(matOtro)}`:''})`);
+        L.push(`Cobrado ${usd(c.cobrado)} − plata que salió ${usd(salio)} = *${r2(c.cobrado-salio)<0?'− ':''}${usd(Math.abs(r2(c.cobrado-salio)))} en dinero*, más ${usd(cp.queda)} en material en el almacén.`); }
       if(d.cancelado) L.push(`*Resultado: ${realizado<0?'− ':''}${usd(Math.abs(realizado))}* (lo cobrado menos el costo)`);
+      else if(enEj) L.push(`Margen: se calcula al terminar la orden (faltan costos y por cobrar ${usd(r2(Math.max(0,c.monto-c.cobrado)))}).`);
       else { L.push(`*Margen: ${usd(c.margen)}${c.monto>0?' ('+pctTxt(c.pct)+')':''}*`);
-        L.push(`  De ese margen ya está en caja ${realizado<0?'− ':''}${usd(Math.abs(realizado))} (cobrado menos costo) y falta por cobrar ${usd(r2(Math.max(0,c.monto-c.cobrado)))}${enEj?'; el costo seguirá subiendo hasta terminar la orden':''}.`); }
+        if(c.cobrado<c.monto-0.005) L.push(`  Falta por cobrar ${usd(r2(c.monto-c.cobrado))}.`); }
     });
     if(base.length>1){
       const tM=sum(base,x=>x.c.ingreso), tC=sum(base,x=>x.c.costo), tMo=sum(base,x=>x.c.mo), tG=sum(base,x=>x.c.gastos), tMat=sum(base,x=>x.c.mat), tGen=sum(base,x=>x.c.gen), tCob=sum(base,x=>x.c.cobrado);
       L.push(''); L.push(`*Totales de ${base.length} órdenes*`);
       L.push(`Monto: ${usd(tM)}${base.some(x=>x.d.cancelado)?' (en canceladas, lo cobrado)':''} · Cobrado: ${usd(r2(tCob))}`);
       L.push(`Mano de obra: ${usd(tMo)}${tMat?` · Materiales usados: ${usd(r2(tMat))}`:''}${tG?` · Otros gastos: ${usd(tG)}`:''}${costF.generales?` · Generales: ${usd(r2(tGen))}`:''}`);
-      L.push(`*Costo: ${usd(r2(tC))} · Margen: ${usd(r2(tM-tC))}${tM>0?' ('+pctTxt(r2((tM-tC)/tM*100))+')':''}*`);
+      const term=base.filter(x=>x.d.ejecutado||x.d.cancelado), tMt=sum(term,x=>x.c.ingreso), tCt=sum(term,x=>x.c.costo);
+      L.push(`*Costo: ${usd(r2(tC))}*${term.length?` · *Margen de las ${term.length} terminadas: ${usd(r2(tMt-tCt))}${tMt>0?' ('+pctTxt(r2((tMt-tCt)/tMt*100))+')':''}*`:''}${term.length<base.length?` · ${base.length-term.length} en ejecución sin margen todavía`:''}`);
     }
     if(costF.generales && rep.tot.total>0){
       L.push(''); L.push(`_Gastos generales de la empresa: ${usd(rep.tot.total)} (gastos sin orden ${usd(rep.tot.gastos)} · mano de obra sin asignar ${usd(rep.tot.mo)} · supervisores ${usd(rep.tot.sup)}), repartidos ${costF.reparto==='igual'?'por igual':'según los días trabajados'} entre las órdenes activas cada semana.${rep.sinRepartir>0?` Sin repartir: ${usd(rep.sinRepartir)} de semanas sin ninguna orden activa.`:''}_`);
@@ -3377,7 +3395,7 @@ Responde solo con un objeto JSON:
   /* Semana que se muestra por defecto: del sábado al lunes, la que acaba de cerrar (la nueva casi no tiene datos) */
   function semanaPorDefecto(){ const h=today(), dow=new Date(h+'T12:00:00').getDay(), w=inicioSemana(h); return [6,0,1].includes(dow) ? sumarDias(w,-7) : w; }
   if(!gSemana) gSemana=inicioSemana(today());   // la lista de movimientos abre en la semana actual, para ver lo que se acaba de registrar
-  balF.semana=semanaPorDefecto();
+  balF.semana=inicioSemana(today());   /* el balance abre en la semana en curso: su disponible es el de hoy, igual que Gastos y Resumen */
 
   /* Movimientos que salen solos de Cobranzas y Nómina (no se guardan dos veces) */
   function movsAuto(){
@@ -3881,6 +3899,7 @@ Responde solo con un objeto JSON:
     });
     const usdFin=r2(totalUsdCuentas(finales,tFin)), usdIni=r2(totalUsdCuentas(iniciales,tIni));
     L.push(''); L.push(`✅ *DISPONIBLE AL ${fdate(hastaSaldo)}: ${m$(usdFin)}*`);
+    if(hastaSaldo<today()){ const salH={}; gcfg.cuentas.forEach(c=>salH[c.id]=saldoCuenta(c.id,today())); L.push(`_Es lo que había al cierre del ${fdate(hastaSaldo)}. Hoy ${fdate(today())} hay ${m$(r2(totalUsdCuentas(salH,tasaSugerida())))} (lo que dice Gastos y Resumen): la diferencia son los movimientos posteriores._`); }
     L.push(gcfg.cuentas.filter(c=>Math.abs(finales[c.id]||0)>0.004).map(c=>`${c.nombre} ${c.moneda==='VES'?`${mBs(finales[c.id])}${tFin>0?' ('+m$(r2(finales[c.id]/tFin))+')':''}`:m$(finales[c.id])}`).join(' + ')||'Todas las cuentas en cero');
     /* 2. Resultado del período en dólares: lo que se cobró contra lo que se gastó (los cambios entre cuentas no son ni ingreso ni gasto) */
     const totIngG=sum(B.ing,B.u), totFin=sum(B.finz,B.u), tOper=sum(B.gOper,B.u), tInv=sum(B.gInv,B.u), tPapa=sum(B.gPapa,B.u), tFran=sum(B.gFran,B.u), res=r2(totIngG-tOper-tInv);
@@ -4707,6 +4726,7 @@ Responde solo con un objeto JSON:
   function openCompra(){
     fillItemSelects(); pintarProveedores();
     rcLineas=[{itemId:'', nuevo:'', unidad:'und', categoria:icfg.categorias[0]||'Materiales', cant:'', precio:''}]; rcMon='bs';
+    $('#rcOrden').innerHTML='<option value="">Para el almacén (sin orden)</option>'+centrosCosto().map(d=>`<option value="${esc(d.id)}">${esc(etiquetaCentro(d))}</option>`).join(''); $('#rcOrden').value=''; comboSync($('#rcOrden'));
     $('#rcProv').value=''; $('#rcRef').value=''; $('#rcFecha').value=today(); $('#rcCuenta').value='binance'; $('#rcPagado').value=''; $('#rcTasa').value=tasaSugerida()?nfT.format(tasaSugerida()):''; $('#rcErr').textContent='';
     pintarLineasCompra(); recalcCompra(); openSheet('#rcSheet');
   }
@@ -4766,7 +4786,7 @@ Responde solo con un objeto JSON:
       if(D.cta){ const c=cuentaDe(D.cta), catCnt={}; ls.forEach(l=>{ const it=itemDe(l.itemId)||{categoria:l.categoria}; const k=CAT_GASTO_INV[it.categoria]||'Materiales'; catCnt[k]=(catCnt[k]||0)+1; });
         const cat=Object.entries(catCnt).sort((a,b)=>b[1]-a[1])[0][0];
         const montoCta = c.moneda==='VES' ? (D.pag>0?D.pag:r2(D.pagUsd*D.t)) : r2(D.pagUsd);
-        const g=gDb.collection('movimientos').doc(); await g.set({tipo:'gasto', fecha:f, concepto:`Compra ${prov||'de materiales'}${ref?' · factura N° '+ref:''} (${ls.length} ${ls.length===1?'ítem':'ítems'})`, categoria:cat, aCargo:'Empresa', cuenta:c.id, monto:montoCta, tasa:c.moneda==='VES'?r4(montoCta/D.pagUsd):0, trabajoId:'', referencia:ref, inventario:true, creado:ahora, actualizado:ahora}); movId=g.id; }
+        const g=gDb.collection('movimientos').doc(); await g.set({tipo:'gasto', fecha:f, concepto:`Compra ${prov||'de materiales'}${ref?' · factura N° '+ref:''} (${ls.length} ${ls.length===1?'ítem':'ítems'})`, categoria:cat, aCargo:'Empresa', cuenta:c.id, monto:montoCta, tasa:c.moneda==='VES'?r4(montoCta/D.pagUsd):0, trabajoId:$('#rcOrden').value||'', referencia:ref, inventario:true, creado:ahora, actualizado:ahora}); movId=g.id; }
       /* 3) las entradas, con el costo repartido según el precio de cada línea */
       let acum=0; const filas=ls.map(l=>({l, sub:l.q*l.p}));
       for(let i=0;i<filas.length;i++){ const {l,sub}=filas[i];
