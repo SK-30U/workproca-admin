@@ -516,6 +516,7 @@ textarea.share{min-height:38vh}
 select.combo-oculto{display:none}
 .cqg{display:flex;flex-direction:column;gap:4px;max-height:180px;overflow:auto;margin-top:4px;padding:4px;border:1px solid var(--line);border-radius:10px;background:var(--sunk)}.cqg label{display:flex;gap:8px;align-items:center;font-size:13px;padding:6px 4px;border-radius:8px}.cqg label.on{background:color-mix(in srgb,var(--pri) 12%,transparent)}.cqg input{width:18px;height:18px;margin:0}
 .tdia{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;margin-top:10px;padding:8px 10px;border:1px dashed var(--line);border-radius:10px}.tdia label{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12.5px;font-weight:600;color:var(--muted)}.tdia input{width:120px;margin:0;text-align:right}.tdia small{color:var(--muted);font-size:12px}
+.notrab{margin-top:12px;padding:10px 12px}.notrab .lbl{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;color:var(--muted);margin-bottom:8px}.notrab .chips{display:flex;flex-wrap:wrap;gap:6px}.notrab .chips .btn{min-height:40px;padding:6px 12px;font-size:13.5px}
 .solg{margin:8px 0;border:1px solid var(--line);border-radius:10px;padding:6px 10px}.solg summary{display:flex;align-items:center;gap:6px;flex-wrap:wrap;cursor:pointer;font-size:13.5px}.solg summary .hbtns{margin-left:auto}.solic.dup{border-left:3px solid var(--so);padding-left:8px}
 .avfijo{background:var(--so);color:#fff;border-radius:10px;padding:8px 10px;font-weight:600;margin:0 0 8px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(140px + env(safe-area-inset-bottom,0px));z-index:30;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:600;font-size:14px;max-width:calc(100% - 32px)}
@@ -2865,7 +2866,10 @@ Responde solo con un objeto JSON:
   }
 
   /* Orden sugerida para cada trabajador: la del último día registrado antes de esta fecha (se usa solo si el día no tiene registro guardado) */
-  let dayPrefill={}, todosTocado=false;
+  let dayPrefill={}, todosTocado=false, diaAgregados=new Set(); const diaVerTodos=new Set();
+  /* Un día ya registrado, o un día viejo sin registro, muestra solo a quienes trabajaron; los demás quedan en una lista corta para agregarlos.
+     Un día nuevo (hoy o después del último registrado) muestra a todos, para seguir de un día al otro. */
+  const diaCompacto = () => !diaVerTodos.has(diaSel) && (!!asis[diaSel] || diaSel < (Object.keys(asis).sort().pop()||''));
   function calcPrefill(){
     dayPrefill={}; if(asis[diaSel]) return;
     /* La orden de cada quien se propone con el día registrado más cercano anterior, también al registrar un día pasado */
@@ -2874,12 +2878,13 @@ Responde solo con un objeto JSON:
   const defReg = id => ({tipo:'no', horasExtra:0, trabajoId:dayPrefill[id]||''});
   const ultimoDiaAntes = f => Object.keys(asis).filter(k=>k<f).sort().pop()||'';
   /* Copia el último día registrado: quiénes, cuánto y en qué orden (las horas extra no se copian) */
-  function copiarDiaAnterior(){ const u=ultimoDiaAntes(diaSel); if(!u) return; const regs=(asis[u]||{}).registros||{}; dayDraft={}; Object.entries(regs).forEach(([id,r])=>{ const t=trabs.find(x=>x.id===id); if(!t||diaBloqueado(t,diaSel)) return; dayDraft[id]={tipo:r.tipo||'completo', horasExtra:0, trabajoId:r.trabajoId||'', ...(r.dividir&&r.trabajoId2?{dividir:true, trabajoId2:r.trabajoId2}:{})}; }); dayDirty=true; todosTocado=true; renderNom(); toast(`Copiado el ${fdate(u)}: revisa y guarda`); }
+  function copiarDiaAnterior(){ const u=ultimoDiaAntes(diaSel); if(!u) return; const regs=(asis[u]||{}).registros||{}; dayDraft={}; Object.entries(regs).forEach(([id,r])=>{ const t=trabs.find(x=>x.id===id); if(!t||diaBloqueado(t,diaSel)) return; dayDraft[id]={tipo:r.tipo||'completo', horasExtra:0, trabajoId:r.trabajoId||'', ...(r.dividir&&r.trabajoId2?{dividir:true, trabajoId2:r.trabajoId2}:{})}; }); Object.keys(dayDraft).forEach(id=>diaAgregados.add(id)); dayDirty=true; todosTocado=true; renderNom(); toast(`Copiado el ${fdate(u)}: revisa y guarda`); }
   function renderDia(el){
-    if(!dayDraft){ dayDraft=JSON.parse(JSON.stringify((asis[diaSel]||{}).registros||{})); dayDirty=false; todosTocado=false; calcPrefill(); }
+    if(!dayDraft){ dayDraft=JSON.parse(JSON.stringify((asis[diaSel]||{}).registros||{})); dayDirty=false; diaAgregados=new Set(); todosTocado=false; calcPrefill(); }
     const tieneReg = id => { const r=dayDraft[id]; return !!r && (r.tipo==='completo' || r.tipo==='medio' || num(r.horasExtra)>0); };
     const lista=trabs.filter(t=>!esSup(t) && (t.activo!==false || tieneReg(t.id))).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
     const td=tipoDia(diaSel), bloqT = t => diaBloqueado(t, diaSel), bloqueado = lista.length>0 && lista.every(bloqT), algunosBloq = !bloqueado && lista.some(bloqT);
+    const compactoDia=diaCompacto(), visiblesDia = compactoDia ? lista.filter(t=>tieneReg(t.id)||diaAgregados.has(t.id)) : lista, ocultosDia = compactoDia ? lista.filter(t=>!visiblesDia.includes(t)) : [];
     const trabajosAbiertos = centrosCosto();
     const inactivos=trabs.filter(t=>t.activo===false && !esSup(t) && !tieneReg(t.id)).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
     const bloqueInact = `<details class="inact"${!lista.length&&inactivos.length?' open':''}><summary>Trabajadores inactivos (${inactivos.length})</summary>
@@ -2899,7 +2904,7 @@ Responde solo con un objeto JSON:
       ${pendDia.length&&!esRegistro()?`<div class="lock">${esc(pendDia[0].nombre||pendDia[0].autor||'Alguien')} envió este día (${esc(resumenAsis(pendDia[0].datos))}). Apruébalo o recházalo en <button type="button" class="lnk" id="dIrPend">Resumen</button> antes de registrarlo tú, para no pisarlo.</div>`:''}
       ${pendDia.length&&esRegistro()?`<div class="lock">Este día ya lo enviaste: ${esc(resumenAsis(pendDia[0].datos))}. Está esperando aprobación; si lo vuelves a enviar, llegará dos veces.</div>`:''}
       ${bloqueado?`<div class="lock">Este día ya se pagó en un corte. Para cambiarlo, anula primero ese corte en la pestaña “Corte”.</div>`:algunosBloq?`<div class="lock">${esc(lista.filter(bloqT).map(t=>t.nombre.split(' ')[0]).join(', '))}: este día ya se les pagó en un corte, así que no se puede cambiar.</div>`:''}
-      ${!bloqueado?`<div class="panel" style="padding:10px 12px;margin-top:10px">
+      ${!bloqueado&&visiblesDia.length?`<div class="panel" style="padding:10px 12px;margin-top:10px">
         <div style="font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;color:var(--muted);margin-bottom:8px">Para todos los de este día</div>
         ${(()=>{ const regs=lista.map(t=>dayDraft[t.id]||defReg(t.id)); const comun=k=>{ const v=regs.map(r=>String(r[k]??'')); return v.length&&v.every(x=>x===v[0]) ? v[0] : null; }; let tipoC=comun('tipo'); const hxC=comun('horasExtra'), tjC=comun('trabajoId'); if(tipoC==='no' && !todosTocado && !asis[diaSel]) tipoC=null;
           return `<div class="seg" role="group" aria-label="Asistencia de todos"><button type="button" id="dTodos" class="${tipoC==='completo'?'on':''}">Día completo</button><button type="button" id="dMedio" class="${tipoC==='medio'?'on':''}">Medio día</button><button type="button" id="dNinguno" class="${tipoC==='no'?'on':''}">No trabajó</button></div>
@@ -2911,7 +2916,8 @@ Responde solo con un objeto JSON:
       </div>`:''}
       <div class="row-btns">${btnAIDia}${canWrite?'<button type="button" class="btn sec" id="dAdelanto">Registrar adelanto</button>':''}${!bloqueado&&!asis[diaSel]&&ultimoDiaAntes(diaSel)?`<button type="button" class="btn sec" id="dCopiarAnt">Igual que el ${fdate(ultimoDiaAntes(diaSel)).slice(0,5)}</button>`:''}</div>
       <div class="tip" style="margin-top:6px">Los supervisores no aparecen aquí: cobran sueldo semanal en el corte.</div>
-      <div class="wlist">${lista.map(t=>{
+      ${compactoDia&&!visiblesDia.length?`<div class="empty" style="padding:18px 8px"><b>${asis[diaSel]?'Nadie trabajó este día':'Este día no tiene registro'}</b>Agrega abajo a quien sí trabajó, o toca «Registrar con todos».</div>`:''}
+      <div class="wlist">${visiblesDia.map(t=>{
         const r=dayDraft[t.id]||defReg(t.id);
         const bq=bloqT(t);
         return `<div class="wrow" data-w="${esc(t.id)}"${bq?' data-bloq="1"':''}>
@@ -2925,6 +2931,7 @@ Responde solo con un objeto JSON:
           ${r.trabajoId2!=null&&r.trabajoId2!==undefined&&r.dividir?`<div class="wex"><label style="grid-column:1/-1">La otra mitad del día (y de las horas extra) en<select data-tj2${bq?' disabled':''}><option value="">Elige la otra orden…</option>${trabajosAbiertos.filter(d=>d.id!==r.trabajoId).map(d=>`<option value="${esc(d.id)}"${r.trabajoId2===d.id?' selected':''}>${esc(d.descripcion)}${d.unidad?' · '+esc(d.unidad):''}${tieneOrden(d)?' · '+esc(d.ods):''}</option>`).join('')}</select></label></div>`:''}
           <div class="wacts">${!bq&&r.trabajoId&&!r.dividir?`<button type="button" class="lnk" data-dividir="${esc(t.id)}">Dividir el día entre dos órdenes</button>`:''}${!bq&&r.dividir?`<button type="button" class="lnk" data-nodividir="${esc(t.id)}">Todo el día en una orden</button>`:''}${canWrite?`<button type="button" class="lnk" data-adelanto="${esc(t.id)}">Adelanto</button>`:''}</div>
         </div>`;}).join('')}</div>
+      ${ocultosDia.length?`<div class="panel notrab"><div class="lbl">${asis[diaSel]||visiblesDia.length?'No trabajaron este día':'Trabajadores activos'} (${ocultosDia.length})</div><div class="chips">${ocultosDia.map(t=>bloqT(t)?`<span class="pill co">${esc(t.nombre.split(' ')[0])} · pagado</span>`:`<button type="button" class="btn sec" data-agregardia="${esc(t.id)}">+ ${esc(t.nombre.split(' ').slice(0,2).join(' '))}</button>`).join('')}</div><div class="row-btns" style="margin-top:6px"><button type="button" class="lnk" id="dVerTodos">${visiblesDia.length?'Mostrar a todos':'Registrar con todos'}</button></div></div>`:''}
       ${bloqueInact}
       <div class="nsum"><div class="t num" id="dSum"></div>${!bloqueado?`<div class="row-btns" style="margin-top:0"><button type="button" class="btn pri" id="dSave">Guardar día</button></div>`:''}</div>`;
     renderDiaSum();
@@ -3247,13 +3254,15 @@ Responde solo con un objeto JSON:
       const w=trabs.find(x=>x.id===act.dataset.activar); if(!w) return;
       act.disabled=true; act.textContent='Activando…';
       nDb.collection('trabajadores').doc(w.id).update({activo:true, actualizado:new Date().toISOString()})
-        .then(()=>{ w.activo=true; renderNom(); toast(`${w.nombre} activado`); }, err=>{ act.disabled=false; act.textContent='Activar'; toast(errMsg(err)); });
+        .then(()=>{ w.activo=true; if(nView==='dia') diaAgregados.add(w.id); renderNom(); toast(`${w.nombre} activado`); }, err=>{ act.disabled=false; act.textContent='Activar'; toast(errMsg(err)); });
       return;
     }
     if(t.closest('#dTodos')||t.closest('#dMedio')||t.closest('#dNinguno')){ const tipo=t.closest('#dTodos')?'completo':t.closest('#dMedio')?'medio':'no'; todosTocado=true; document.querySelectorAll('.wrow[data-w]:not([data-bloq])').forEach(w=>{ const id=w.dataset.w; dayDraft[id]={...(dayDraft[id]||defReg(id)), tipo}; }); dayDirty=true; renderNom(); return; }
     const sb=t.closest('.seg button'); if(sb){ const id=sb.closest('[data-w]').dataset.w; dayDraft[id]={...(dayDraft[id]||defReg(id)), tipo:sb.dataset.t}; dayDirty=true; sb.parentElement.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===sb)); renderDiaSum(); sincronizarTodos(); return; }
     if(t.closest('#cPagar')) return marcarPagado();
     if(t.closest('#dCopiarAnt')) return copiarDiaAnterior();
+    const ag=t.closest('[data-agregardia]'); if(ag){ const id=ag.dataset.agregardia; diaAgregados.add(id); dayDraft[id]={...(dayDraft[id]||defReg(id)), tipo:'completo'}; dayDirty=true; renderNom(); return; }
+    if(t.closest('#dVerTodos')){ diaVerTodos.add(diaSel); renderNom(); return; }
     if(t.closest('#cVerPend')||t.closest('#dIrPend')) return setModulo('res');
     if(t.closest('#cRes')){ const tasa=parseNum(corteTasa); const c=calcCorte(corteHasta); return copyPlain(resumenCorte({fecha:today(), desde:c.desde, hasta:c.hasta, tasa, lineas:conBs(c.lineas,tasa).map(l=>({...l, nombre:nombreT(l.trabajadorId), cargo:(trabs.find(x=>x.id===l.trabajadorId)||{}).cargo}))}), 'Resumen copiado. Pégalo en WhatsApp', 'Resumen del corte'); }
     const bk=t.closest('[data-bank]'); if(bk){ const tasa=parseNum(corteTasa); const l=conBs(calcCorte(corteHasta).lineas,tasa).find(x=>x.trabajadorId===bk.dataset.bank); const w=trabs.find(x=>x.id===bk.dataset.bank); if(l&&w) copyPlain(textoBanco(pmDe(w),l.totalBs), `Pago móvil de ${w.nombre} copiado. Pégalo en el banco`, 'Pago móvil'); return; }
