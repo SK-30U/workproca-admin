@@ -1358,7 +1358,7 @@ select.combo-oculto{display:none}
     const list=visibles();
     /* La pestaña "Sin orden" muestra todo lo que no tiene orden de servicio: ejecutado y por ejecutar, en dos bloques */
     const groups = filtro==='todas' ? ORDEN : filtro==='sinOrden' ? ['sinOrden','peSinOrden'] : [filtro];
-    const secDe = g => g==='peSinOrden' ? {sec:'Sin orden de servicio, por ejecutar', pred:d=>etapa(d)==='porEjecutar'&&!tieneOrden(d)} : {sec:ETAPAS[g].sec, pred:d=>etapa(d)===g};
+    const secDe = g => g==='peSinOrden' ? {sec:'Sin orden de servicio, por ejecutar', pred:d=>etapa(d)==='porEjecutar'&&!tieneOrden(d)} : g==='enEjec' ? {sec:'En ejecución', pred:d=>!d.cancelado&&enEjecucion(d)} : {sec:ETAPAS[g].sec, pred:d=>etapa(d)===g};
     const pagos = filtro==='cobrado' ? pagosRecibidos(list) : '';
     const html = resumenBusqueda(list) + pagos + groups.map(g=>{
       const {sec,pred}=secDe(g), items=list.filter(pred).sort((a,b)=>(enEjecucion(b)-enEjecucion(a)) || byOrden(a,b));
@@ -1399,8 +1399,9 @@ select.combo-oculto{display:none}
       </div></button>`; }).join('')}</div></section>`;
   }
   function renderTabs(){
-    const counts={}; ORDEN.forEach(k=>counts[k]=0); byClient().forEach(d=>{ const e=etapa(d); counts[e]++; if(e==='porEjecutar'&&!tieneOrden(d)) counts.sinOrden++; });
-    $('#tabs').innerHTML = [['todas','Todas'],...ORDEN.map(k=>[k,ETAPAS[k].tab])].map(([k,l])=>
+    const counts={enEjec:0}; ORDEN.forEach(k=>counts[k]=0); byClient().forEach(d=>{ const e=etapa(d); counts[e]++; if(e==='porEjecutar'&&!tieneOrden(d)) counts.sinOrden++; if(!d.cancelado&&enEjecucion(d)) counts.enEjec++; });
+    const tabsL=[['todas','Todas'],...ORDEN.map(k=>[k,ETAPAS[k].tab])]; tabsL.splice(tabsL.findIndex(x=>x[0]==='porEjecutar'),0,['enEjec','En ejecución']);
+    $('#tabs').innerHTML = tabsL.map(([k,l])=>
       `<button role="tab" type="button" data-f="${k}" aria-selected="${k===filtro}">${l}${loaded&&k!=='todas'?`<span class="c">${counts[k]}</span>`:''}</button>`).join('');
   }
 
@@ -1740,7 +1741,7 @@ select.combo-oculto{display:none}
   });
 
   /* ---------- costo por trabajo: mano de obra (asistencia asignada) + gastos asignados, contra el monto ---------- */
-  let shareMode='ec', costF={cliente:'', trabajo:'', soloConCosto:true, cobrados:true, formato:'corto', reparto:'dias'};
+  let shareMode='ec', costF={cliente:'', trabajo:'', soloConCosto:true, cobrados:true, formato:'corto', reparto:'dias', generales:false};
   const tieneTrabajo = id => !!id && docs.some(d=>d.id===id);
   /* Costo directo de un trabajo: mano de obra asignada en la asistencia + gastos con ese centro de costo */
   function costoTrabajo(d, generales){ const c=memo('ct', depsCostos(), ()=>new Map()); let m=c.get(generales); if(!m){ m=new Map(); c.set(generales,m); } if(!m.has(d)) m.set(d, costoTrabajoCalc(d, generales)); return m.get(d); }
@@ -1794,33 +1795,44 @@ select.combo-oculto{display:none}
   }
   const pctTxt = v => `${nf.format(v).replace(/,00$/,'')} %`;
   function buildCostos(){
-    const rep=repartoGenerales(costF.reparto);
+    const rep=repartoGenerales(costF.reparto), gen=costF.generales?rep.porTrabajo:{};
     const base=docs.filter(d=>(!costF.cliente||(d.cliente||'')===costF.cliente) && (!costF.trabajo||d.id===costF.trabajo) && (costF.cobrados || etapa(d)!=='cobrado')).sort(byOrden)
-      .map(d=>({d, c:costoTrabajo(d, rep.porTrabajo)})).filter(x=>!costF.trabajo && costF.soloConCosto ? x.c.costo>0 : true);
-    const L=[`*WORKPROCA · Costo por orden de trabajo${costF.cliente?' · '+costF.cliente:''}${costF.trabajo&&docs.find(d=>d.id===costF.trabajo)?' · '+nombreTrabajo(docs.find(d=>d.id===costF.trabajo)):''}*`, fdate(today())];
+      .map(d=>({d, c:costoTrabajo(d, gen)})).filter(x=>!costF.trabajo && costF.soloConCosto ? x.c.costo>0 : true);
+    const abiertas=base.filter(x=>!x.d.ejecutado&&!x.d.cancelado).length;
+    const L=[`*WORKPROCA · Costo por orden de trabajo${costF.cliente?' · '+costF.cliente:''}${costF.trabajo&&docs.find(d=>d.id===costF.trabajo)?' · '+nombreTrabajo(docs.find(d=>d.id===costF.trabajo)):''}*`, abiertas ? `Corte al ${fdate(today())}${abiertas===base.length?(base.length===1?' (la orden sigue en ejecución)':' (órdenes en ejecución)'):' (hay órdenes en ejecución)'}` : `Al ${fdate(today())}`];
     if(!base.length){ L.push(''); L.push('Ningún trabajo tiene mano de obra ni gastos asignados todavía. Asigna la orden en el registro del día y en cada gasto.'); return L.join('\n'); }
+    const fmt=n=>nf.format(n).replace(/,00$/,''), jor=n=>`${fmt(n)} ${n===1?'jornada':'jornadas'}`, hx=n=>`${fmt(n)} ${n===1?'hora extra':'horas extra'}`;
+    const det=costF.formato==='detallado';
     base.forEach(({d,c})=>{
-      L.push(''); L.push(`*${d.descripcion}${d.unidad?' · '+d.unidad:''}${tieneOrden(d)?' · '+d.ods:d.nota?' · '+d.nota:''}*`);
-      L.push(d.cancelado ? `Cancelado · Monto original: ${usd(c.monto)} · Cobrado (lo que cuenta): ${usd(c.cobrado)}` : `Monto: ${usd(c.monto)}${c.cobrado>0?` · Cobrado: ${usd(c.cobrado)}`:''}`);
-      const nT=Object.keys(c.porT).length, fmt=n=>nf.format(n).replace(/,00$/,'');
-      const det=[c.dias?`${fmt(c.dias)} ${c.dias===1?'día-hombre':'días-hombre'}`:'', c.horas?`${fmt(c.horas)} h extra`:'', nT?`${nT} ${nT===1?'trabajador':'trabajadores'}`:''].filter(Boolean).join(', ');
-      L.push(`Mano de obra: ${usd(c.mo)}${det?' ('+det+')':''}`);
-      if(costF.formato==='detallado') Object.entries(c.porT).sort((a,b)=>b[1].v-a[1].v).forEach(([n,o])=>L.push(`  • ${n}: ${usd(o.v)} (${[o.dias?`${fmt(o.dias)} ${o.dias===1?'día':'días'}`:'', o.horas?`${fmt(o.horas)} h extra`:''].filter(Boolean).join(', ')})`));
-      if(c.mat||c.matL.length){ L.push(`Materiales del inventario: ${usd(c.mat)}`); if(costF.formato==='detallado') c.matL.forEach(x=>{ const it=itemDe(x.m.itemId)||{nombre:'Ítem eliminado',unidad:'und'}; L.push(`  • ${fdate(x.m.fecha).slice(0,5)} ${x.m.tipo==='devolucion'?'devolución de ':''}${cant(x.m.cantidad,it.unidad)} ${it.nombre}: ${x.costo<0?'− ':''}${usd(Math.abs(x.costo))}`); }); }
-      L.push(`${c.mat||c.matL.length?'Otros gastos directos':'Materiales y gastos directos'}: ${usd(c.gastos)}`);
-      if(costF.formato==='detallado') c.gs.forEach(x=>L.push(`  • ${fdate(x.m.fecha).slice(0,5)} ${x.m.concepto}: ${usd(x.usd)}`));
-      L.push(`Gastos generales (su parte): ${usd(c.gen)}`);
-      L.push(`Costo: ${usd(c.costo)} · *Margen: ${usd(c.margen)}${c.monto>0?' ('+pctTxt(c.pct)+')':''}*`);
-      if(c.porRecuperar>0) L.push(`Por recuperar: ${usd(c.porRecuperar)} (gastado por encima de lo cobrado; lo cubren los cobros de otras órdenes)`);
+      const enEj=!d.ejecutado&&!d.cancelado;
+      L.push(''); L.push(`*${d.descripcion}${d.unidad?' · '+d.unidad:''}${tieneOrden(d)?' · '+d.ods:d.nota?' · '+d.nota:''}*${enEj?' _(en ejecución)_':d.cancelado?' _(cancelado)_':''}`);
+      L.push(d.cancelado ? `Cancelado · Monto original: ${usd(c.monto)} · Cobrado (lo que cuenta): ${usd(c.cobrado)}` : `Monto: ${usd(c.monto)} · Cobrado: ${usd(c.cobrado)} · Por cobrar: ${usd(r2(Math.max(0,c.monto-c.cobrado)))}`);
+      /* Mano de obra: cuánto y quién; cada persona con sus jornadas y horas extra */
+      const nT=Object.keys(c.porT).length;
+      L.push(`Mano de obra: ${usd(c.mo)}${nT?` · ${nT} ${nT===1?'trabajador':'trabajadores'}, ${jor(c.dias)}${c.horas?' y '+hx(c.horas):''} en total`:''}`);
+      Object.entries(c.porT).sort((a,b)=>b[1].v-a[1].v).forEach(([n,o])=>L.push(`  • ${n.split(' ').slice(0,2).join(' ')}: ${jor(o.dias)}${o.horas?' + '+hx(o.horas):''} = ${usd(o.v)}`));
+      if(c.mat||c.matL.length){ L.push(`Materiales usados: ${usd(c.mat)}`);
+        /* agrupados por ítem: cantidad neta y costo (salidas menos devoluciones) */
+        const porIt={}; c.matL.forEach(x=>{ const it=itemDe(x.m.itemId)||{nombre:'Ítem eliminado',unidad:'und'}; const o=porIt[it.nombre]||(porIt[it.nombre]={it, q:0, v:0}); o.q+=(x.m.tipo==='devolucion'?-1:1)*num(x.m.cantidad); o.v+=x.costo; });
+        Object.values(porIt).sort((a,b)=>b.v-a.v).forEach(o=>L.push(`  • ${cant(r2q(o.q),o.it.unidad)} ${o.it.nombre}: ${o.v<0?'− ':''}${usd(Math.abs(r2(o.v)))}`));
+        if(det) c.matL.forEach(x=>{ const it=itemDe(x.m.itemId)||{nombre:'Ítem eliminado',unidad:'und'}; L.push(`    ${fdate(x.m.fecha).slice(0,5)} ${x.m.tipo==='devolucion'?'devolución de ':''}${cant(x.m.cantidad,it.unidad)} ${it.nombre}: ${x.costo<0?'− ':''}${usd(Math.abs(x.costo))}`); }); }
+      if(c.gastos||c.gs.length){ L.push(`Otros gastos cargados a la orden: ${usd(c.gastos)}`); c.gs.forEach(x=>L.push(`  • ${fdate(x.m.fecha).slice(0,5)} ${x.m.concepto||x.m.categoria}: ${usd(x.usd)}`)); }
+      if(costF.generales) L.push(`Parte de los gastos generales de la empresa: ${usd(c.gen)}`);
+      const realizado=r2(c.cobrado-c.costo);
+      L.push(`*Costo ${enEj?'hasta hoy':'total'}: ${usd(c.costo)}*`);
+      if(d.cancelado) L.push(`*Resultado: ${realizado<0?'− ':''}${usd(Math.abs(realizado))}* (lo cobrado menos el costo)`);
+      else { L.push(`*Margen: ${usd(c.margen)}${c.monto>0?' ('+pctTxt(c.pct)+')':''}*`);
+        L.push(`  De ese margen ya está en caja ${realizado<0?'− ':''}${usd(Math.abs(realizado))} (cobrado menos costo) y falta por cobrar ${usd(r2(Math.max(0,c.monto-c.cobrado)))}${enEj?'; el costo seguirá subiendo hasta terminar la orden':''}.`); }
     });
-    const tM=sum(base,x=>x.c.ingreso), tC=sum(base,x=>x.c.costo), tMo=sum(base,x=>x.c.mo), tG=sum(base,x=>x.c.gastos), tMat=sum(base,x=>x.c.mat), tGen=sum(base,x=>x.c.gen);
-    L.push(''); L.push(`*Totales de ${base.length} ${base.length===1?'orden':'órdenes'}*`);
-    L.push(`Monto: ${usd(tM)}${base.some(x=>x.d.cancelado)?' (en cancelados, lo cobrado)':''} · Mano de obra: ${usd(tMo)}${tMat?` · Materiales: ${usd(r2(tMat))}`:''} · Gastos directos: ${usd(tG)} · Generales: ${usd(r2(tGen))}`);
-    L.push(`*Costo: ${usd(r2(tC))} · Margen: ${usd(r2(tM-tC))}${tM>0?' ('+pctTxt(r2((tM-tC)/tM*100))+')':''}*`);
-    if(rep.tot.total>0){
+    if(base.length>1){
+      const tM=sum(base,x=>x.c.ingreso), tC=sum(base,x=>x.c.costo), tMo=sum(base,x=>x.c.mo), tG=sum(base,x=>x.c.gastos), tMat=sum(base,x=>x.c.mat), tGen=sum(base,x=>x.c.gen), tCob=sum(base,x=>x.c.cobrado);
+      L.push(''); L.push(`*Totales de ${base.length} órdenes*`);
+      L.push(`Monto: ${usd(tM)}${base.some(x=>x.d.cancelado)?' (en canceladas, lo cobrado)':''} · Cobrado: ${usd(r2(tCob))}`);
+      L.push(`Mano de obra: ${usd(tMo)}${tMat?` · Materiales usados: ${usd(r2(tMat))}`:''}${tG?` · Otros gastos: ${usd(tG)}`:''}${costF.generales?` · Generales: ${usd(r2(tGen))}`:''}`);
+      L.push(`*Costo: ${usd(r2(tC))} · Margen: ${usd(r2(tM-tC))}${tM>0?' ('+pctTxt(r2((tM-tC)/tM*100))+')':''}*`);
+    }
+    if(costF.generales && rep.tot.total>0){
       L.push(''); L.push(`_Gastos generales de la empresa: ${usd(rep.tot.total)} (gastos sin orden ${usd(rep.tot.gastos)} · mano de obra sin asignar ${usd(rep.tot.mo)} · supervisores ${usd(rep.tot.sup)}), repartidos ${costF.reparto==='igual'?'por igual':'según los días trabajados'} entre las órdenes activas cada semana.${rep.sinRepartir>0?` Sin repartir: ${usd(rep.sinRepartir)} de semanas sin ninguna orden activa.`:''}_`);
-      if(costF.formato==='detallado'){ const tR=tasaSugerida(), gs=movs.filter(m=>m.tipo==='gasto' && m.fecha && (m.aCargo||'Empresa')==='Empresa' && !m.inventario && !['Nómina','Sueldos de supervisores'].includes(m.categoria) && !tieneTrabajo(m.trabajoId)).map(m=>({m,u:usdDe(m,tR)})).sort((a,b)=>b.u-a.u);
-        if(gs.length){ L.push('_Gastos sin orden (los más grandes):_'); gs.slice(0,8).forEach(x=>L.push(`  • ${fdate(x.m.fecha).slice(0,5)} ${x.m.concepto||x.m.categoria}: ${usd(x.u)}`)); if(gs.length>8) L.push(`  • … y ${gs.length-8} más`); const mer=sum(Object.values(mermasPorSemana()),v=>v); if(mer>0) L.push(`  • Mermas de inventario por conteo: ${usd(r2(mer))}`); L.push('_Una compra de materiales para inventario deja de ser gasto general al enlazarla desde Inventario (Pasar a inventario o Cuadrar compra); desde ahí el costo va a cada orden según el material que retira._'); } }
     }
     return L.join('\n');
   }
@@ -1832,13 +1844,13 @@ select.combo-oculto{display:none}
       <label class="f full">Orden o trabajo<select data-combo id="cfTrab"><option value="">Todos</option>${docs.filter(d=>!costF.cliente||(d.cliente||'')===costF.cliente).sort(byOrden).map(d=>`<option value="${esc(d.id)}"${d.id===costF.trabajo?' selected':''}>${esc(nombreTrabajo(d))}</option>`).join('')}</select></label></div>
       <div class="seg" role="group" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px">${[['corto','Corto'],['detallado','Detallado']].map(([k,l])=>`<button type="button" data-cfmt="${k}" class="${costF.formato===k?'on':''}">${l}</button>`).join('')}</div>
       <div class="seg" role="group" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:8px">${[['dias','Generales según días trabajados'],['igual','Generales por igual']].map(([k,l])=>`<button type="button" data-crep="${k}" class="${costF.reparto===k?'on':''}">${l}</button>`).join('')}</div>
-      <div class="ecchips">${chip('soloConCosto','Solo con costos registrados',costF.soloConCosto)}${chip('cobrados','Incluir cobrados',costF.cobrados)}</div>
+      <div class="ecchips">${chip('soloConCosto','Solo con costos registrados',costF.soloConCosto)}${chip('cobrados','Incluir cobrados',costF.cobrados)}${chip('generales','Sumar parte de gastos generales',costF.generales)}</div>
       <div class="tip" style="border:0">Mano de obra: días asignados a cada orden en el registro de asistencia. Gastos directos: el centro de costo de cada gasto. Gastos generales: lo que no tiene orden (más los sueldos de supervisores), repartido cada semana entre las órdenes que tuvieron gente o gastos esa semana.</div>`;
   }
   function abrirCostos(){
     shareMode='cost'; costF.cliente=cliente||costF.cliente;
     $('#shareTitle').textContent='Costo por orden de trabajo';
-    $('#shareDesc').textContent='Mano de obra, gastos directos y su parte de los gastos generales, contra el monto y lo cobrado. Formato de WhatsApp.';
+    $('#shareDesc').textContent='Lo que se le ha cargado a cada orden (mano de obra, materiales y gastos directos) contra el monto y lo cobrado. Formato de WhatsApp.';
     $('#ecFiltros').hidden=false; renderCostFiltros();
     $('#shareText').value=buildCostos(); openSheet('#shareSheet');
   }
@@ -2933,7 +2945,7 @@ Responde solo con un objeto JSON:
     const soloHx=Object.entries(dayDraft||{}).filter(([id,r])=>r.tipo==='no'&&num(r.horasExtra)>0).length;
     const partes=[c?`${c} ${c===1?'persona':'personas'} día completo`:'', m?`${m} ${m===1?'persona':'personas'} medio día`:'', h?`${nf.format(h).replace(/,00$/,'')} h extra`:'', soloHx?`<span class="warn">${soloHx} ${soloHx===1?'cobra':'cobran'} solo horas extra</span>`:''].filter(Boolean);
     el.innerHTML = `${partes.length?partes.join(' · '):'Nadie registrado todavía'}<span class="dinero"> · Costo del día: <b>${usd(r2(cost))}</b></span>${dayDirty?' · <span class="warn">sin guardar</span>':''}`;
-    const sv=$('#dSave'); if(sv && !sv.dataset.busy){ const nadie=!Object.values(regsDe(dayDraft)).length && !asis[diaSel]; sv.disabled=nadie; sv.textContent=nadie?'Nadie marcado':'Guardar día'; }
+    const sv=$('#dSave'); if(sv && !sv.dataset.busy){ const nadie=!Object.values(regsDe(dayDraft)).length && !asis[diaSel], igual=!hayCambiosDia(); sv.disabled=nadie||igual; sv.textContent=nadie?'Nadie marcado':igual?(asis[diaSel]?'Guardado':'Sin cambios'):'Guardar día'; }
   }
   function cambiarDia(f){
     if(dayDirty && hayCambiosDia() && !confirmarSalida()) return;
