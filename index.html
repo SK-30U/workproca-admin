@@ -956,6 +956,7 @@ select.combo-oculto{display:none}
       </div>
       <div class="tip" id="imGastoInfo" style="margin:6px 0 0"></div>
     </div>
+    <label class="chk dinero" id="imPorPagarL" style="margin-top:8px" hidden><input type="checkbox" id="imPorPagar"> Comprado a crédito: queda por pagar al proveedor</label>
     <div class="conv num" id="imConv"></div>
     <div class="err" id="imErr"></div>
     <div class="row-btns" style="margin-top:12px">
@@ -1030,7 +1031,7 @@ select.combo-oculto{display:none}
     <div class="row-btns" style="margin-top:6px"><button type="button" class="btn sec" id="rcAdd">+ Agregar línea</button></div>
     <div class="sech dinero" style="margin-top:12px">Cómo se pagó</div>
     <div class="grid dinero">
-      <label class="f">Cuenta<select id="rcCuenta"><option value="binance">Binance (dólares)</option><option value="banco">Banco (bolívares)</option><option value="efectivo">Efectivo (dólares)</option><option value="">Todavía no se paga</option></select></label>
+      <label class="f">Cuenta<select id="rcCuenta"><option value="binance">Binance (dólares)</option><option value="banco">Banco (bolívares)</option><option value="efectivo">Efectivo (dólares)</option><option value="">A crédito: queda por pagar</option></select></label>
       <label class="f" id="rcPagadoL">Monto pagado<input id="rcPagado" inputmode="decimal" placeholder="0,00"></label>
       <label class="f full" id="rcTasaL">Tasa (Bs. por USD)<input id="rcTasa" inputmode="decimal" placeholder="0,00"></label>
     </div>
@@ -3567,6 +3568,9 @@ Responde solo con un objeto JSON:
           <div class="brk num" style="margin-top:8px">${gcfg.cuentas.map(c=>`<div><span>${esc(c.nombre)}</span><b>${c.moneda==='VES'?mBs(sal[c.id])+(tasaB?' = '+m$(r2(sal[c.id]/tasaB)):''):m$(sal[c.id])}</b></div>`).join('')}</div>
           ${bloqueTasaDia()}
           ${tasaB&&tEnt&&Math.abs(totEnt-tot)>=0.01?`<div class="tip">A la tasa a la que entraron los bolívares (${nfT.format(r2(tEnt))}) serían ${m$(r2(totEnt))}: ${totEnt>tot?'la devaluación se comió':'ganaste'} ${m$(r2(Math.abs(totEnt-tot)))}.</div>`:''}</div>`; })()}
+      ${(()=>{ const ds=comprasPorPagar(); if(!ds.length) return ''; const tot=r2(sum(ds,o=>o.usd));
+        return `<div class="hero"><div class="lbl">Compras por pagar · ${ds.length}</div><div class="big num"><small>USD</small>${nf.format(tot)}</div>
+          <div class="blist num">${ds.map(o=>`<div><span>${esc(etiquetaDeuda(o))}<br><small>${o.bs>0?mBs(o.bs)+' · ':''}${m$(o.usd)}</small></span><button type="button" class="btn sec" data-pagardeuda="${esc(o.k)}">Pagar</button></div>`).join('')}</div></div>`; })()}
       <div class="row-btns">
         <button type="button" class="btn pri" data-nuevo="gasto">+ Gasto</button>
         <button type="button" class="btn sec" data-nuevo="ingreso">+ Ingreso</button>
@@ -3773,7 +3777,16 @@ Responde solo con un objeto JSON:
     }
     $('#mvConv').innerHTML=txt;
   }
-  function openMov(tipo, id){
+  let mvDeuda=null;
+  function pagarDeuda(o){
+    openMov('gasto', null); mvDeuda={ids:o.ms.map(m=>m.id), usd:o.usd};
+    const it=itemDe(o.ms[0].itemId)||{};
+    $('#mvConcepto').value=`Pago ${o.proveedor||it.nombre||'de compra'}${o.referencia?' · factura N° '+o.referencia:''}`;
+    $('#mvRef').value=o.referencia||''; { const cat=CAT_GASTO_INV[it.categoria]||'Materiales'; if([...$('#mvCat').options].some(x=>x.value===cat)) $('#mvCat').value=cat; }
+    if(o.bs>0){ $('#mvBs').value=nf.format(o.bs); $('#mvBs').dispatchEvent(new Event('input')); } else $('#mvMonto').value=nf.format(o.usd);
+    $('#mvTitle').textContent='Pagar compra a crédito'; renderMvConv();
+  }
+  function openMov(tipo, id){ mvDeuda=null;
     const m=id?movs.find(x=>x.id===id):null; mvEditId=id||null; mvAplicando=false; mvTipo=m?m.tipo:tipo;
     fillMvSelects();
     $('#mvTitle').textContent = m ? 'Editar movimiento' : mvTipo==='gasto'?'Nuevo gasto':mvTipo==='ingreso'?'Nuevo ingreso':'Cambio entre cuentas';
@@ -3827,7 +3840,12 @@ Responde solo con un objeto JSON:
     }
     const old=mvEditId?movs.find(x=>x.id===mvEditId):null; body.creado=old&&old.creado||new Date().toISOString();
     const btnMv=$('#mvSave'); if(btnMv&&btnMv.dataset.busy) return; if(btnMv){ btnMv.dataset.busy='1'; btnMv.disabled=true; }
-    try{ await conLimite((mvEditId?gDb.collection('movimientos').doc(mvEditId):gDb.collection('movimientos').doc()).set(body)); registrarCambioMov(body, old); /* La tasa del día se aprende de operaciones de mercado (cambios e ingresos), no de gastos: la tasa de un gasto en bolívares es la de llegada de esos bolívares */ if(num(body.tasa)>0 && body.fecha<=today() && (body.tipo==='cambio' || (body.tipo==='ingreso' && cuentaDe(body.cuenta).moneda==='VES'))) aprenderTasa(body.fecha, num(body.tasa), body.tipo==='cambio'?'cambio entre cuentas':'ingreso'); closeSheets(); toast('Movimiento guardado');
+    if(mvDeuda && !mvEditId && body.tipo==='gasto'){ body.inventario=true; body.aCargo='Empresa'; }
+    try{ const refMv=mvEditId?gDb.collection('movimientos').doc(mvEditId):gDb.collection('movimientos').doc(); await conLimite(refMv.set(body)); registrarCambioMov(body, old);
+      /* Pago de una compra a crédito: el gasto queda enlazado a sus entradas y el costo de cada una pasa a ser lo que de verdad se pagó */
+      if(mvDeuda && !mvEditId && body.tipo==='gasto'){ const pagU=usdDe(body, tasaSugerida()), f0=mvDeuda.usd>0?pagU/mvDeuda.usd:1;
+        for(const id of mvDeuda.ids){ const e=invMovs.find(x=>x.id===id); if(!e) continue; const upd={movId:refMv.id, porPagar:false, actualizado:new Date().toISOString()}; if(num(e.costoUnit)>0 && Math.abs(f0-1)>0.0001) upd.costoUnit=r4(num(e.costoUnit)*f0); await iDb.collection('invMovs').doc(id).update(upd); }
+        mvDeuda=null; setTimeout(()=>{ if(gView==='mov') renderGas(); },300); } /* La tasa del día se aprende de operaciones de mercado (cambios e ingresos), no de gastos: la tasa de un gasto en bolívares es la de llegada de esos bolívares */ if(num(body.tasa)>0 && body.fecha<=today() && (body.tipo==='cambio' || (body.tipo==='ingreso' && cuentaDe(body.cuenta).moneda==='VES'))) aprenderTasa(body.fecha, num(body.tasa), body.tipo==='cambio'?'cambio entre cuentas':'ingreso'); closeSheets(); toast('Movimiento guardado');
       if(body.tipo!=='ingreso'){ const cS=body.tipo==='cambio'?body.cuentaOrigen:body.cuenta; setTimeout(()=>{ const sl=saldoCuenta(cS,today()), cc=cuentaDe(cS); if(sl<-0.004) toast(`${cc.nombre} queda en − ${cc.moneda==='VES'?bs(-sl):usd(-sl)}. ¿Falta un cobro o un cambio?`); },900); } }
     catch(e){ err(errMsg(e)); }
     finally{ if(btnMv){ delete btnMv.dataset.busy; btnMv.disabled=false; } }
@@ -4088,6 +4106,7 @@ Responde solo con un objeto JSON:
     if(t.closest('#gAI')) return abrirAI('gas');
     if(t.closest('#gPrev')){ gSemana=sumarDias(gSemana,-7); return renderGas(); }
     if(t.closest('#gDup')){ gDup=!gDup; return renderGas(); }
+    const pd=t.closest('[data-pagardeuda]'); if(pd){ const o=comprasPorPagar().find(x=>x.k===pd.dataset.pagardeuda); if(o) pagarDeuda(o); return; }
     if(t.closest('#gNext')){ gSemana=sumarDias(gSemana,7); return renderGas(); }
     const mv=t.closest('[data-mv]'); if(mv) return openMov(null, mv.dataset.mv);
     const au=t.closest('[data-auto]'); if(au){ toast(`Este movimiento viene de ${au.dataset.auto}; se cambia allá.`); return; }
@@ -4534,6 +4553,7 @@ Responde solo con un objeto JSON:
     renderIMConv();
   }
   function renderIMConv(){
+    { const mE=imEditId&&invMovs.find(x=>x.id===imEditId); $('#imPorPagarL').hidden = !(imTipo==='entrada' && !(mE&&(mE.movId||(mE.movIds||[]).length)) && !(!imEditId&&$('#imGasto').checked) && !(imPre&&imPre.movId)); }
     const it=itemDe($('#imItem').value), q=parseNum($('#imCant').value)||0; let txt='';
     if(!it){ $('#imConv').innerHTML=''; return; }
     const e=estadoItem(it.id);
@@ -4567,7 +4587,7 @@ Responde solo con un objeto JSON:
     $('#imTrab').value = m ? m.trabajoId||'' : ((pre&&pre.trabajoId) || (docs.some(d=>d.id===ultT&&abiertoCosto(d))?ultT:'')); $('#imQuien').value = m ? m.quienId||'' : (trabs.some(t=>t.id===ultQ&&t.activo!==false)?ultQ:'');
     delete $('#imTrab').dataset.manual; if(m||(pre&&pre.trabajoId)) $('#imTrab').dataset.manual='1';
     if(!m) proponerOrdenSalida(false); $('#imNota').value = m ? m.nota||'' : (pre&&pre.nota)||'';
-    $('#imGasto').checked=!m && imTipo==='entrada' && !(pre&&pre.movId); $('#imGastoCampos').hidden=!$('#imGasto').checked; $('#imGTasa').value=tasaSugerida()?nfT.format(tasaSugerida()):''; $('#imCuenta').value='binance';
+    $('#imGasto').checked=!m && imTipo==='entrada' && !(pre&&pre.movId); $('#imPorPagar').checked=!!(m&&m.porPagar); $('#imGastoCampos').hidden=!$('#imGasto').checked; $('#imGTasa').value=tasaSugerida()?nfT.format(tasaSugerida()):''; $('#imCuenta').value='binance';
     $('#imErr').textContent=''; $('#imDel').hidden=!m; $('#imDel').textContent='Eliminar'; delete $('#imDel').dataset.armed;
     $('#imCuadrar').hidden = !(m && m.tipo==='entrada' && (m.proveedor||m.referencia) && canWrite);
     pintarProveedores(); limpiarFiltros('#imSheet'); syncIMTipo(); openSheet('#imSheet');
@@ -4610,6 +4630,7 @@ Responde solo con un objeto JSON:
         await gref.set({tipo:'gasto', fecha:f, concepto:`Compra: ${it.nombre} (${cant(q,it.unidad)})`, categoria:CAT_GASTO_INV[it.categoria]||'Materiales', aCargo:'Empresa', cuenta:cta.id, monto:cta.moneda==='VES'?(body.totalBs>0?body.totalBs:r2(tot*gt)):tot, tasa:cta.moneda==='VES'?(body.totalBs>0?r4(body.totalBs/tot):gt):0, trabajoId:'', referencia:body.referencia||'', inventario:true, creado:body.creado, actualizado:body.actualizado});
         body.movId=gref.id;
       }
+      if(imTipo==='entrada') body.porPagar = !$('#imPorPagarL').hidden && $('#imPorPagar').checked && !body.movId;
       const ref=imEditId?iDb.collection('invMovs').doc(imEditId):iDb.collection('invMovs').doc();
       await conLimite(ref.set(body));
       if(body.movId && imPre && imPre.movId && !old){ try{ await gDb.collection('movimientos').doc(body.movId).update({inventario:true, actualizado:new Date().toISOString()}); }catch(_){} }
@@ -4767,6 +4788,7 @@ Responde solo con un objeto JSON:
   $('#imTrab').addEventListener('change', ()=>{ $('#imTrab').dataset.manual='1'; });
   ['#imCant','#imCostoU','#imCostoT','#imBs','#imTasa','#imGTasa'].forEach(s=>$(s).addEventListener('input', ()=>{ if(s==='#imBs'||s==='#imTasa'){ const tb=parseNum($('#imBs').value)||0, tt=parseNum($('#imTasa').value)||0; if(tb>0&&tt>0){ $('#imCostoT').value=nf.format(r2(tb/tt)); $('#imCostoU').value=''; } } renderIMConv(); }));
   ['#imGasto','#imCuenta'].forEach(s=>$(s).addEventListener('change', renderIMConv));
+  $('#imPorPagar').addEventListener('change', ()=>{ if($('#imPorPagar').checked) $('#imGasto').checked=false; renderIMConv(); });
   let imContados=0;
   $('#imSave').addEventListener('click', ()=>guardarIMov(false));
   $('#imOtro').addEventListener('click', ()=>guardarIMov(true));
@@ -4878,7 +4900,7 @@ Responde solo con un objeto JSON:
       let acum=0; const filas=ls.map(l=>({l, sub:l.q*l.p}));
       for(let i=0;i<filas.length;i++){ const {l,sub}=filas[i];
         let cu = totL>0 ? r4(sub/totL*D.pagUsd/l.q) : 0; if(i===filas.length-1 && totL>0) cu=r4((D.pagUsd-acum)/l.q); acum=r2(acum+cu*l.q);
-        const body={tipo:'entrada', fecha:f, itemId:l.itemId, cantidad:r2q(l.q), costoUnit:cu>0?cu:0, sinCosto:!(cu>0), proveedor:prov, referencia:ref, movId, nota:'', registradoPor:quienRegistra(), creado:ahora, actualizado:ahora};
+        const body={tipo:'entrada', fecha:f, itemId:l.itemId, cantidad:r2q(l.q), costoUnit:cu>0?cu:0, sinCosto:!(cu>0), proveedor:prov, referencia:ref, movId, porPagar:!movId && (cu>0||sub>0), nota:'', registradoPor:quienRegistra(), creado:ahora, actualizado:ahora};
         if(D.enBs && l.p>0) Object.assign(body,{costoUnitBs:r4(l.p), totalBs:r2(sub), tasa:D.t>0?r2(D.t):(D.pagUsd>0?r2(totL/D.pagUsd):0)});
         await iDb.collection('invMovs').doc().set(body); }
       closeSheets(); toast(`Compra registrada: ${ls.length} ${ls.length===1?'línea':'líneas'} · ${usd(D.pagUsd)}${movId?'':' · sin gasto (todavía no se paga)'}`);
@@ -4891,6 +4913,11 @@ Responde solo con un objeto JSON:
      de la misma compra en proporción a su precio de lista; cada entrada guarda costo en USD y en Bs con la tasa implícita, y queda
      enlazada al gasto, que se marca como compra para inventario (no es gasto general). */
   const claveCompra = m => `${norm(m.proveedor||'')}|${String(m.referencia||'').trim().toLowerCase()}`;
+  /* Compras a crédito: entradas marcadas por pagar que todavía no tienen gasto enlazado, agrupadas por proveedor y factura */
+  function comprasPorPagar(){ const det=detallesInv(), g={};
+    invMovs.filter(m=>m.tipo==='entrada' && m.porPagar && !m.movId && !(m.movIds||[]).length).forEach(m=>{ const k=(m.proveedor||m.referencia)?claveCompra(m):'id|'+m.id; const o=g[k]||(g[k]={k, proveedor:m.proveedor||'', referencia:m.referencia||'', fecha:m.fecha||'', ms:[], usd:0, bs:0}); o.ms.push(m); o.usd+=(det[m.id]||{}).costo||0; o.bs+=num(m.totalBs)||0; if(String(m.fecha||'')<o.fecha) o.fecha=m.fecha; });
+    return Object.values(g).map(o=>({...o, usd:r2(o.usd), bs:r2(o.bs)})).sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha))); }
+  const etiquetaDeuda = o => `${o.proveedor||(itemDe(o.ms[0].itemId)||{}).nombre||'Compra'}${o.referencia?' · N° '+o.referencia:''} · ${fdate(o.fecha).slice(0,5)}`;
   function gruposCompra(){
     const g={};
     invMovs.filter(m=>m.tipo==='entrada' && (m.proveedor||m.referencia)).forEach(m=>{ const k=claveCompra(m); const o=g[k]||(g[k]={k, proveedor:m.proveedor||'', referencia:m.referencia||'', fecha:m.fecha||'', ms:[]}); o.ms.push(m); if(String(m.fecha||'')>o.fecha) o.fecha=m.fecha; });
@@ -5188,7 +5215,7 @@ Responde solo con un objeto JSON:
     const costoTot=r2(sum(cs,x=>x.c.costo)), cobTot=r2(sum(docs,pagado)), montoTot=r2(sum(docs.filter(d=>!d.cancelado),d=>num(d.monto))), nTot=docs.filter(d=>!d.cancelado).length, montoConCosto=r2(sum(cs,x=>x.c.ingreso)), sinCostos=docs.filter(d=>!d.cancelado&&!cs.some(x=>x.d.id===d.id)).length, nCancel=docs.filter(d=>d.cancelado).length;
     /* Lo gastado por encima de lo cobrado: aparte lo de órdenes cerradas (pérdida) y lo de órdenes abiertas (se recupera al cobrar) */
     const porRecuperar=r2(sum(cs.filter(x=>!x.c.cerrada),x=>x.c.porRecuperar)), perdidaCerradas=r2(sum(cs.filter(x=>x.c.cerrada),x=>x.c.porRecuperar)), invValor=valorInventario(), invBajos=itemsActivos().filter(bajoMinimo).length;
-    return {tasa, tasaBs, tasaEnt, dispEnt, hoy, sal, disponible, invValor, invBajos, lf, po, so, ps, facturable, sinOrdenEj, pend, porEjecSin, nomPend, adelPend, per, ing, gEmp, gInv, finz, gPapa, gFran, costoTot, cobTot, montoTot, nTot, nCancel, cs, montoConCosto, sinCostos, porRecuperar, perdidaCerradas, csAb, csCer, costoAb, costoCer, ingCer, margenCer, posicion:r2(disponible+invValor+pend-nomPend), sinRepartir:rep.sinRepartir};
+    return {tasa, tasaBs, tasaEnt, dispEnt, hoy, sal, disponible, invValor, invBajos, lf, po, so, ps, facturable, sinOrdenEj, pend, porEjecSin, nomPend, adelPend, per, ing, gEmp, gInv, finz, gPapa, gFran, costoTot, cobTot, montoTot, nTot, nCancel, cs, montoConCosto, sinCostos, porRecuperar, perdidaCerradas, csAb, csCer, costoAb, costoCer, ingCer, margenCer, porPagar:r2(sum(comprasPorPagar(),o=>o.usd)), posicion:r2(disponible+invValor+pend-nomPend-sum(comprasPorPagar(),o=>o.usd)), sinRepartir:rep.sinRepartir};
   }
   const usdNeg = v => v<0 ? '− '+usd(-v) : usd(v), bsNeg = v => v<0 ? '− '+bs(-v) : bs(v);
   function renderRes(){
@@ -5205,6 +5232,7 @@ Responde solo con un objeto JSON:
       ${sinSaldos?`<div class="lock" style="margin-top:14px">Las cuentas arrancan en cero el ${fdate(inicioCaja())} porque no tienen saldo inicial: la caja solo muestra los movimientos desde esa fecha. Pon el saldo real en <button type="button" class="lnk" id="rIrAj">Gastos → Ajustes</button>.</div>`:''}
       ${card('Caja hoy', R.disponible, `Bolívares a la tasa del día, ${nfT.format(R.tasaBs||0)} Bs/$${R.tasaEnt&&Math.abs(R.dispEnt-R.disponible)>=0.01?` · a la tasa a la que entraron (${nfT.format(r2(R.tasaEnt))}) serían ${usd(R.dispEnt)}`:''}`,
         gcfg.cuentas.map(c=>fila(c.nombre, 0, {raw: c.moneda==='VES' ? `${bsNeg(R.sal[c.id]||0)}${R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''}` : usdNeg(R.sal[c.id]||0), neg:(R.sal[c.id]||0)<0})).join('')
+        + (R.porPagar>0?fila('Compras por pagar', R.porPagar, {neg:true, raw:'− '+usd(R.porPagar)}):'')
         + fila('Nómina por pagar hoy', R.nomPend, {neg:R.nomPend>0, raw:R.nomPend>0?'− '+usd(R.nomPend):usd(0), extra:R.nomPend>0?'Lo trabajado desde el último corte, más supervisores':'Nada pendiente desde el último corte'})
         + (R.adelPend>0?fila('Adelantos por descontar', R.adelPend, {extra:'Ya salieron de la caja; se descuentan en el próximo corte'}):'')
         + (()=>{ const neg=gcfg.cuentas.filter(c=>(R.sal[c.id]||0)<-0.004); return neg.length?`<div class="cap" style="color:var(--danger)">${esc(neg.map(c=>c.nombre).join(' y '))} en negativo: falta registrar un ingreso o un cambio entre cuentas</div>`:''; })())}
@@ -5217,7 +5245,7 @@ Responde solo con un objeto JSON:
         fila('Facturable ahora (con orden)', R.facturable, {c:'var(--c-lf)', n:R.lf.length+R.po.length})
         + fila('Ejecutado sin orden', R.sinOrdenEj, {c:'var(--c-so)', n:R.so.length})
         + `<div class="cap">No entra en el pendiente</div>` + fila('Sin orden, por ejecutar', R.porEjecSin, {c:'var(--c-ps)', n:R.ps.length}))}
-      <div class="hero"><div class="lbl">Posición</div><div class="big num">${usdHtml(R.posicion)}</div><div class="sub">Caja + inventario + pendiente por cobrar − nómina por pagar. Lo que quedaría si cobras todo lo pendiente y pagas la nómina de hoy.</div>
+      <div class="hero"><div class="lbl">Posición</div><div class="big num">${usdHtml(R.posicion)}</div><div class="sub">Caja + inventario + pendiente por cobrar − nómina y compras por pagar. Lo que quedaría si cobras todo lo pendiente y pagas la nómina de hoy.</div>
         <div class="rows num">${fila('Caja hoy', R.disponible)}${fila('Inventario valorado', R.invValor, {extra:R.invBajos?`${R.invBajos} ${R.invBajos===1?'ítem':'ítems'} bajo mínimo`:'Materiales y consumibles al costo de los lotes que quedan'})}${fila('Pendiente por cobrar', R.pend)}${fila('Nómina por pagar', R.nomPend, {neg:R.nomPend>0, raw:R.nomPend>0?'− '+usd(R.nomPend):usd(0)})}</div></div>
       <div class="hero"><div class="lbl">Movimiento del período</div>
         <div class="seg" role="group" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:8px">${[['semana',semanaPorDefecto()===inicioSemana(today())?'Esta semana':'Semana que cerró'],['mes','Este mes']].map(([k,l])=>`<button type="button" data-rper="${k}" class="${resF.periodo===k?'on':''}">${l}</button>`).join('')}</div>
@@ -5248,11 +5276,12 @@ Responde solo con un objeto JSON:
     L.push(`*Caja hoy: ${usd(R.disponible)}*`);
     gcfg.cuentas.forEach(c=>L.push(`• ${c.nombre}: ${c.moneda==='VES'?bsNeg(R.sal[c.id]||0)+(R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''):usdNeg(R.sal[c.id]||0)}`));
     if(R.nomPend>0) L.push(`• Nómina por pagar hoy: − ${usd(R.nomPend)}`);
+    if(R.porPagar>0) L.push(`• Compras por pagar: − ${usd(R.porPagar)}`);
     if(R.adelPend>0) L.push(`• Adelantos entregados por descontar en el próximo corte: ${usd(R.adelPend)}`);
     const sIA=saldoIA(); if(sIA&&sIA.tieneCredito) L.push(`• Crédito de Claude IA para los asistentes: ${usd(sIA.saldo)} (estimado)`);
     L.push(''); L.push(`*Pendiente por cobrar: ${usd(R.pend)}*`);
     L.push(`• Facturable ahora (con orden): ${usd(R.facturable)}`); L.push(`• Ejecutado sin orden de servicio: ${usd(R.sinOrdenEj)}`); L.push(`• Sin orden, por ejecutar (no incluido): ${usd(R.porEjecSin)}`);
-    L.push(''); L.push(`*Posición: ${usd(R.posicion)}* (caja + inventario + pendiente por cobrar − nómina por pagar)`);
+    L.push(''); L.push(`*Posición: ${usd(R.posicion)}* `);
     if(R.invValor>0) L.push(`• Inventario valorado: ${usd(R.invValor)}${R.invBajos?` · ${R.invBajos} ${R.invBajos===1?'ítem':'ítems'} bajo mínimo`:''}`);
     L.push(''); L.push(`*${resF.periodo==='mes'?'Este mes':R.per[0]===inicioSemana(R.hoy)?'Esta semana':'Semana que cerró'} (${fdate(R.per[0])} al ${fdate(R.per[1])})*`);
     L.push(`• Ingresos cobrados: ${usd(R.ing)}`); if(R.finz>0) L.push(`• Financiamiento recibido (no es ingreso): ${usd(R.finz)}`); L.push(`• Gastos de la empresa: − ${usd(r2(R.gEmp-R.gInv))}`); if(R.gInv>0) L.push(`• Compras para inventario: − ${usd(R.gInv)}`); L.push(`• *Resultado de la empresa: ${usd(r2(R.ing-R.gEmp))}*`);
