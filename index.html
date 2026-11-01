@@ -862,6 +862,9 @@ select.combo-oculto{display:none}
       <label class="f" id="mvOrigMontoL"><span id="mvOrigMontoLbl">Monto que sale</span><input id="mvOrigMonto" inputmode="decimal" placeholder="0,00"></label>
       <label class="f" id="mvDestL">Entra a<select id="mvDest"></select></label>
       <label class="f" id="mvDestMontoL"><span id="mvDestMontoLbl">Monto que entra</span><input id="mvDestMonto" inputmode="decimal" placeholder="0,00"></label>
+      <div class="f full" id="mvViaL" hidden><span>¿Cómo entró?</span><div class="seg" id="mvVia" role="group" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button type="button" data-via="directo" class="on">Directo en USDT</button><button type="button" data-via="bs">Comprado con bolívares</button></div></div>
+      <label class="f" id="mvViaBsL" hidden>Bolívares que entraron<input id="mvViaBs" inputmode="decimal" placeholder="0,00"></label>
+      <label class="f" id="mvViaTasaL" hidden>Tasa de compra (Bs. por USDT)<input id="mvViaTasa" inputmode="decimal" placeholder="0,00"></label>
       <label class="f full" id="mvBsL" hidden>Si lo pagaste en bolívares: monto en Bs.<input id="mvBs" inputmode="decimal" placeholder="0,00"></label>
       <label class="f full" id="mvTasaL">Tasa (Bs. por USD)<input id="mvTasa" inputmode="decimal" placeholder="0,00"></label>
       <label class="f full" id="mvTrabL">Centro de costo: orden o trabajo (opcional)<select data-combo id="mvTrab"></select></label>
@@ -3829,7 +3832,10 @@ Responde solo con un objeto JSON:
     $('#mvDestMontoLbl').textContent=`Monto que entra (${d.moneda==='VES'?'Bs.':'USD'})`;
     const cam=mvTipo==='cambio';
     const usdG = mvTipo==='gasto' && c.moneda!=='VES'; $('#mvBsL').hidden=!usdG;
-    $('#mvTasaL').hidden = cam ? o.moneda===d.moneda : usdG || (esCobroFact() && $('#mvModo').value!=='banco');
+    const usdI = mvTipo==='ingreso' && c.moneda!=='VES' && !esCobroFact() && !mvEditId && !esRegistro(), viaBs = usdI && mvVia==='bs';
+    $('#mvViaL').hidden=!usdI; $('#mvViaBsL').hidden=!viaBs; $('#mvViaTasaL').hidden=!viaBs; document.querySelectorAll('#mvVia [data-via]').forEach(b=>b.classList.toggle('on', b.dataset.via===mvVia));
+    if(viaBs) $('#mvMontoLbl').textContent='USDT recibidos';
+    $('#mvTasaL').hidden = cam ? o.moneda===d.moneda : usdG || usdI || (esCobroFact() && $('#mvModo').value!=='banco');
     $('#mvTasaL').firstChild.textContent = cam ? 'Tasa del cambio (Bs. por USD)' : esCobroFact() ? 'Tasa a la que se cobró (Bs. por USD)' : (c.moneda==='VES' ? 'Tasa (Bs. por USD), para llevarlo a dólares' : 'Tasa (Bs. por USD), opcional');
     renderMvConv();
   }
@@ -3849,6 +3855,7 @@ Responde solo con un objeto JSON:
       }
       const bsG=parseNum($('#mvBs').value)||0, tuG=tasaBsBinance($('#mvFecha').value||today());
       if(txt){}
+      else if(mvTipo==='ingreso' && mvVia==='bs' && !$('#mvViaL').hidden){ const vb=parseNum($('#mvViaBs').value)||0, mU=parseNum($('#mvMonto').value)||0; if(vb>0 && mU>0) txt=`Bs. ${nf.format(r2(vb))} → <b>${nf.format(r2(mU))} USDT</b> (tasa ${nfT.format(r2(vb/mU))}). Queda el ingreso en el banco y la compra de USDT.`; }
       else if(mvTipo==='gasto' && c.moneda!=='VES'){ const mU=parseNum($('#mvMonto').value)||0; if(bsG>0 && mU>0) txt=`${mBs(bsG)} = <b>${m$(r2(mU))}</b> (tasa ${nfT.format(r2(bsG/mU))})`; else if(bsG>0 && tuG) txt=`= <b>${m$(r2(bsG/tuG.tasa))}</b> (tasa ${nfT.format(tuG.tasa)})`; }
       else if(esCobroFact()){ const md=$('#mvModo').value; if(md!=='banco'){ if(m>0) txt=`Entran <b>${m$(r2(m))}</b> a ${esc(cuentaDe(md).nombre)} y el trabajo se actualiza en Cobranzas.`; } else if(m>0 && t>0) txt=`Monto de la factura: <b>${mBs(r2(m*t))}</b> = ${m$(r2(m))} a la tasa del cliente. Entra al banco y el trabajo se actualiza en Cobranzas.`; }
       else if(m>0 && t>0) txt = c.moneda==='VES' ? `Equivale a <b>${m$(r2(m/t))}</b>.` : `Equivale a <b>${mBs(r2(m*t))}</b>.`;
@@ -3865,7 +3872,10 @@ Responde solo con un objeto JSON:
     if(o.trabajoId && [...$('#mvTrab').options].some(x=>x.value===o.trabajoId)){ $('#mvACargo').value='Empresa'; $('#mvTrab').value=o.trabajoId; comboSync($('#mvTrab')); }
     $('#mvTitle').textContent='Pagar compra a crédito'; renderMvConv();
   }
-  function openMov(tipo, id){ mvDeuda=null;
+  let mvVia='directo';
+  $('#mvVia').addEventListener('click', e=>{ const b=e.target.closest('[data-via]'); if(!b) return; mvVia=b.dataset.via; syncMvMoneda(); });
+  ['#mvViaBs','#mvViaTasa'].forEach(x=>$(x).addEventListener('input', ()=>{ const vb=parseNum($('#mvViaBs').value)||0, vt=parseNum($('#mvViaTasa').value)||0; if(vb>0&&vt>0) $('#mvMonto').value=nf.format(r2(vb/vt)); renderMvConv(); }));
+  function openMov(tipo, id){ mvDeuda=null; mvVia='directo'; $('#mvViaBs').value=''; $('#mvViaTasa').value='';
     const m=id?movs.find(x=>x.id===id):null; mvEditId=id||null; mvAplicando=false; mvTipo=m?m.tipo:tipo;
     fillMvSelects();
     $('#mvTitle').textContent = m ? 'Editar movimiento' : mvTipo==='gasto'?'Nuevo gasto':mvTipo==='ingreso'?'Nuevo ingreso':'Cambio entre cuentas';
@@ -3913,6 +3923,15 @@ Responde solo con un objeto JSON:
       if(!concepto) return err('Escribe el concepto.');
       if(cuentaDe(cta).moneda==='VES' && t>0 && !confirmarTasa(t, f, err)) return;
       if(!$('#mvCat').value) return err('Elige la categoría del gasto.');
+      /* Ingreso que llegó en bolívares y con ellos se compraron los USDT: el ingreso queda en el banco y la compra de USDT a su tasa */
+      if(mvTipo==='ingreso' && !mvEditId && mvVia==='bs' && cuentaDe(cta).moneda!=='VES' && !esRegistro()){ const vb=parseNum($('#mvViaBs').value)||0, vt=parseNum($('#mvViaTasa').value)||0, usdt=m>0?r2(m):(vt>0?r2(vb/vt):0);
+        if(!(vb>0)) return err('Escribe los bolívares que entraron.'); if(!(usdt>0)) return err('Escribe la tasa de compra o los USDT recibidos.');
+        const bco=(gcfg.cuentas.find(c=>c.moneda==='VES')||{}).id||'banco', tR=Math.round(vb/usdt*10000)/10000, ah=new Date().toISOString(), ref=$('#mvRef').value.trim();
+        try{ await conLimite(gDb.collection('movimientos').doc().set({tipo:'ingreso', fecha:f, concepto, categoria:$('#mvCat').value, aCargo:'Empresa', cuenta:bco, monto:r2(vb), tasa:tR, referencia:ref, creado:ah, actualizado:ah}));
+          await conLimite(gDb.collection('movimientos').doc().set({tipo:'cambio', fecha:f, cuentaOrigen:bco, montoOrigen:r2(vb), cuentaDestino:cta, montoDestino:usdt, tasa:tR, concepto:`Compra de USDT · ${concepto}`, referencia:ref, creado:new Date(Date.now()+1).toISOString(), actualizado:ah}));
+          if(f<=today()) aprenderTasa(f, tR, 'cambio entre cuentas'); closeSheets(); toast(`Ingreso registrado: Bs. ${nf.format(r2(vb))} → ${nf.format(usdt)} USDT a ${nfT.format(r2(tR))}`); }
+        catch(e){ err(errMsg(e)); }
+        return; }
       const bsReg=esRegistro() && cuentaDe(cta).moneda!=='VES' ? (parseNum($('#mvBs').value)||0) : 0;
       if(!(m>0) && !(bsReg>0)) return err(esRegistro()&&cuentaDe(cta).moneda!=='VES'?'Escribe el monto en dólares o en bolívares.':'Escribe el monto.');
       if(cuentaDe(cta).moneda==='VES' && !(t>0) && !esRegistro()) return err('Escribe la tasa para llevar los bolívares a dólares.');
@@ -4000,11 +4019,10 @@ Responde solo con un objeto JSON:
     const enCaja=m=>{ const c=m.tipo==='cambio'?(m.cuentaOrigen||m.cuentaDestino):m.cuenta; return !m.fecha || m.fecha>=saldoIni(c).fecha; };
     /* Una compra con factura en bolívares pagada con USDT: sus bolívares son los de la factura */
     const bsFactura=id=>{ const es=invMovs.filter(e=>e.tipo==='entrada'&&(e.movId===id||(e.movIds||[]).includes(id))); if(!es.length||es.some(e=>(e.movIds||[]).length>1||!(num(e.totalBs)>0||num(e.costoUnitBs)>0))) return 0; return r2(sum(es,e=>num(e.totalBs)||num(e.costoUnitBs)*num(e.cantidad))); };
-    /* Cada movimiento con los dólares que de verdad valió (la tasa del cobro, del corte o de llegada de los bolívares) y los bolívares que de verdad se movieron;
-       lo que fue solo en dólares se muestra en bolívares a la tasa del reporte */
-    const val=m=>{ const c=cuentaDe(m.cuenta), u=usdDe(m,t); if(c.moneda==='VES') return {bs:num(m.monto), usd:u};
-      const mb=String(m.concepto||'').match(/\(Bs\.?\s*([\d.,]+)\s+a\s+[\d.,]+\)/i), bsC=mb?parseNum(mb[1]):0, bF=m.inventario?bsFactura(m.id):0;
-      return {bs:num(m.montoBs)>0?num(m.montoBs):bsC>0?bsC:bF>0?bF:u*t, usd:u}; };
+    /* Cada movimiento en bolívares se lleva a dólares a la tasa que escribes en el reporte; lo que fue solo en dólares vale lo que salió */
+    const val=m=>{ const c=cuentaDe(m.cuenta); if(c.moneda==='VES'){ const b=num(m.monto); return {bs:b, usd:t>0?b/t:usdDe(m,t)}; }
+      const u=num(m.monto), mb=String(m.concepto||'').match(/\(Bs\.?\s*([\d.,]+)\s+a\s+[\d.,]+\)/i), bsC=mb?parseNum(mb[1]):0, bF=m.inventario?bsFactura(m.id):0, b=num(m.montoBs)>0?num(m.montoBs):bsC>0?bsC:bF>0?bF:0;
+      return b>0 && t>0 ? {bs:b, usd:b/t} : {bs:u*t, usd:u}; };   /* pagado en bolívares: a la tasa del reporte; pagado en dólares: lo que salió */
     const ms=todosMovs().filter(m=>m.fecha>=desde && m.fecha<=hasta && enCaja(m));
     const ac={empresa:'Empresa', papa:'Papá', fran:'Fran'};
     const gas=ms.filter(m=>m.tipo==='gasto' && (todo || P.some(k=>ac[k]===(m.aCargo||'Empresa'))));
@@ -4014,7 +4032,7 @@ Responde solo con un objeto JSON:
     const grupos=[]; gas.forEach(m=>{ const n=nombreG(m), k=normTxt(n); let g=grupos.find(x=>x.k===k); if(!g){ g={k, n, ms:[]}; grupos.push(g); } g.ms.push(m); });
     const L=['*RESUMEN ACTUALIZADO*', `_Del ${fdate(desde)} al ${fdate(hasta)}${mon!=='usd'||t>0?` · Tasa: ${fT(t)} Bs por dólar`:''}_`];
     const hastaSaldo=hasta>today()?today():hasta, antes=sumarDias(desde,-1);
-    const tIni=(tasaDelDia(antes)||{}).tasa||tasaSaldoBanco(antes)||t;
+    const tIni=tasa>0?t:((tasaDelDia(antes)||{}).tasa||tasaSaldoBanco(antes)||t);   /* con tu tasa escrita, todo el reporte va a esa tasa */
     /* Lo que hay en las cuentas: en dólares (los bolívares a la tasa) y en bolívares (los dólares a la tasa del reporte) */
     const enCuentas=(f,tt)=>gcfg.cuentas.reduce((o,c)=>{ const v=saldoCuenta(c.id,f); if(c.moneda==='VES'){ o.bs+=v; o.usd+=tt>0?v/tt:0; } else { o.usd+=v; o.bs+=v*t; } return o; },{bs:0,usd:0});
     const ant=todo?enCuentas(antes,tIni):{bs:0,usd:0};
