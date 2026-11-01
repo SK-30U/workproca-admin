@@ -3877,7 +3877,7 @@ Responde solo con un objeto JSON:
     cats.forEach(cat=>{
       const it=lista.filter(m=>(m.categoria||'Otros')===cat);
       if(corto){ L.push(`• ${cat}: ${m$(sum(it,B.u))}`); return; }
-      if(cats.length>1) L.push(`_${cat}_`);
+      if(cats.length>1) L.push(`${cat}: ${m$(r2(sum(it,B.u)))}`);   /* cada categoría con su subtotal, para que no quede una línea suelta */
       it.forEach(m=>L.push(lineaMov(m,B,tasa)));
     });
     L.push(`*Total ${titulo.charAt(0).toLowerCase()+titulo.slice(1)}: ${m$(tot)}*`);
@@ -3891,7 +3891,7 @@ Responde solo con un objeto JSON:
   function buildBalance(){
     const [desde,hasta]=periodoBal(), tasa=parseNum(balF.tasa)||0, corto=balF.formato==='corto';
     const B=calcBalance(desde,hasta,tasa), L=[];
-    const per=`Del ${fdate(desde)} al ${fdate(hasta)}${tasa>0?(balF.tasaModo==='unica'?` · Todo a tasa ${nfT.format(tasa)} Bs/$`:` · Bolívares a la tasa de cada movimiento; saldos a la tasa del día de cada fecha`):''}`;
+    const per=`Del ${fdate(desde)} al ${fdate(hasta)}${tasa>0?(balF.tasaModo==='unica'?` · Todo a tasa ${nfT.format(tasa)} Bs. por USD`:` · Bolívares a la tasa de cada movimiento; saldos a la tasa del día de cada fecha`):''}`;
     const totIng=sum(B.ing,B.u);
     if(!balF.partes.includes('general')){
       const P=balF.partes, emp=P.includes('empresa');
@@ -3900,12 +3900,12 @@ Responde solo con un objeto JSON:
       L.push(`*${emp?'BALANCE DE LA EMPRESA':''}${emp&&pers.length?(pers.length>1?', ':' Y '):''}${gtxt}*`); L.push(`_${per}_`);
       let tg=0;
       if(emp){
-        L.push(''); L.push('💰 *Ingresos*');
+        L.push(''); L.push('*Ingresos*');
         if(corto){ [...new Set(B.ing.map(m=>m.categoria||'Otros ingresos'))].forEach(cat=>L.push(`• ${cat}: ${m$(sum(B.ing.filter(m=>(m.categoria||'Otros ingresos')===cat),B.u))}`)); }
         else B.ing.forEach(m=>L.push(lineaMov(m,B,tasa)));
         if(!B.ing.length) L.push('• Sin ingresos');
         L.push(`*Total ingresos: ${m$(totIng)}*`);
-        if(B.finz.length){ L.push(''); L.push('🏦 *Financiamiento (no es ingreso de la operación)*'); B.finz.forEach(m=>L.push(lineaMov(m,B,tasa))); L.push(`*Total financiamiento: ${m$(sum(B.finz,B.u))}*`); }
+        if(B.finz.length){ L.push(''); L.push('*Financiamiento (no es ingreso de la operación)*'); B.finz.forEach(m=>L.push(lineaMov(m,B,tasa))); L.push(`*Total financiamiento: ${m$(sum(B.finz,B.u))}*`); }
         tg=bloqueGastos(L,'Gastos de la empresa',B.gOper,B,tasa,corto);
         if(!B.gOper.length){ L.push(''); L.push('*Gastos de la empresa*'); L.push('• Sin gastos'); }
         if(B.gInv.length){ const ti=bloqueGastos(L,'Compras de materiales para inventario',B.gInv,B,tasa,corto); tg=r2(tg+ti);  }
@@ -3915,12 +3915,11 @@ Responde solo con un objeto JSON:
       L.push('');
       if(emp){
         const res=r2(totIng-tg);
-        L.push(`📊 *RESULTADO DE LA EMPRESA: ${m$(res)}*`);
-        if(B.gInv.length) L.push(`_Sin contar las compras para inventario: ${m$(r2(res+sum(B.gInv,B.u)))}_`);
-        if(B.finz.length) L.push(`_Más financiamiento recibido: ${m$(sum(B.finz,B.u))}_`);
-        if(pers.length){ tp.forEach(([n,t])=>L.push(`Menos gastos de ${n}: − ${m$(t)}`)); L.push(`✅ *RESULTADO FINAL: ${m$(r2(res-totPers))}*`); }
+        L.push(`*RESULTADO DE LA EMPRESA: ${m$(res)}*`);
+        if(B.finz.length) L.push(`Financiamiento recibido: ${m$(sum(B.finz,B.u))}`);
+        if(pers.length){ tp.forEach(([n,t])=>L.push(`Menos gastos de ${n}: − ${m$(t)}`)); L.push(`*RESULTADO FINAL: ${m$(r2(res-totPers))}*`); }
       } else if(pers.length>1){
-        tp.forEach(([n,t])=>L.push(`Gastos de ${n}: ${m$(t)}`)); L.push(`📊 *TOTAL GASTOS: ${m$(totPers)}*`);
+        tp.forEach(([n,t])=>L.push(`Gastos de ${n}: ${m$(t)}`)); L.push(`*TOTAL GASTOS: ${m$(totPers)}*`);
       } else if(!pers[0][3].length){ L.pop(); }
       return L.join('\n');
     }
@@ -3940,19 +3939,19 @@ Responde solo con un objeto JSON:
       const ent=ms.filter(m=>delta(m,c.id)>0), sal=ms.filter(m=>delta(m,c.id)<0), tE=sum(ent,m=>delta(m,c.id)), tS=-sum(sal,m=>delta(m,c.id)), finC=r2(ini+tE-tS);
       iniciales[c.id]=ini; finales[c.id]=finC;
       if(!ms.length && Math.abs(ini)<0.005 && Math.abs(finC)<0.005) return;
-      L.push(''); L.push(`${mon==='VES'?'🏦':'💵'} *${c.nombre}* (${mon==='VES'?'bolívares':'dólares'})`);
+      L.push(''); L.push(`*${c.nombre}* (${mon==='VES'?'bolívares':'dólares'})`);
       L.push(`Saldo al ${fdate(antes)}: ${enMoneda(ini,mon)}`);
       if(ent.length){ L.push(`➕ Entró: ${enMoneda(r2(tE),mon)}`); if(!corto) ent.forEach(m=>L.push(`  • ${fdate(m.fecha).slice(0,5)} ${conceptoEn(m,c.id)}: ${enMoneda(delta(m,c.id),mon)}`)); }
       if(sal.length){ L.push(`➖ Salió: ${enMoneda(r2(tS),mon)}`); if(!corto) sal.forEach(m=>L.push(`  • ${fdate(m.fecha).slice(0,5)} ${conceptoEn(m,c.id)}: ${enMoneda(-delta(m,c.id),mon)}`)); }
       L.push(`*Saldo al ${fdate(hastaSaldo)}: ${enMoneda(finC,mon)}*${mon==='VES'&&tFin>0&&Math.abs(finC)>0.004?` = ${m$(r2(finC/tFin))} a ${nfT.format(tFin)}`:''}`);
     });
     const usdFin=r2(totalUsdCuentas(finales,tFin)), usdIni=r2(totalUsdCuentas(iniciales,tIni));
-    L.push(''); L.push(`✅ *DISPONIBLE AL ${fdate(hastaSaldo)}: ${m$(usdFin)}*`);
+    L.push(''); L.push(`*DISPONIBLE AL ${fdate(hastaSaldo)}: ${m$(usdFin)}*`);
     if(hastaSaldo<today()){ const salH={}; gcfg.cuentas.forEach(c=>salH[c.id]=saldoCuenta(c.id,today())); L.push(`_Disponible al ${fdate(today())}: ${m$(r2(totalUsdCuentas(salH,tasaSugerida())))}_`); }
     L.push(gcfg.cuentas.filter(c=>Math.abs(finales[c.id]||0)>0.004).map(c=>`${c.nombre} ${c.moneda==='VES'?`${mBs(finales[c.id])}${tFin>0?' ('+m$(r2(finales[c.id]/tFin))+')':''}`:m$(finales[c.id])}`).join(' + ')||'Todas las cuentas en cero');
     /* 2. Resultado del período en dólares: lo que se cobró contra lo que se gastó (los cambios entre cuentas no son ni ingreso ni gasto) */
     const totIngG=sum(B.ing,B.u), totFin=sum(B.finz,B.u), tOper=sum(B.gOper,B.u), tInv=sum(B.gInv,B.u), tPapa=sum(B.gPapa,B.u), tFran=sum(B.gFran,B.u), res=r2(totIngG-tOper-tInv);
-    L.push(''); L.push('📊 *RESULTADO DEL PERÍODO (en dólares)*');
+    L.push(''); L.push('*RESULTADO DEL PERÍODO (en dólares)*');
     L.push(`Cobrado: ${m$(r2(totIngG))}`); if(!corto) B.ing.forEach(m=>L.push(`  • ${fdate(m.fecha).slice(0,5)} ${m.concepto||m.categoria}${cuentaDe(m.cuenta).moneda==='VES'&&num(m.tasa)&&!unica?` (${mBs(num(m.monto))} a ${nfT.format(num(m.tasa))})`:''}: ${m$(B.u(m))}`));
     if(B.finz.length) L.push(`Aportes y préstamos (no son ingreso): ${m$(r2(totFin))}`);
     const cats=[...new Set(B.gOper.map(m=>m.categoria||'Otros'))].map(cat=>[cat, sum(B.gOper.filter(m=>(m.categoria||'Otros')===cat),B.u)]).sort((a,b)=>b[1]-a[1]);
@@ -3962,7 +3961,7 @@ Responde solo con un objeto JSON:
     if(B.gPapa.length||B.gFran.length){ L.push(''); if(B.gPapa.length) L.push(`Gastos de papá: ${m$(r2(tPapa))}`); if(B.gFran.length) L.push(`Gastos de Fran: ${m$(r2(tFran))}`); }
     /* 3. Por qué el disponible no sale exacto de sumar y restar: bolívares que al cambiarlos valieron otra cosa */
     const esperado=r2(usdIni+totIngG+totFin-tOper-tInv-tPapa-tFran), difT=r2(usdFin-esperado);
-    if(Math.abs(difT)>=0.01 && !unica){ L.push(''); L.push(`🔄 Diferencia cambiaria: ${difT<0?'− ':''}${m$(Math.abs(difT))}`); }
+    if(Math.abs(difT)>=0.01 && !unica){ L.push(''); L.push(`Diferencia cambiaria: ${difT<0?'− ':''}${m$(Math.abs(difT))}`); }
     return L.join('\n');
   }
   function renderBal(el){
@@ -5210,19 +5209,19 @@ Responde solo con un objeto JSON:
   }
   function textoResumen(){
     const R=datosResumen(), L=['*WORKPROCA, Trabajos Profesionales C.A.*', `*Resumen general · ${fdate(R.hoy)}*`, ''];
-    L.push(`💼 *Caja hoy: ${usd(R.disponible)}*`);
+    L.push(`*Caja hoy: ${usd(R.disponible)}*`);
     gcfg.cuentas.forEach(c=>L.push(`• ${c.nombre}: ${c.moneda==='VES'?bsNeg(R.sal[c.id]||0)+(R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''):usdNeg(R.sal[c.id]||0)}`));
     if(R.nomPend>0) L.push(`• Nómina por pagar hoy: − ${usd(R.nomPend)}`);
     if(R.adelPend>0) L.push(`• Adelantos entregados por descontar en el próximo corte: ${usd(R.adelPend)}`);
     const sIA=saldoIA(); if(sIA&&sIA.tieneCredito) L.push(`• Crédito de Claude IA para los asistentes: ${usd(sIA.saldo)} (estimado)`);
-    L.push(''); L.push(`📄 *Pendiente por cobrar: ${usd(R.pend)}*`);
+    L.push(''); L.push(`*Pendiente por cobrar: ${usd(R.pend)}*`);
     L.push(`• Facturable ahora (con orden): ${usd(R.facturable)}`); L.push(`• Ejecutado sin orden de servicio: ${usd(R.sinOrdenEj)}`); L.push(`• Sin orden, por ejecutar (no incluido): ${usd(R.porEjecSin)}`);
-    L.push(''); L.push(`🧭 *Posición: ${usd(R.posicion)}* (caja + inventario + pendiente por cobrar − nómina por pagar)`);
+    L.push(''); L.push(`*Posición: ${usd(R.posicion)}* (caja + inventario + pendiente por cobrar − nómina por pagar)`);
     if(R.invValor>0) L.push(`• Inventario valorado: ${usd(R.invValor)}${R.invBajos?` · ${R.invBajos} ${R.invBajos===1?'ítem':'ítems'} bajo mínimo`:''}`);
-    L.push(''); L.push(`📊 *${resF.periodo==='mes'?'Este mes':R.per[0]===inicioSemana(R.hoy)?'Esta semana':'Semana que cerró'} (${fdate(R.per[0])} al ${fdate(R.per[1])})*`);
+    L.push(''); L.push(`*${resF.periodo==='mes'?'Este mes':R.per[0]===inicioSemana(R.hoy)?'Esta semana':'Semana que cerró'} (${fdate(R.per[0])} al ${fdate(R.per[1])})*`);
     L.push(`• Ingresos cobrados: ${usd(R.ing)}`); if(R.finz>0) L.push(`• Financiamiento recibido (no es ingreso): ${usd(R.finz)}`); L.push(`• Gastos de la empresa: − ${usd(r2(R.gEmp-R.gInv))}`); if(R.gInv>0) L.push(`• Compras para inventario: − ${usd(R.gInv)}`); L.push(`• *Resultado de la empresa: ${usd(r2(R.ing-R.gEmp))}*`);
     if(R.gPapa>0||R.gFran>0) L.push(`• Gastos personales: papá ${usd(R.gPapa)} · Fran ${usd(R.gFran)}`);
-    L.push(''); L.push(`🔧 *Órdenes de trabajo (acumulado)*`);
+    L.push(''); L.push(`*Órdenes de trabajo (acumulado)*`);
     L.push(`• Monto de todas las órdenes: ${usd(R.montoTot)}`); L.push(`• Cobrado hasta hoy: ${usd(R.cobTot)}`);
     if(R.csAb.length) L.push(`• Abiertas (${R.csAb.length}): costo a la fecha ${usd(R.costoAb)}`);
     if(R.csCer.length) L.push(`• Cerradas (${R.csCer.length}): monto ${usd(R.ingCer)} · costo ${usd(R.costoCer)} · *margen ${usdNeg(R.margenCer)}${R.ingCer>0?' ('+pctTxt(r2(R.margenCer/R.ingCer*100))+')':''}*`);
