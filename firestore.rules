@@ -24,7 +24,7 @@ service cloud.firestore {
     match /asistencia/{id} { allow read: if invitado(); }
     match /inventarioLite/{id} { allow read: if invitado(); }
     match /invMovsLite/{id} { allow read: if invitado(); }
-    match /activos/{id} { allow read: if invitado(); }
+    match /activosLite/{id} { allow read: if invitado(); }
     match /config/{id} { allow read: if invitado() && id in ['gastosLite', 'nominaLite', 'inventario', 'clientes', 'unidades']; }
   }
 }

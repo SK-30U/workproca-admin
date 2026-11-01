@@ -29,7 +29,7 @@ Todo se hace desde el teléfono o la computadora, una sola vez. Son unos 15 minu
 1. **Compilación → Firestore Database** → **Crear base de datos**.
 2. Ubicación: `southamerica-east1` (São Paulo) o la que salga por defecto → **Modo de producción** → **Crear**.
 3. Pestaña **Reglas** → borra todo y pega el contenido de `firestore.rules` → **Publicar**.
-   Para dar acceso a otra persona, agrega su correo a la lista: `['fran.laguna.v@gmail.com', 'otro@gmail.com']`.
+   Esa lista es solo para dueños: quien esté ahí ve y cambia todo. Para que alguien registre sin ver dinero (secretaria, almacenista), no lo pongas ahí: dale acceso desde la app (ver «Personas con acceso»).
 
 ## 4. Copiar las claves a la app
 
