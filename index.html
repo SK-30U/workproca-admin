@@ -1833,7 +1833,7 @@ select.combo-oculto{display:none}
       /* Compras de material hechas para esta orden: la plata ya salió, pero lo que no se ha usado sigue en el almacén y tiene valor */
       const cp=comprasDeOrden(d.id);
       if(cp.total>0){ L.push(''); L.push(`_Dinero y material de esta orden_`);
-        L.push(`Material comprado para esta orden: ${usd(cp.total)} · usado ${usd(cp.usado)} · sigue en el almacén ${usd(cp.queda)}`);
+        L.push(`Material comprado para esta orden: ${usd(cp.total)} · ya salió del almacén ${usd(cp.usado)} · sigue en el almacén ${usd(cp.queda)}`);
         const matOtro=r2(Math.max(0,c.mat-cp.usado)), salio=r2(c.mo+c.gastos+cp.total+matOtro);
         L.push(`Plata que ha salido por esta orden: ${usd(salio)} (mano de obra ${usd(c.mo)} + otros gastos ${usd(c.gastos)} + compras ${usd(cp.total)}${matOtro?` + material de otras compras ${usd(matOtro)}`:''})`);
         L.push(`Cobrado ${usd(c.cobrado)} − plata que salió ${usd(salio)} = *${r2(c.cobrado-salio)<0?'− ':''}${usd(Math.abs(r2(c.cobrado-salio)))} en dinero*, más ${usd(cp.queda)} en material en el almacén.`); }
