@@ -3456,6 +3456,7 @@ Responde solo con un objeto JSON:
     if(!(tasa>0) || !fecha || !gCfgRef || !esDueno()) return; const T=(gcfg&&gcfg.tasas)||{}; const cur=T[fecha];
     if(cur && (typeof cur==='object' ? cur.de==='escrita' : true)) return;   // la escrita a mano manda
     if(cur && typeof cur==='object' && Math.abs(num(cur.t)-tasa)<0.005) return;
+    if(cur && typeof cur==='object' && cur.de==='corte de nómina' && de==='cobro') return;   // el corte (venta real de USDT) manda sobre la tasa acordada con un cliente
     const T2={...T, [fecha]:{t:r2(tasa), de:de||'registro'}}; const ks=Object.keys(T2).sort(); while(ks.length>400) delete T2[ks.shift()];
     gcfg={...gcfg, tasas:T2}; try{ await gCfgRef.set(JSON.parse(JSON.stringify(gcfg))); }catch(_){}
   }
@@ -3740,7 +3741,7 @@ Responde solo con un objeto JSON:
     }
     const old=mvEditId?movs.find(x=>x.id===mvEditId):null; body.creado=old&&old.creado||new Date().toISOString();
     const btnMv=$('#mvSave'); if(btnMv&&btnMv.dataset.busy) return; if(btnMv){ btnMv.dataset.busy='1'; btnMv.disabled=true; }
-    try{ await conLimite((mvEditId?gDb.collection('movimientos').doc(mvEditId):gDb.collection('movimientos').doc()).set(body)); registrarCambioMov(body); if(num(body.tasa)>0 && body.fecha<=today() && (body.tipo==='cambio' || cuentaDe(body.cuenta).moneda==='VES')) aprenderTasa(body.fecha, num(body.tasa), body.tipo==='cambio'?'cambio entre cuentas':body.tipo==='ingreso'?'ingreso':'gasto'); closeSheets(); toast('Movimiento guardado'); }
+    try{ await conLimite((mvEditId?gDb.collection('movimientos').doc(mvEditId):gDb.collection('movimientos').doc()).set(body)); registrarCambioMov(body); /* La tasa del día se aprende de operaciones de mercado (cambios e ingresos), no de gastos: la tasa de un gasto en bolívares es la de llegada de esos bolívares */ if(num(body.tasa)>0 && body.fecha<=today() && (body.tipo==='cambio' || (body.tipo==='ingreso' && cuentaDe(body.cuenta).moneda==='VES'))) aprenderTasa(body.fecha, num(body.tasa), body.tipo==='cambio'?'cambio entre cuentas':'ingreso'); closeSheets(); toast('Movimiento guardado'); }
     catch(e){ err(errMsg(e)); }
     finally{ if(btnMv){ delete btnMv.dataset.busy; btnMv.disabled=false; } }
   }
