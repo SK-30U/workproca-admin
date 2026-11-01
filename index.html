@@ -855,6 +855,7 @@ select.combo-oculto{display:none}
       <label class="f" id="mvOrigMontoL"><span id="mvOrigMontoLbl">Monto que sale</span><input id="mvOrigMonto" inputmode="decimal" placeholder="0,00"></label>
       <label class="f" id="mvDestL">Entra a<select id="mvDest"></select></label>
       <label class="f" id="mvDestMontoL"><span id="mvDestMontoLbl">Monto que entra</span><input id="mvDestMonto" inputmode="decimal" placeholder="0,00"></label>
+      <label class="f full" id="mvBsL" hidden>Si lo pagaste en bolívares: monto en Bs.<input id="mvBs" inputmode="decimal" placeholder="0,00"></label>
       <label class="f full" id="mvTasaL">Tasa (Bs. por USD)<input id="mvTasa" inputmode="decimal" placeholder="0,00"></label>
       <label class="f full" id="mvTrabL">Centro de costo: orden o trabajo (opcional)<select data-combo id="mvTrab"></select></label>
       <label class="f full">Referencia (opcional)<input id="mvRef" autocomplete="off"></label>
@@ -1543,7 +1544,7 @@ select.combo-oculto{display:none}
     const orden = editingId ? num(draft.orden) : docs.reduce((m,d)=>Math.max(m,num(d.orden)),0)+1;
     const body={ orden, descripcion:desc, cliente:$('#iCliente').value.trim(), unidad:$('#iUnidad').value.trim(),
       ods:$('#iOds').value.trim(), nota:$('#iNota').value.trim(), monto:r2(monto), moneda:'USD', fecha:$('#iFecha').value||'',
-      ejecutado:ej, cancelado:$('#iCancelado').checked, fechaEjecucion: ej?($('#iFechaEjec').value||''):'', enEjecucion: !ej && $('#iEnEjec').checked, fechaInicio: $('#iEnEjec').checked?($('#iFechaIni').value||''):'',
+      ejecutado:ej, cancelado:$('#iCancelado').checked, fechaEjecucion: ej?($('#iFechaEjec').value||''):'', enEjecucion: !ej && $('#iEnEjec').checked, fechaInicio: (ej||$('#iEnEjec').checked)?($('#iFechaIni').value||''):'',
       cobros:(draft.cobros||[]).map(c=>Object.assign({monto:num(c.monto), tasa:num(c.tasa), cuenta:modoDe(c), numFactura:c.numFactura||'', fecha:c.fecha||'', ref:c.ref||''}, esCruce(c)?{compensa:c.compensa.slice()}:{})),
       creado:draft.creado||new Date().toISOString(), actualizado:new Date().toISOString() };
     const btn=$('#btnSave'); btn.disabled=true; btn.textContent='Guardando…';
@@ -1644,8 +1645,9 @@ select.combo-oculto{display:none}
     let any=false;
     const incluidos=[];
     const totGrupo={};
-    EC_SECS.filter(([k])=>ecF.etapas.includes(k)).forEach(([k,t,,pred])=>{
-      const it=base.filter(pred); if(!it.length) return; any=true; incluidos.push(...it);
+    /* Un trabajo con anticipo recibido sale siempre, aunque su grupo no esté marcado */
+    EC_SECS.filter(([k,,,pred])=>ecF.etapas.includes(k) || (k!=='cobrado' && base.some(d=>pred(d)&&pagado(d)>0))).forEach(([k,t,,pred])=>{
+      const it=base.filter(d=>pred(d) && (ecF.etapas.includes(k) || pagado(d)>0)); if(!it.length) return; any=true; incluidos.push(...it);
       if(k!=='cobrado') totGrupo[k]=sum(it,saldo);
       L.push(''); L.push(`*${t}*`);
       it.forEach((d,i)=>{
@@ -1748,11 +1750,11 @@ select.combo-oculto{display:none}
   /* Costo directo de un trabajo: mano de obra asignada en la asistencia + gastos con ese centro de costo */
   function costoTrabajo(d, generales){ const c=memo('ct', depsCostos(), ()=>new Map()); let m=c.get(generales); if(!m){ m=new Map(); c.set(generales,m); } if(!m.has(d)) m.set(d, costoTrabajoCalc(d, generales)); return m.get(d); }
   function costoTrabajoCalc(d, generales){
-    let mo=0, dias=0, horas=0; const porT={};
+    let mo=0, dias=0, horas=0, moPend=0; const porT={};
     Object.values(asis).forEach(a=>Object.entries(a.registros||{}).forEach(([id,r])=>{
       const pt=partesReg(r).find(x=>x.tid===d.id); if(!pt) return; const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return;
       const p0=pagoDia(t,r,a.fecha), p={dias:p0.dias*pt.f, horas:p0.horas*pt.f}, v=(p0.montoDias+p0.montoExtra)*pt.f; if(v<=0) return;
-      mo+=v; dias+=p.dias; horas+=p.horas; const o=porT[t.nombre]||(porT[t.nombre]={v:0,dias:0,horas:0}); o.v=r2(o.v+v); o.dias+=p.dias; o.horas+=p.horas;
+      mo+=v; if(!diaPagado(id,a.fecha)) moPend+=v; dias+=p.dias; horas+=p.horas; const o=porT[t.nombre]||(porT[t.nombre]={v:0,dias:0,horas:0}); o.v=r2(o.v+v); o.dias+=p.dias; o.horas+=p.horas;
     }));
     const tasaRep=tasaSugerida();
     const gs=movs.filter(m=>m.tipo==='gasto' && m.trabajoId===d.id && !m.inventario).map(m=>({m, usd:usdDe(m,tasaRep)}));
@@ -1760,7 +1762,7 @@ select.combo-oculto{display:none}
     const gastos=r2(sum(gs,x=>x.usd)), gen=r2((generales||{})[d.id]||0), monto=num(d.monto), costo=r2(mo+gastos+mat+gen), cobrado=r2(pagado(d));
     /* Un trabajo cancelado solo vale lo que de verdad se cobró; el margen se calcula sobre eso */
     const ingreso = d.cancelado ? cobrado : monto;
-    return {mo:r2(mo), dias, horas, porT, gs, gastos, mat, matL:matI.lineas, gen, costo, monto, ingreso, cobrado, margen:r2(ingreso-costo), pct: ingreso>0 ? r2((ingreso-costo)/ingreso*100) : 0, porRecuperar: r2(Math.max(0, costo-cobrado)), cerrada: etapa(d)==='cobrado'||!!d.cancelado};
+    return {mo:r2(mo), moPend:r2(moPend), dias, horas, porT, gs, gastos, mat, matL:matI.lineas, gen, costo, monto, ingreso, cobrado, margen:r2(ingreso-costo), pct: ingreso>0 ? r2((ingreso-costo)/ingreso*100) : 0, porRecuperar: r2(Math.max(0, costo-cobrado)), cerrada: etapa(d)==='cobrado'||!!d.cancelado};
   }
   /* Gastos generales por semana de nómina: gastos de la empresa sin centro de costo, mano de obra sin asignar y sueldos de supervisores */
   function generalesPorSemana(){
@@ -1801,7 +1803,9 @@ select.combo-oculto{display:none}
     const gs=movs.filter(m=>m.tipo==='gasto'&&m.inventario&&m.trabajoId===tid); if(!gs.length) return {total:0, usado:0, queda:0};
     const ids=new Set(gs.map(m=>m.id)), ent=invMovs.filter(m=>m.tipo==='entrada'&&(ids.has(m.movId)||(m.movIds||[]).some(x=>ids.has(x))));
     const total=r2(sum(gs,m=>usdDe(m,tasaSugerida()))); let queda=0;
-    [...new Set(ent.map(m=>m.itemId))].forEach(it=>{ const e=estadoItem(it); e.lotes.forEach(l=>{ if(ent.some(m=>m.id===l.id)) queda+=l.q*l.cu; }); });
+    [...new Set(ent.map(m=>m.itemId))].forEach(it=>{ const e=estadoItem(it), eIt=ent.filter(m=>m.itemId===it), f0=eIt.map(m=>m.fecha).sort()[0], tope=sum(eIt,m=>{ const x=(e.det||{})[m.id]; return x?x.costo:0; });
+      const dev=new Set(invMovs.filter(m=>m.itemId===it&&m.tipo==='devolucion'&&m.fecha>=f0).map(m=>m.id)); let q=0;
+      e.lotes.forEach(l=>{ if(eIt.some(m=>m.id===l.id)||dev.has(l.id)) q+=l.q*l.cu; }); queda+=Math.min(q, tope||q); });
     queda=r2(Math.min(total,queda)); return {total, usado:r2(total-queda), queda};
   }
   function buildCostos(){
@@ -1832,12 +1836,13 @@ select.combo-oculto{display:none}
       L.push(`*Costo ${enEj?'hasta hoy':'total'}: ${usd(c.costo)}*`);
       /* Compras de material hechas para esta orden: la plata ya salió, pero lo que no se ha usado sigue en el almacén y tiene valor */
       const cp=comprasDeOrden(d.id);
-      if(cp.total>0){ const matOtro=r2(Math.max(0,c.mat-cp.usado)), salio=r2(c.mo+c.gastos+cp.total+matOtro), caja=r2(c.cobrado-salio);
+      if(cp.total>0){ const matOtro=r2(Math.max(0,c.mat-cp.usado)), moPag=r2(c.mo-c.moPend), salio=r2(moPag+c.gastos+cp.total+matOtro), caja=r2(c.cobrado-salio);
         L.push(''); L.push(`*Caja de la orden*`);
         L.push(`Cobrado: ${usd(c.cobrado)}`);
-        L.push(`Pagado: − ${usd(salio)} (mano de obra ${usd(c.mo)} · otros gastos ${usd(c.gastos)} · compras de material ${usd(cp.total)}${matOtro?` · material de almacén ${usd(matOtro)}`:''})`);
+        L.push(`Pagado: − ${usd(salio)} (mano de obra ${usd(moPag)} · otros gastos ${usd(c.gastos)} · compras de material ${usd(cp.total)}${matOtro?` · material de almacén ${usd(matOtro)}`:''})`);
         L.push(`*Saldo en dinero: ${caja<0?'− ':''}${usd(Math.abs(caja))}*`);
-        L.push(`Material comprado en almacén: ${usd(cp.queda)}`); }
+        L.push(`Material comprado en almacén: ${usd(cp.queda)}`);
+        if(c.moPend>0) L.push(`Mano de obra por pagar en el próximo corte: ${usd(c.moPend)}`); }
       if(d.cancelado) L.push(`*Resultado: ${realizado<0?'− ':''}${usd(Math.abs(realizado))}*`);
       else if(enEj) L.push(`Margen: al cerrar la orden`);
       else L.push(`*Margen: ${usd(c.margen)}${c.monto>0?' ('+pctTxt(c.pct)+')':''}*`);
@@ -1884,14 +1889,14 @@ select.combo-oculto{display:none}
     if(d.nota) L.push(`Requisición: ${d.nota}`);
     L.push(`Monto: ${usd(cur)}`);
     L.push(`Fecha de solicitud: ${d.fecha?fdate(d.fecha):'Sin fecha'}`);
-    L.push(d.ejecutado ? `Culminado: ${d.fechaEjecucion?fdate(d.fechaEjecucion):'Sí (sin fecha registrada)'}` : 'Culminado: Pendiente por ejecutar');
+    L.push(d.ejecutado ? `Culminado: ${d.fechaEjecucion?fdate(d.fechaEjecucion):'Sí (sin fecha registrada)'}` : enEjecucion(d) ? `En ejecución${d.fechaInicio?' desde '+fdate(d.fechaInicio):''}` : 'Culminado: Pendiente por ejecutar');
     const cs=(d.cobros||[]).slice().sort((a,b)=>String(a.fecha||'').localeCompare(String(b.fecha||'')));
     if(cs.length){
       L.push(cs.length===1?'Facturación y pago:':`Facturación y pagos (${cs.length} abonos):`);
       cs.forEach((c,i)=>{
         const t=num(c.tasa);
         const destino = esCruce(c) ? ` (aplicado a ${c.compensa.map(id=>{ const x=docs.find(y=>y.id===id); return x?x.descripcion+(x.unidad?' · '+x.unidad:''):'otro trabajo'; }).join('; ')})` : '';
-        L.push(`${i+1}. ${c.numFactura?'Factura N° '+c.numFactura:'Factura sin número'} · ${c.fecha?fdate(c.fecha):'sin fecha'} · ${usd(num(c.monto))} · ${modoDe(c)==='banco' ? (t>0?`a tasa ${nfT.format(t)} Bs./USD = ${bs(r2(num(c.monto)*t))}`:'en bolívares (falta la tasa)') : 'cobrado '+comoCobro(c)}${destino}`);
+        L.push(`${i+1}. ${c.numFactura?'Factura N° '+c.numFactura:(!d.ejecutado||(d.fechaEjecucion&&c.fecha&&c.fecha<d.fechaEjecucion))?'Anticipo':'Pago'} · ${c.fecha?fdate(c.fecha):'sin fecha'} · ${usd(num(c.monto))} · ${modoDe(c)==='banco' ? (t>0?`a tasa ${nfT.format(t)} Bs./USD = ${bs(r2(num(c.monto)*t))}`:'en bolívares (falta la tasa)') : 'cobrado '+comoCobro(c)}${destino}`);
       });
       const pBs=pagadoBs(d);
       L.push(`Total pagado: ${usd(pg)}${pBs>0?' = '+bs(r2(pBs)):''}`);
@@ -2637,7 +2642,13 @@ Responde solo con un objeto JSON:
   function actualDe(col, id){ const m={facturas:docs, trabajadores:trabs, adelantos:adels, movimientos:movs, invMovs, inventario:items, cortes}; if(col==='asistencia') return asis[id]||null; return (m[col]||[]).find(d=>d.id===id)||null; }
   function resumenAsis(a){ return Object.entries((a&&a.registros)||{}).map(([id,r])=>`${(nombreT(id)||'').split(' ')[0]} ${r.tipo==='medio'?'½':r.tipo==='completo'?'día':'no'}${num(r.horasExtra)?' +'+nf.format(num(r.horasExtra)).replace(/,00$/,'')+'h':''}`).join(', ')||'nadie'; }
   /* Dos solicitudes pendientes iguales (mismo registro, o mismo día de asistencia, o mismo gasto con fecha, concepto y monto) */
-  function esDuplicada(x){ return solicitudes.some(y=>y.id!==x.id && y.estado==='pendiente' && y.col===x.col && String(y.fecha)<String(x.fecha) && (y.docId===x.docId || (x.col==='movimientos' && JSON.stringify([(y.datos||{}).fecha,(y.datos||{}).concepto,(y.datos||{}).monto])===JSON.stringify([(x.datos||{}).fecha,(x.datos||{}).concepto,(x.datos||{}).monto])) || (x.col==='adelantos' && JSON.stringify([(y.datos||{}).fecha,(y.datos||{}).trabajadorId,(y.datos||{}).monto])===JSON.stringify([(x.datos||{}).fecha,(x.datos||{}).trabajadorId,(x.datos||{}).monto])) || (x.col==='invMovs' && JSON.stringify([(y.datos||{}).fecha,(y.datos||{}).itemId,(y.datos||{}).tipo,(y.datos||{}).cantidad,(y.datos||{}).contado])===JSON.stringify([(x.datos||{}).fecha,(x.datos||{}).itemId,(x.datos||{}).tipo,(x.datos||{}).cantidad,(x.datos||{}).contado])))); }
+  /* Lo que manda la persona invitada y ya está registrado (por el dueño u otra solicitud aprobada): misma fecha, cuenta, monto y concepto sin acentos */
+  const normTxt = v => String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+  function yaRegistrada(x){ const d=x.datos||{}; if(x.op==='delete' || (x.docId && x.col!=='asistencia')) return false;
+    if(x.col==='movimientos') return movs.some(m=>m.fecha===d.fecha && (m.tipo||'gasto')===(d.tipo||'gasto') && (m.cuenta||'')===(d.cuenta||'') && Math.abs(num(m.monto)-num(d.monto))<0.005 && normTxt(m.concepto)===normTxt(d.concepto));
+    if(x.col==='adelantos') return adels.some(a=>a.fecha===d.fecha && a.trabajadorId===d.trabajadorId && Math.abs(num(a.monto)-num(d.monto))<0.005);
+    return false; }
+  function esDuplicada(x){ return yaRegistrada(x) || solicitudes.some(y=>y.id!==x.id && y.estado==='pendiente' && y.col===x.col && String(y.fecha)<String(x.fecha) && (y.docId===x.docId || (x.col==='movimientos' && JSON.stringify([(y.datos||{}).fecha,(y.datos||{}).concepto,(y.datos||{}).monto])===JSON.stringify([(x.datos||{}).fecha,(x.datos||{}).concepto,(x.datos||{}).monto])) || (x.col==='adelantos' && JSON.stringify([(y.datos||{}).fecha,(y.datos||{}).trabajadorId,(y.datos||{}).monto])===JSON.stringify([(x.datos||{}).fecha,(x.datos||{}).trabajadorId,(x.datos||{}).monto])) || (x.col==='invMovs' && JSON.stringify([(y.datos||{}).fecha,(y.datos||{}).itemId,(y.datos||{}).tipo,(y.datos||{}).cantidad,(y.datos||{}).contado])===JSON.stringify([(x.datos||{}).fecha,(x.datos||{}).itemId,(x.datos||{}).tipo,(x.datos||{}).cantidad,(x.datos||{}).contado])))); }
   async function decidirSolicitud(id, aprobar, motivo){
     const x=solicitudes.find(z=>z.id===id); if(!x||!gDb) return;
     try{
@@ -2667,7 +2678,7 @@ Responde solo con un objeto JSON:
     const abiertoG=k=>solAbiertos.has(k)||gs.length<=2;
     return `<div class="hero" style="border-color:var(--so)"><div class="lbl">Por aprobar · ${pend.length}${dup.size?` · <span class="warn">${dup.size} ${dup.size===1?'posible duplicado':'posibles duplicados'}</span>`:''}</div>
       ${gs.map(g=>{ const k=g.d+'|'+g.col, tot=r2(sum(g.ls,montoSol)); return `<details class="solg"${abiertoG(k)?' open':''} data-solg="${esc(k)}"><summary><b>${fdate(g.d)} · ${esc(TIPO_SOL[g.col]||g.col)}</b> · ${g.ls.length}${Math.abs(tot)>=0.005?` · <span class="num">${tot<0?'− ':''}${usd(Math.abs(tot))}</span>`:''}<span class="hbtns"><button type="button" class="btn pri" data-aprobarg="${esc(k)}">Aprobar ${g.ls.length}</button></span></summary>
-        ${g.ls.map(x=>`<div class="solic${dup.has(x.id)?' dup':''}"><b>${esc(x.resumen||resumenSolicitud(x))}</b>${dup.has(x.id)?' <span class="pill so">Posible duplicado</span>':''}<div class="tip" style="border:0;margin:2px 0 0">${esc(x.nombre||x.autor||'')} · ${fechaHora(x.fecha)}</div><div class="acts"><button type="button" class="btn pri" data-aprobar="${esc(x.id)}">Aprobar</button><button type="button" class="btn del" data-rechazar="${esc(x.id)}">Rechazar</button></div></div>`).join('')}</details>`; }).join('')}
+        ${g.ls.map(x=>`<div class="solic${dup.has(x.id)?' dup':''}"><b>${esc(x.resumen||resumenSolicitud(x))}</b>${dup.has(x.id)?` <span class="pill so">${yaRegistrada(x)?'Ya registrado':'Posible duplicado'}</span>`:''}<div class="tip" style="border:0;margin:2px 0 0">${esc(x.nombre||x.autor||'')} · ${fechaHora(x.fecha)}</div><div class="acts"><button type="button" class="btn pri" data-aprobar="${esc(x.id)}">Aprobar</button><button type="button" class="btn del" data-rechazar="${esc(x.id)}">Rechazar</button></div></div>`).join('')}</details>`; }).join('')}
       ${pend.length>1?`<div class="row-btns"><button type="button" class="btn sec" id="aprobarTodo">Aprobar todo${dup.size?' (menos los duplicados)':''}</button></div>`:''}</div>`;
   }
   const solAbiertos=new Set();
@@ -2811,7 +2822,7 @@ Responde solo con un objeto JSON:
     if(L.semanas && L.semanas.length && !(L.dias||[]).length) return `<div class="ddias num">${L.semanas.map(w=>`<div><span>Semana del ${fdate(w)} al ${fdate(finSemana(w))}</span><b>${usd(r2(num(L.sueldoFijo)/L.semanas.length))}</b></div>`).join('')}</div>`;
     const ds=(L.dias||[]).slice().sort((a,b)=>a.f.localeCompare(b.f)); if(!ds.length) return '';
     const tj=id=>{ const d=docs.find(x=>x.id===id); return d ? (tieneOrden(d)?d.ods:d.descripcion) : ''; };
-    return `<div class="ddias num">${ds.map(x=>{ const dow=DIAS[new Date(x.f+'T12:00:00').getDay()]; const partes=[x.t==='completo'?'Día completo':x.t==='medio'?'Medio día':'Solo horas extra', x.h?`${nf.format(x.h).replace(/,00$/,'')} h extra`:'', x.e?x.e:'', x.tj?tj(x.tj):''].filter(Boolean).join(' · ');
+    return `<div class="ddias num">${ds.map(x=>{ const dow=DIAS[new Date(x.f+'T12:00:00').getDay()]; const partes=[x.t==='completo'?'Día completo':x.t==='medio'?'Medio día':'Solo horas extra', x.h?`${nf.format(x.h).replace(/,00$/,'')} ${x.h===1?'hora extra':'horas extra'}`:'', x.e?x.e:'', x.tj?tj(x.tj):''].filter(Boolean).join(' · ');
       return `<div><span><b style="text-transform:capitalize">${dow.slice(0,3)} ${fdate(x.f).slice(0,5)}</b> · ${esc(partes)}</span><b>${usd(x.m)}</b></div>`; }).join('')}</div>`;
   }
   /* Recibo de pago para mandarle al trabajador por WhatsApp: día por día, horas extra, recargos, adelantos y total */
@@ -2822,17 +2833,17 @@ Responde solo con un objeto JSON:
       L.semanas.forEach(w=>Ls.push(`• Sueldo semana del ${fdate(w)} al ${fdate(finSemana(w))}: ${usd(r2(num(L.sueldoFijo)/L.semanas.length))}`));
     } else {
       const ds=(L.dias||[]).slice().sort((a,b)=>a.f.localeCompare(b.f));
-      ds.forEach(x=>{ const dow=DIAS[new Date(x.f+'T12:00:00').getDay()]; const partes=[x.t==='completo'?'día completo':x.t==='medio'?'medio día':'', x.h?`${nf.format(x.h).replace(/,00$/,'')} h extra`:'', x.e?x.e.toLowerCase():''].filter(Boolean).join(', ');
-        Ls.push(`• ${dow.charAt(0).toUpperCase()+dow.slice(1,3)} ${fdate(x.f).slice(0,5)}: ${partes} → ${usd(x.m)}`); });
+      ds.forEach(x=>{ const dow=DIAS[new Date(x.f+'T12:00:00').getDay()]; const partes=[x.t==='completo'?'día completo':x.t==='medio'?'medio día':'', x.h?`${nf.format(x.h).replace(/,00$/,'')} ${x.h===1?'hora extra':'horas extra'}`:'', x.e?x.e.toLowerCase():''].filter(Boolean).join(', ');
+        Ls.push(`• ${dow.charAt(0).toUpperCase()+dow.slice(1)} ${fdate(x.f).slice(0,5)}: ${partes} → ${usd(x.m)}`); });
       Ls.push('');
       const base=[L.completos?`${L.completos} ${L.completos===1?'día completo':'días completos'}`:'', L.medios?`${L.medios} ${L.medios===1?'medio día':'medios días'}`:''].filter(Boolean).join(' y ');
       if(base) Ls.push(`Días trabajados: ${base} a ${usd(tar)} por día = ${usd(r2(L.montoDias))}${Object.keys(L.especiales||{}).length?` (incluye recargo de ${Object.entries(L.especiales).map(([k,v])=>`${nf.format(v).replace(/,00$/,'')} ${k.toLowerCase()}`).join(', ')})`:''}`);
-      if(L.horasExtra) Ls.push(`Horas extra: ${nf.format(L.horasExtra).replace(/,00$/,'')} h a ${usd(horaExtraDe(t,tar))} = ${usd(r2(L.montoExtra))}`);
+      if(L.horasExtra) Ls.push(`Horas extra: ${nf.format(L.horasExtra).replace(/,00$/,'')} a ${usd(horaExtraDe(t,tar))} la hora = ${usd(r2(L.montoExtra))}`);
     }
     Ls.push(`Devengado: ${usd(L.bruto)}`);
     if(L.adelantos>0) Ls.push(`Adelantos descontados: − ${usd(L.adelantos)}`);
     const neto=Math.max(0,L.totalUsd);
-    Ls.push(`*A pagar: ${usd(neto)}${tasa>0?` = ${bs(r2(neto*tasa))} (tasa ${nfT.format(tasa)} Bs/USD)`:''}*`);
+    Ls.push(`*A pagar: ${usd(neto)}${tasa>0?` = ${bs(r2(neto*tasa))} (tasa ${nfT.format(tasa)})`:''}*`);
     if(L.totalUsd<-0.004) Ls.push(`Queda ${usd(-L.totalUsd)} de adelanto pendiente para el próximo pago.`);
     return Ls.join('\n');
   }
@@ -2840,7 +2851,7 @@ Responde solo con un objeto JSON:
     const p=[];
     if(L.completos) p.push(`${L.completos} ${L.completos===1?'día':'días'}`);
     if(L.medios) p.push(`${L.medios} ${L.medios===1?'medio día':'medios días'}`);
-    if(L.horasExtra) p.push(`${nf.format(L.horasExtra).replace(/,00$/,'')} h extra`);
+    if(L.horasExtra) p.push(`${nf.format(L.horasExtra).replace(/,00$/,'')} ${L.horasExtra===1?'hora extra':'horas extra'}`);
     const esp=Object.entries(L.especiales||{}).map(([k,v])=>`${nf.format(v).replace(/,00$/,'')} ${k.toLowerCase()}`);
     if(esp.length) p.push('incluye '+esp.join(', '));
     if(L.sueldoFijo) p.push(L.semanas&&L.semanas.length>1 ? `sueldo de ${L.semanas.length} semanas` : 'sueldo semanal');
@@ -2887,7 +2898,7 @@ Responde solo con un objeto JSON:
   let dayPrefill={}, todosTocado=false, diaAgregados=new Set(); const diaVerTodos=new Set();
   /* Un día ya registrado, o un día viejo sin registro, muestra solo a quienes trabajaron; los demás quedan en una lista corta para agregarlos.
      Un día nuevo (hoy o después del último registrado) muestra a todos, para seguir de un día al otro. */
-  const diaCompacto = () => { if(diaVerTodos.has(diaSel)) return false; if(asis[diaSel]) return true; const ks=Object.keys(asis).sort(); if(ks.some(k=>k>diaSel)) return true; const u=ks.filter(k=>k<diaSel).pop(); return !!u && diaSel!==sumarDias(u,1); };   // desplegados solo el día siguiente al último registrado
+  const diaCompacto = () => { if(diaVerTodos.has(diaSel)) return false; if(asis[diaSel]) return true; const ks=Object.keys(asis).sort(); if(ks.some(k=>k>diaSel)) return true; const u=ks.filter(k=>k<diaSel).pop(); if(!u) return false; let sig=sumarDias(u,1); while(sig<diaSel && (new Date(sig+'T12:00:00').getDay()===0 || (cfgN.feriados||[]).includes(sig))) sig=sumarDias(sig,1); return diaSel!==sig; };   // desplegados solo el día siguiente al último registrado
   function calcPrefill(){
     dayPrefill={}; if(asis[diaSel]) return;
     /* La orden de cada quien se propone con el día registrado más cercano anterior, también al registrar un día pasado */
@@ -3009,6 +3020,8 @@ Responde solo con un objeto JSON:
       const ref=nDb.collection('asistencia').doc(diaSel);
       if(Object.keys(regs).length) await conLimite(ref.set({fecha:diaSel, registros:regs, actualizado:new Date().toISOString()}));
       else await conLimite(ref.delete());
+      { const dsc=r=>!r?'no trabajó':[r.tipo==='completo'?'día completo':r.tipo==='medio'?'medio día':'no trabajó', num(r.horasExtra)?`${nf.format(num(r.horasExtra)).replace(/,00$/,'')} ${num(r.horasExtra)===1?'hora extra':'horas extra'}`:'', r.trabajoId?nombreCorto(docs.find(d=>d.id===r.trabajoId)||{}):''].filter(Boolean).join(', ');
+        if(Object.keys(saved).length) [...new Set([...Object.keys(saved),...Object.keys(regs)])].forEach(id=>{ const a=dsc(saved[id]), b=dsc(regs[id]); if(a!==b) registrarCambio('asistencia', diaSel, `Día ${fdate(diaSel)}: ${nombreT(id)}`, a, b); }); }
       /* Quien trabajó está activo: si estaba inactivo, se activa solo para que siga saliendo los días siguientes */
       const reactivar = diaSel<today() ? [] : Object.entries(regs).filter(([id,r])=>r.tipo!=='no'||num(r.horasExtra)>0).map(([id])=>trabs.find(t=>t.id===id)).filter(t=>t&&t.activo===false);
       for(const t of reactivar){ await nDb.collection('trabajadores').doc(t.id).update({activo:true, actualizado:new Date().toISOString()}); t.activo=true; }
@@ -3019,7 +3032,7 @@ Responde solo con un objeto JSON:
 
   function renderCorte(el){
     const ph=pagadoHasta();
-    if(corteFechasAuto){ corteHasta=today(); corteFechaPago=today(); }
+    if(corteFechasAuto){ const h=today(), dw=new Date(h+'T12:00:00').getDay(); corteHasta=[6,0,1].includes(dw)?sumarDias(inicioSemana(h),-1):h; corteFechaPago=h; }   /* sábado, domingo o lunes: la semana que cerró el viernes */
     /* Si ya se pagó a todos hasta hoy, no hay nada que cortar todavía: se muestra el aviso y el historial, sin armar un corte a futuro */
     if(ph && today()<=ph && !calcCorte(today(), TODOS_F).lineas.length){
       const pend=adels.filter(a=>!a.corteId).sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha)));
@@ -3029,7 +3042,7 @@ Responde solo con un objeto JSON:
         ${historialCortes()}<div style="height:20px"></div>`;
       return;
     }
-    if(corteTasa===''){ const u=ultimoCorte(); const ut=ultimaTasa(); corteTasa = u&&num(u.tasa)>0 ? nfT.format(num(u.tasa)) : ut ? nfT.format(ut.tasa) : ''; }
+    if(corteTasa===''){ const tu=tasaUsdt(today()), td=tasaDelDia(today()), u=ultimoCorte(); const t0=(tu&&tu.tasa)||(td&&td.tasa)||(u&&num(u.tasa))||((ultimaTasa()||{}).tasa)||0; corteTasa = t0>0 ? nfT.format(t0) : ''; }   /* la tasa a la que se compraron los USDT con que se paga */
     const c=calcCorte(corteHasta), tasa=parseNum(corteTasa), tasaOk=!isNaN(tasa)&&tasa>0;
     const ls=conBs(c.lineas, tasaOk?tasa:0);
     const totUsd=sum(ls,l=>Math.max(0,l.totalUsd)), totBs=sum(ls,l=>l.totalBs);
@@ -3357,7 +3370,7 @@ Responde solo con un objeto JSON:
   function registrarCambio(col, docId, que, antes, despues){ if(!gDb||!esDueno()) return; try{ gDb.collection('cambios').doc().set({fecha:new Date().toISOString(), quien:document.documentElement.dataset.user||'', col, docId:docId||'', que:String(que||'').slice(0,160), antes:String(antes==null?'':antes).slice(0,200), despues:String(despues==null?'':despues).slice(0,200)}).catch(()=>{}); }catch(_){} }
   /* Compara dos objetos campo por campo y anota lo que cambió */
   function diffCampos(col, docId, nombre, old, nuevo, campos){ if(!old) return; campos.forEach(([k,lbl,fmt])=>{ const a=old[k], b=nuevo[k]; const f=fmt||(v=>v==null?'':String(v)); if(f(a)!==f(b)) registrarCambio(col, docId, `${nombre}: ${lbl}`, f(a), f(b)); }); }
-  function registrarCambioMov(body){ if(!mvEditId) return; const old=movs.find(x=>x.id===mvEditId); if(!old) return; diffCampos('movimientos', mvEditId, old.concepto||old.tipo, old, body, [['monto','monto',v=>nf.format(num(v))],['tasa','tasa',v=>nfT.format(num(v))],['fecha','fecha'],['cuenta','cuenta'],['categoria','categoría'],['montoOrigen','monto que sale',v=>nf.format(num(v))],['montoDestino','monto que entra',v=>nf.format(num(v))],['trabajoId','orden']]); }
+  function registrarCambioMov(body, antes){ if(!mvEditId) return; const old=antes||movs.find(x=>x.id===mvEditId); if(!old) return; diffCampos('movimientos', mvEditId, old.concepto||old.tipo, old, body, [['monto','monto',v=>nf.format(num(v))],['tasa','tasa',v=>nfT.format(num(v))],['fecha','fecha'],['cuenta','cuenta'],['categoria','categoría'],['montoOrigen','monto que sale',v=>nf.format(num(v))],['montoDestino','monto que entra',v=>nf.format(num(v))],['trabajoId','orden']]); }
   /* Fuera de Claude (versión independiente) el asistente usa la API de Claude con una clave propia, guardada en config/ia */
   const IA_MODELO='claude-sonnet-5-5';
   let iaCfg={clave:'', modelo:'', credito:0, uso:null};
@@ -3704,7 +3717,8 @@ Responde solo con un objeto JSON:
     $('#mvOrigMontoLbl').textContent=`Monto que sale (${o.moneda==='VES'?'Bs.':'USD'})`;
     $('#mvDestMontoLbl').textContent=`Monto que entra (${d.moneda==='VES'?'Bs.':'USD'})`;
     const cam=mvTipo==='cambio';
-    $('#mvTasaL').hidden = cam ? o.moneda===d.moneda : (esCobroFact() && $('#mvModo').value!=='banco');
+    const usdG = mvTipo==='gasto' && c.moneda!=='VES'; $('#mvBsL').hidden=!usdG;
+    $('#mvTasaL').hidden = cam ? o.moneda===d.moneda : usdG || (esCobroFact() && $('#mvModo').value!=='banco');
     $('#mvTasaL').firstChild.textContent = cam ? 'Tasa del cambio (Bs. por USD)' : esCobroFact() ? 'Tasa a la que se cobró (Bs. por USD)' : (c.moneda==='VES' ? 'Tasa (Bs. por USD), para llevarlo a dólares' : 'Tasa (Bs. por USD), opcional');
     renderMvConv();
   }
@@ -3713,16 +3727,18 @@ Responde solo con un objeto JSON:
     let txt='';
     if(cam){
       const o=cuentaDe($('#mvOrig').value), d=cuentaDe($('#mvDest').value), mo=parseNum($('#mvOrigMonto').value);
-      if(o.moneda!==d.moneda && t>0 && mo>0){ const calc = o.moneda==='USD' ? r2(mo*t) : r2(mo/t); txt=`A esa tasa entran <b>${enMoneda(calc,d.moneda)}</b>. Si entró otra cifra (por comisión), escríbela en “Monto que entra”.`; if(!$('#mvDestMonto').dataset.manual) $('#mvDestMonto').value=nf.format(calc); }
+      if(o.moneda!==d.moneda && t>0 && mo>0){ const calc = o.moneda==='USD' ? r2(mo*t) : r2(mo/t); txt=`Entran <b>${enMoneda(calc,d.moneda)}</b>`; if(!$('#mvDestMonto').dataset.manual) $('#mvDestMonto').value=nf.format(calc); }
       else if(o.moneda===d.moneda && mo>0 && !$('#mvDestMonto').dataset.manual){ $('#mvDestMonto').value=nf.format(mo); }
     } else {
       const c=cuentaDe($('#mvCuenta').value), m=parseNum($('#mvMonto').value);
       if(mvTipo==='gasto' && c.moneda==='VES' && m>0 && !$('#mvTasa').dataset.manual){
         const f=tasaOrdenLlegada($('#mvFecha').value||today(), m, mvEditId);
         if(f.tasa>0){ $('#mvTasa').value=nfT.format(f.tasa); const de=[...new Set(f.partes.filter(x=>x.tasa>0).map(x=>x.de==='saldo inicial'?'el saldo inicial':`«${esc(x.de)}»`))].slice(0,2).join(' y ');
-          txt=`Equivale a <b>${m$(f.usd)}</b> a la tasa ${de?(de.startsWith('el ')?'d'+de:'de '+de):'de la última factura'}${f.partes.length>1?' (orden de llegada)':''}${f.completa?'':'; una parte sin tasa conocida se llevó a la última tasa usada'}. Puedes cambiar la tasa si quieres.`; }
+          txt=`= <b>${m$(f.usd)}</b> (tasa ${nfT.format(f.tasa)})`; }
       }
+      const bsG=parseNum($('#mvBs').value)||0, tuG=tasaUsdt($('#mvFecha').value||today());
       if(txt){}
+      else if(mvTipo==='gasto' && c.moneda!=='VES'){ if(bsG>0 && tuG) txt=`= <b>${m$(r2(bsG/tuG.tasa))}</b> (tasa ${nfT.format(tuG.tasa)})`; else if(bsG>0) txt='Sin compra de USDT registrada: escribe el monto en dólares.'; }
       else if(esCobroFact()){ const md=$('#mvModo').value; if(md!=='banco'){ if(m>0) txt=`Entran <b>${m$(r2(m))}</b> a ${esc(cuentaDe(md).nombre)} y el trabajo se actualiza en Cobranzas.`; } else if(m>0 && t>0) txt=`Monto de la factura: <b>${mBs(r2(m*t))}</b> = ${m$(r2(m))} a la tasa del cliente. Entra al banco y el trabajo se actualiza en Cobranzas.`; }
       else if(m>0 && t>0) txt = c.moneda==='VES' ? `Equivale a <b>${m$(r2(m/t))}</b>.` : `Equivale a <b>${mBs(r2(m*t))}</b>.`;
     }
@@ -3735,7 +3751,8 @@ Responde solo con un objeto JSON:
     $('#mvFecha').value=m?m.fecha:today(); $('#mvACargo').value=m&&m.aCargo||'Empresa';
     $('#mvConcepto').value=m?m.concepto||'':''; $('#mvRef').value=m?m.referencia||'':''; $('#mvTrab').value=m&&m.trabajoId||'';
     $('#mvCuenta').value=m&&m.cuenta||(mvTipo==='ingreso'?'banco':'binance');   /* lo que sale, sale de Binance salvo que se diga otra cosa */ $('#mvMonto').value=m&&num(m.monto)?nf.format(num(m.monto)):'';
-    $('#mvOrig').value=m&&m.cuentaOrigen||'binance'; $('#mvDest').value=m&&m.cuentaDestino||'banco';
+    $('#mvOrig').value=m&&m.cuentaOrigen||'banco'; $('#mvDest').value=m&&m.cuentaDestino||'binance';   /* lo normal: con los bolívares del banco se compran USDT */
+    $('#mvBs').value=m&&m.tipo==='gasto'&&num(m.montoBs)>0?nf.format(num(m.montoBs)):'';
     $('#mvOrigMonto').value=m&&num(m.montoOrigen)?nf.format(num(m.montoOrigen)):''; $('#mvDestMonto').value=m&&num(m.montoDestino)?nf.format(num(m.montoDestino)):''; delete $('#mvDestMonto').dataset.manual; if(m&&m.tipo==='cambio') $('#mvDestMonto').dataset.manual='1';
     delete $('#mvTasa').dataset.manual; if(m) $('#mvTasa').dataset.manual='1';
     const ts=mvTipo==='ingreso' ? ((ultimaTasa()||{}).tasa||tasaSugerida()) : tasaSugerida(); $('#mvTasa').value = m ? (num(m.tasa)?nfT.format(num(m.tasa)):'') : (ts?nfT.format(ts):'');
@@ -3777,10 +3794,12 @@ Responde solo con un objeto JSON:
       if(!(m>0)) return err('Escribe el monto.');
       if(cuentaDe(cta).moneda==='VES' && !(t>0)) return err('Escribe la tasa para llevar los bolívares a dólares.');
       Object.assign(body,{concepto, categoria:$('#mvCat').value, aCargo: mvTipo==='gasto'?$('#mvACargo').value:'Empresa', cuenta:cta, monto:r2(m), tasa:t>0?t:0, trabajoId: mvTipo==='gasto'&&$('#mvACargo').value==='Empresa'?$('#mvTrab').value:''});
+      if(mvTipo==='gasto' && cuentaDe(cta).moneda!=='VES'){ const bG=parseNum($('#mvBs').value)||0, tuG=tasaUsdt(f); body.tasa=0; delete body.montoBs; if(bG>0&&tuG){ body.montoBs=r2(bG); body.tasa=tuG.tasa; } }
     }
     const old=mvEditId?movs.find(x=>x.id===mvEditId):null; body.creado=old&&old.creado||new Date().toISOString();
     const btnMv=$('#mvSave'); if(btnMv&&btnMv.dataset.busy) return; if(btnMv){ btnMv.dataset.busy='1'; btnMv.disabled=true; }
-    try{ await conLimite((mvEditId?gDb.collection('movimientos').doc(mvEditId):gDb.collection('movimientos').doc()).set(body)); registrarCambioMov(body); /* La tasa del día se aprende de operaciones de mercado (cambios e ingresos), no de gastos: la tasa de un gasto en bolívares es la de llegada de esos bolívares */ if(num(body.tasa)>0 && body.fecha<=today() && (body.tipo==='cambio' || (body.tipo==='ingreso' && cuentaDe(body.cuenta).moneda==='VES'))) aprenderTasa(body.fecha, num(body.tasa), body.tipo==='cambio'?'cambio entre cuentas':'ingreso'); closeSheets(); toast('Movimiento guardado'); }
+    try{ await conLimite((mvEditId?gDb.collection('movimientos').doc(mvEditId):gDb.collection('movimientos').doc()).set(body)); registrarCambioMov(body, old); /* La tasa del día se aprende de operaciones de mercado (cambios e ingresos), no de gastos: la tasa de un gasto en bolívares es la de llegada de esos bolívares */ if(num(body.tasa)>0 && body.fecha<=today() && (body.tipo==='cambio' || (body.tipo==='ingreso' && cuentaDe(body.cuenta).moneda==='VES'))) aprenderTasa(body.fecha, num(body.tasa), body.tipo==='cambio'?'cambio entre cuentas':'ingreso'); closeSheets(); toast('Movimiento guardado');
+      if(body.tipo!=='ingreso'){ const cS=body.tipo==='cambio'?body.cuentaOrigen:body.cuenta; setTimeout(()=>{ const sl=saldoCuenta(cS,today()), cc=cuentaDe(cS); if(sl<-0.004) toast(`${cc.nombre} queda en − ${cc.moneda==='VES'?bs(-sl):usd(-sl)}. ¿Falta un cobro o un cambio?`); },900); } }
     catch(e){ err(errMsg(e)); }
     finally{ if(btnMv){ delete btnMv.dataset.busy; btnMv.disabled=false; } }
   }
@@ -3935,7 +3954,7 @@ Responde solo con un objeto JSON:
       </details>
       <div class="ctot">
         <div class="stat s-co"><div class="lbl"><i></i>Ingresos</div><div class="amt num"><small>USD</small>${nf.format(sum(B.ing,B.u))}</div></div>
-        <div class="stat s-pe"><div class="lbl"><i></i>Gastos de la empresa</div><div class="amt num"><small>USD</small>${nf.format(sum(B.gEmp,B.u))}</div><div class="cnt num">Papá ${m$(sum(B.gPapa,B.u))} · Fran ${m$(sum(B.gFran,B.u))}</div></div>
+        <div class="stat s-pe"><div class="lbl"><i></i>Gastos de la empresa</div><div class="amt num"><small>USD</small>${nf.format(r2(sum(B.gOper,B.u)))}</div><div class="cnt num">${B.gInv.length?`Compras para inventario ${m$(r2(sum(B.gInv,B.u)))} · `:''}Papá ${m$(sum(B.gPapa,B.u))} · Fran ${m$(sum(B.gFran,B.u))}</div></div>
       </div>
       ${tasa>0?'':'<div class="tip warn">Escribe la tasa para llevar los bolívares a dólares en los totales.</div>'}
       <textarea class="share" id="bText" readonly style="margin-top:12px">${esc(buildBalance())}</textarea>
@@ -3955,14 +3974,14 @@ Responde solo con un objeto JSON:
     if(tipo==='caja'){
       L.push(`*Libro de caja por cuenta · ${fdate(desde)} al ${fdate(hasta)}*`);
       gcfg.cuentas.forEach(c=>{ const enBs=c.moneda==='VES'; let saldo=saldoAntesDe(c.id,desde); L.push(''); L.push(`*${c.nombre}* (${enBs?'bolívares':'dólares'})`); L.push(`Saldo al ${fdate(sumarDias(desde,-1))}: ${enBs?bs(saldo):usd(saldo)}`);
-        todosMovs().filter(m=>m.fecha>=desde&&m.fecha<=hasta&&delta(m,c.id)!==0).sort((a,b)=>a.fecha.localeCompare(b.fecha)||String(a.creado||'').localeCompare(String(b.creado||''))).forEach(m=>{ const d=delta(m,c.id); saldo=r2(saldo+d); L.push(`• ${fdate(m.fecha).slice(0,5)} ${m.tipo==='cambio'?`Cambio ${cuentaDe(m.cuentaOrigen).nombre} → ${cuentaDe(m.cuentaDestino).nombre}`:m.concepto||m.categoria||m.tipo}: ${d<0?'− ':'+ '}${enBs?bs(Math.abs(d)):usd(Math.abs(d))}${enBs&&num(m.tasa)>0?` (tasa ${nfT.format(num(m.tasa))})`:''} → ${enBs?bs(saldo):usd(saldo)}`); });
+        todosMovs().filter(m=>m.fecha>=desde&&m.fecha<=hasta&&delta(m,c.id)!==0).sort((a,b)=>a.fecha.localeCompare(b.fecha)||((delta(b,c.id)>0)-(delta(a,c.id)>0))||String(a.creado||'').localeCompare(String(b.creado||''))).forEach(m=>{ const d=delta(m,c.id); saldo=r2(saldo+d); L.push(`• ${fdate(m.fecha).slice(0,5)} ${m.tipo==='cambio'?`Cambio ${cuentaDe(m.cuentaOrigen).nombre} → ${cuentaDe(m.cuentaDestino).nombre}`:m.concepto||m.categoria||m.tipo}: ${d<0?'− ':'+ '}${enBs?bs(Math.abs(d)):usd(Math.abs(d))}${enBs&&num(m.tasa)>0?` (tasa ${nfT.format(num(m.tasa))})`:''} → ${enBs?bs(saldo):usd(saldo)}`); });
         L.push(`*Saldo al ${fdate(hasta)}: ${enBs?bs(saldo):usd(saldo)}${enBs&&tD(hasta)>0?` = ${usd(r2(saldo/tD(hasta)))} a ${nfT.format(tD(hasta))}`:''}*`); });
     } else if(tipo==='nomina'){
       L.push(`*Nómina por trabajador · ${fdate(desde)} al ${fdate(hasta)}*`); L.push('_Cortes pagados en el período, por persona._');
       const ks=cortes.filter(k=>String(k.fecha||k.hasta)>=desde&&String(k.fecha||k.hasta)<=hasta), por={};
       ks.forEach(k=>(k.lineas||[]).forEach(l=>{ const o=por[l.trabajadorId]||(por[l.trabajadorId]={nombre:l.nombre||nombreT(l.trabajadorId), cargo:l.cargo||'', n:0, dias:0, medios:0, hx:0, bruto:0, adel:0, neto:0, bs:0}); o.n++; o.dias+=num(l.completos); o.medios+=num(l.medios); o.hx+=num(l.horasExtra); o.bruto+=num(l.bruto); o.adel+=num(l.adelantos); o.neto+=Math.max(0,num(l.totalUsd)); o.bs+=num(l.totalBs); }));
       const ls=Object.values(por).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es')); if(!ls.length) L.push('Sin cortes pagados en el período.');
-      ls.forEach(o=>{ L.push(''); L.push(`*${o.nombre}*${o.cargo?' · '+o.cargo:''}`); L.push(`${o.n} ${o.n===1?'corte':'cortes'} · ${[o.dias?`${nf.format(o.dias).replace(/,00$/,'')} días`:'', o.medios?`${nf.format(o.medios).replace(/,00$/,'')} medios días`:'', o.hx?`${nf.format(o.hx).replace(/,00$/,'')} h extra`:''].filter(Boolean).join(', ')||'sueldo semanal'}`); L.push(`Devengado ${usd(r2(o.bruto))}${o.adel?` · Adelantos − ${usd(r2(o.adel))}`:''} · *Pagado ${usd(r2(o.neto))}* = ${bs(r2(o.bs))}`); });
+      ls.forEach(o=>{ L.push(''); L.push(`*${o.nombre}*${o.cargo?' · '+o.cargo:''}`); L.push(`${o.n} ${o.n===1?'corte':'cortes'} · ${[o.dias?`${nf.format(o.dias).replace(/,00$/,'')} días`:'', o.medios?`${nf.format(o.medios).replace(/,00$/,'')} medios días`:'', o.hx?`${nf.format(o.hx).replace(/,00$/,'')} ${o.hx===1?'hora extra':'horas extra'}`:''].filter(Boolean).join(', ')||'sueldo semanal'}`); L.push(`Devengado ${usd(r2(o.bruto))}${o.adel?` · Adelantos − ${usd(r2(o.adel))}`:''} · *Pagado ${usd(r2(o.neto))}* = ${bs(r2(o.bs))}`); });
       L.push(''); L.push(`*Total pagado: ${usd(r2(sum(ls,o=>o.neto)))} = ${bs(r2(sum(ls,o=>o.bs)))}* · Devengado ${usd(r2(sum(ls,o=>o.bruto)))} · Adelantos descontados ${usd(r2(sum(ls,o=>o.adel)))}`);
     } else if(tipo==='compras'){
       L.push(`*Compras por proveedor · ${fdate(desde)} al ${fdate(hasta)}*`);
@@ -3987,7 +4006,7 @@ Responde solo con un objeto JSON:
     } else if(tipo==='meses'){
       L.push(`*Balance mes a mes · ${fdate(desde)} al ${fdate(hasta)}*`); const modo=balF.tasaModo; balF.tasaModo='propia';
       let m0=desde.slice(0,7); const meses=[]; while(m0<=hasta.slice(0,7)){ meses.push(m0); const [y,mm]=m0.split('-').map(Number); m0=`${mm===12?y+1:y}-${String(mm===12?1:mm+1).padStart(2,'0')}`; }
-      let acc=0; meses.forEach(m=>{ const [y,mm]=m.split('-').map(Number); const d1=m+'-01', d2=`${m}-${String(new Date(y,mm,0).getDate()).padStart(2,'0')}`; const a=d1<desde?desde:d1, b=d2>hasta?hasta:d2; const B=calcBalance(a,b,tasa); const ing=sum(B.ing,B.u), g=sum(B.gEmp,B.u), gi=sum(B.gInv,B.u), fz=sum(B.finz,B.u), res=r2(ing-g); acc+=res; L.push(`• ${MESES[+m.slice(5,7)-1]} ${m.slice(0,4)}: ingresos ${usd(r2(ing))}${fz?` · financiamiento ${usd(r2(fz))}`:''} · gastos ${usd(r2(g))}${gi?` (inventario ${usd(r2(gi))})`:''} · *resultado ${usdNeg(res)}*`); });
+      let acc=0; meses.forEach(m=>{ const [y,mm]=m.split('-').map(Number); const d1=m+'-01', d2=`${m}-${String(new Date(y,mm,0).getDate()).padStart(2,'0')}`; const a=d1<desde?desde:d1, b=d2>hasta?hasta:d2; const B=calcBalance(a,b,tasa); const ing=sum(B.ing,B.u), g=sum(B.gEmp,B.u), gi=sum(B.gInv,B.u), fz=sum(B.finz,B.u), res=r2(ing-g); acc+=res; L.push(`• ${MESES[+m.slice(5,7)-1]} ${m.slice(0,4)}: ingresos ${usd(r2(ing))}${fz?` · financiamiento ${usd(r2(fz))}`:''} · gastos ${usd(r2(g-gi))}${gi?` · compras para inventario ${usd(r2(gi))}`:''} · *resultado ${usdNeg(res)}*`); });
       balF.tasaModo=modo; L.push(''); L.push(`*Resultado acumulado: ${usdNeg(r2(acc))}*`);
     }
     return L.join('\n');
@@ -4059,6 +4078,8 @@ Responde solo con un objeto JSON:
   $('#mvFactTrab').addEventListener('change', ()=>{ const d=docs.find(x=>x.id===$('#mvFactTrab').value); if(d && !mvAplicando) $('#mvMonto').value=nf.format(saldo(d)); renderMvConv(); });
   ['#mvCuenta','#mvOrig','#mvDest'].forEach(s=>$(s).addEventListener('change', ()=>{ delete $('#mvDestMonto').dataset.manual; syncMvMoneda(); }));
   ['#mvMonto','#mvOrigMonto'].forEach(s=>$(s).addEventListener('input', renderMvConv));
+  $('#mvMonto').addEventListener('input', ()=>{ if($('#mvBs').value){ $('#mvBs').value=''; renderMvConv(); } });
+  $('#mvBs').addEventListener('input', ()=>{ const b=parseNum($('#mvBs').value)||0, tu=tasaUsdt($('#mvFecha').value||today()); if(b>0&&tu) $('#mvMonto').value=nf.format(r2(b/tu.tasa)); renderMvConv(); });
   $('#mvTasa').addEventListener('input', ()=>{ $('#mvTasa').dataset.manual='1'; renderMvConv(); });
   $('#mvFecha').addEventListener('change', renderMvConv);
   $('#mvDestMonto').addEventListener('input', ()=>{ $('#mvDestMonto').dataset.manual='1'; });
@@ -4139,7 +4160,7 @@ Responde solo con un objeto JSON:
         const ac=ACARGO.includes(x.a_cargo)?x.a_cargo:'Empresa', cats=x.tipo==='ingreso'?gcfg.catIngreso:(ac==='Empresa'?gcfg.catEmpresa:gcfg.catPersonal);
         const cat=cats.find(c=>norm(c)===norm(x.categoria)) || (cats.includes('Otros')?'Otros':cats[cats.length-1]);
         const cta=gcfg.cuentas.some(c=>c.id===x.cuenta)?x.cuenta:(x.tipo==='ingreso'&&x.moneda==='VES'?'banco':'binance');
-        const tasa=num(x.tasa)||(x.moneda==='VES'&&cuentaDe(cta).moneda!=='VES'?ts:0)||(cuentaDe(cta).moneda==='VES'?(x.tipo==='gasto'&&num(x.monto)>0?(tasaOrdenLlegada(x.fecha||today(), num(x.monto)).tasa||ts):ts):0);
+        const tasa=num(x.tasa)||(x.moneda==='VES'&&cuentaDe(cta).moneda!=='VES'?((tasaUsdt(x.fecha||today())||{}).tasa||ts):0)||(cuentaDe(cta).moneda==='VES'?(x.tipo==='gasto'&&num(x.monto)>0?(tasaOrdenLlegada(x.fecha||today(), num(x.monto)).tasa||ts):ts):0);
         return `<div class="act tr"><input type="checkbox" data-gchk="${i}" checked aria-label="Incluir"><div style="min-width:0;flex:1"><span class="tag">${x.tipo==='gasto'?'Gasto':'Ingreso'}</span>
           <div class="g">
             <label style="grid-column:1/-1">Concepto<input data-gi="${i}" data-k="concepto" value="${esc(x.concepto||'')}"></label>
@@ -4177,7 +4198,7 @@ Responde solo con un objeto JSON:
         /* Pagado en bolívares pero sale de Binance (o efectivo): se guarda en dólares a la tasa, y el concepto conserva los bolívares */
         const bsEnUsd = x.moneda==='VES' && cuentaDe(cta).moneda!=='VES';
         if(!err && bsEnUsd && !(t>0)) err='Escribe la tasa a la que se vendieron los USDT.';
-        body={tipo:x.tipo, fecha:v('fecha')||today(), concepto:bsEnUsd&&t>0?`${v('concepto')} (Bs. ${nf.format(m)} a ${nfT.format(t)})`:v('concepto'), monto:bsEnUsd&&t>0?r2(m/t):r2(m), cuenta:cta, tasa:bsEnUsd?0:(t>0?t:0), aCargo:x.tipo==='gasto'?v('a_cargo'):'Empresa', categoria:v('categoria'), referencia:String(x.referencia||''), trabajoId:''};
+        body={tipo:x.tipo, fecha:v('fecha')||today(), concepto:v('concepto'), monto:bsEnUsd&&t>0?r2(m/t):r2(m), cuenta:cta, tasa:t>0?t:0, ...(bsEnUsd&&t>0?{montoBs:r2(m)}:{}), aCargo:x.tipo==='gasto'?v('a_cargo'):'Empresa', categoria:v('categoria'), referencia:String(x.referencia||''), trabajoId:''};
       }
       if(err){ errEl.textContent=err; conErr++; continue; }
       errEl.textContent=''; body.creado=new Date().toISOString(); body.actualizado=body.creado;
@@ -4477,8 +4498,9 @@ Responde solo con un objeto JSON:
     $('#imProv').value = m ? m.proveedor||'' : (pre&&pre.proveedor)||''; $('#imRef').value = m ? m.referencia||'' : (pre&&pre.referencia)||'';
     let ultT='', ultQ=''; try{ ultT=localStorage.getItem('imUltTrab')||''; ultQ=localStorage.getItem('imUltQuien')||''; }catch(_){}
     $('#imTrab').value = m ? m.trabajoId||'' : ((pre&&pre.trabajoId) || (docs.some(d=>d.id===ultT&&abiertoCosto(d))?ultT:'')); $('#imQuien').value = m ? m.quienId||'' : (trabs.some(t=>t.id===ultQ&&t.activo!==false)?ultQ:'');
+    delete $('#imTrab').dataset.manual; if(m||(pre&&pre.trabajoId)) $('#imTrab').dataset.manual='1';
     if(!m) proponerOrdenSalida(false); $('#imNota').value = m ? m.nota||'' : (pre&&pre.nota)||'';
-    $('#imGasto').checked=false; $('#imGastoCampos').hidden=true; $('#imGTasa').value=tasaSugerida()?nfT.format(tasaSugerida()):''; $('#imCuenta').value='binance';
+    $('#imGasto').checked=!m && imTipo==='entrada' && !(pre&&pre.movId); $('#imGastoCampos').hidden=!$('#imGasto').checked; $('#imGTasa').value=tasaSugerida()?nfT.format(tasaSugerida()):''; $('#imCuenta').value='binance';
     $('#imErr').textContent=''; $('#imDel').hidden=!m; $('#imDel').textContent='Eliminar'; delete $('#imDel').dataset.armed;
     $('#imCuadrar').hidden = !(m && m.tipo==='entrada' && (m.proveedor||m.referencia) && canWrite);
     pintarProveedores(); limpiarFiltros('#imSheet'); syncIMTipo(); openSheet('#imSheet');
@@ -4667,14 +4689,15 @@ Responde solo con un objeto JSON:
   $('#itDel').addEventListener('click', eliminarItem);
   $('#itEntrada').addEventListener('click', ()=>{ const id=itEditId; closeSheets(); openIMov('entrada', null, {itemId:id}); });
   $('#itSalida').addEventListener('click', ()=>{ const id=itEditId; closeSheets(); openIMov('salida', null, {itemId:id}); });
-  $('#imTipo').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b||imEditId) return; imTipo=b.dataset.t; syncIMTipo(); });
+  $('#imTipo').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b||imEditId) return; imTipo=b.dataset.t; $('#imGasto').checked=imTipo==='entrada'&&!(imPre&&imPre.movId); syncIMTipo(); renderIMConv(); });
   $('#imItem').addEventListener('change', syncIMItem);
   /* La orden de un retiro: la que tiene asignada en la asistencia de ese día quien retira; si no, la del último retiro */
   function proponerOrdenSalida(forzar){
     const q=$('#imQuien').value, f=$('#imFecha').value||today(), r=q&&asis[f]&&(asis[f].registros||{})[q];
     if(r && r.trabajoId && docs.some(d=>d.id===r.trabajoId) && (forzar || !$('#imTrab').value)) $('#imTrab').value=r.trabajoId;
   }
-  $('#imQuien').addEventListener('change', ()=>proponerOrdenSalida(true));
+  $('#imQuien').addEventListener('change', ()=>proponerOrdenSalida(!$('#imTrab').dataset.manual));
+  $('#imTrab').addEventListener('change', ()=>{ $('#imTrab').dataset.manual='1'; });
   ['#imCant','#imCostoU','#imCostoT','#imBs','#imTasa','#imGTasa'].forEach(s=>$(s).addEventListener('input', ()=>{ if(s==='#imBs'||s==='#imTasa'){ const tb=parseNum($('#imBs').value)||0, tt=parseNum($('#imTasa').value)||0; if(tb>0&&tt>0){ $('#imCostoT').value=nf.format(r2(tb/tt)); $('#imCostoU').value=''; } } renderIMConv(); }));
   ['#imGasto','#imCuenta'].forEach(s=>$(s).addEventListener('change', renderIMConv));
   let imContados=0;
@@ -5091,11 +5114,12 @@ Responde solo con un objeto JSON:
     const wIni=semanaPorDefecto(), per = resF.periodo==='mes' ? [hoy.slice(0,8)+'01', hoy] : [wIni, finSemana(wIni)];
     const modoB=balF.tasaModo; balF.tasaModo='propia'; const B=calcBalance(per[0],per[1],tasa); balF.tasaModo=modoB;
     const ing=r2(sum(B.ing,B.u)), gEmp=r2(sum(B.gEmp,B.u)), gInv=r2(sum(B.gInv,B.u)), finz=r2(sum(B.finz,B.u)), gPapa=r2(sum(B.gPapa,B.u)), gFran=r2(sum(B.gFran,B.u));
-    const rep=repartoGenerales(costF.reparto), cs=docs.map(d=>({d,c:costoTrabajo(d,rep.porTrabajo)})).filter(x=>x.c.costo>0);
+    const rep=repartoGenerales(costF.reparto), cs=docs.map(d=>({d,c:costoTrabajo(d,costF.generales?rep.porTrabajo:{})})).filter(x=>x.c.costo>0);
+    const csAb=cs.filter(x=>!x.d.ejecutado&&!x.d.cancelado), csCer=cs.filter(x=>x.d.ejecutado||x.d.cancelado), costoAb=r2(sum(csAb,x=>x.c.costo)), costoCer=r2(sum(csCer,x=>x.c.costo)), ingCer=r2(sum(csCer,x=>x.c.ingreso)), margenCer=r2(ingCer-costoCer);
     const costoTot=r2(sum(cs,x=>x.c.costo)), cobTot=r2(sum(docs,pagado)), montoTot=r2(sum(docs.filter(d=>!d.cancelado),d=>num(d.monto))), nTot=docs.filter(d=>!d.cancelado).length, montoConCosto=r2(sum(cs,x=>x.c.ingreso)), sinCostos=docs.filter(d=>!d.cancelado&&!cs.some(x=>x.d.id===d.id)).length, nCancel=docs.filter(d=>d.cancelado).length;
     /* Lo gastado por encima de lo cobrado: aparte lo de órdenes cerradas (pérdida) y lo de órdenes abiertas (se recupera al cobrar) */
     const porRecuperar=r2(sum(cs.filter(x=>!x.c.cerrada),x=>x.c.porRecuperar)), perdidaCerradas=r2(sum(cs.filter(x=>x.c.cerrada),x=>x.c.porRecuperar)), invValor=valorInventario(), invBajos=itemsActivos().filter(bajoMinimo).length;
-    return {tasa, tasaBs, tasaEnt, dispEnt, hoy, sal, disponible, invValor, invBajos, lf, po, so, ps, facturable, sinOrdenEj, pend, porEjecSin, nomPend, adelPend, per, ing, gEmp, gInv, finz, gPapa, gFran, costoTot, cobTot, montoTot, nTot, nCancel, cs, montoConCosto, sinCostos, porRecuperar, perdidaCerradas, posicion:r2(disponible+invValor+pend-nomPend), sinRepartir:rep.sinRepartir};
+    return {tasa, tasaBs, tasaEnt, dispEnt, hoy, sal, disponible, invValor, invBajos, lf, po, so, ps, facturable, sinOrdenEj, pend, porEjecSin, nomPend, adelPend, per, ing, gEmp, gInv, finz, gPapa, gFran, costoTot, cobTot, montoTot, nTot, nCancel, cs, montoConCosto, sinCostos, porRecuperar, perdidaCerradas, csAb, csCer, costoAb, costoCer, ingCer, margenCer, posicion:r2(disponible+invValor+pend-nomPend), sinRepartir:rep.sinRepartir};
   }
   const usdNeg = v => v<0 ? '− '+usd(-v) : usd(v), bsNeg = v => v<0 ? '− '+bs(-v) : bs(v);
   function renderRes(){
@@ -5132,8 +5156,9 @@ Responde solo con un objeto JSON:
         <div class="rows num">
           ${fila('Ingresos cobrados', R.ing, {c:'var(--c-co)'})}
           ${R.finz>0?fila('Financiamiento recibido', R.finz, {extra:'Aportes y préstamos: entran a la caja, no son ingresos'}):''}
-          ${fila('Gastos de la empresa', R.gEmp, {c:'var(--c-so)', raw:'− '+usd(R.gEmp), extra:`Incluye nómina y sueldos de supervisores pagados${R.gInv>0?` · de esto, ${usd(R.gInv)} son compras para inventario`:''}`})}
-          ${fila('Resultado de la empresa', R.ing-R.gEmp, {neg:R.ing-R.gEmp<0, raw:(R.ing-R.gEmp<0?'− ':'')+usd(Math.abs(r2(R.ing-R.gEmp))), extra:R.gInv>0?`Sin contar las compras para inventario: ${usdNeg(r2(R.ing-R.gEmp+R.gInv))}`:''})}
+          ${fila('Gastos de la empresa', r2(R.gEmp-R.gInv), {c:'var(--c-so)', raw:'− '+usd(r2(R.gEmp-R.gInv)), extra:'Incluye nómina y sueldos de supervisores'})}
+          ${R.gInv>0?fila('Compras para inventario', R.gInv, {c:'var(--c-so)', raw:'− '+usd(R.gInv)}):''}
+          ${fila('Resultado de la empresa', R.ing-R.gEmp, {neg:R.ing-R.gEmp<0, raw:(R.ing-R.gEmp<0?'− ':'')+usd(Math.abs(r2(R.ing-R.gEmp)))})}
           <div class="cap">Personales</div>
           ${fila('Gastos de papá', R.gPapa)}${fila('Gastos de Fran', R.gFran)}
         </div></div>
@@ -5141,8 +5166,9 @@ Responde solo con un objeto JSON:
         <div class="rows num">
           ${fila('Monto de todas las órdenes', R.montoTot, {n:R.nTot, extra:R.nCancel?`${R.nCancel} ${R.nCancel===1?'cancelada no entra':'canceladas no entran'}`:''})}
           ${fila('Cobrado hasta hoy', R.cobTot, {c:'var(--c-co)'})}
-          ${fila('Costo registrado', R.costoTot, {c:'var(--c-so)', raw:'− '+usd(R.costoTot), extra:`Mano de obra, materiales, gastos directos y generales de ${R.cs.length} ${R.cs.length===1?'orden':'órdenes'} con costos${R.sinRepartir>0?' · sin repartir '+usd(R.sinRepartir):''}`})}
-          ${fila('Margen de las órdenes con costos', R.montoConCosto-R.costoTot, {neg:R.montoConCosto-R.costoTot<0, raw:usd(r2(R.montoConCosto-R.costoTot))+(R.montoConCosto>0?` (${nf.format(r2((R.montoConCosto-R.costoTot)/R.montoConCosto*100)).replace(/,00$/,'')} %)`:''), extra:`Monto de esas órdenes ${usd(R.montoConCosto)}${R.nCancel?' (canceladas: lo cobrado)':''}${R.sinCostos?` · ${R.sinCostos} ${R.sinCostos===1?'orden':'órdenes'} sin costos registrados no ${R.sinCostos===1?'entra':'entran'}`:''}`})}
+          ${R.csAb.length?fila('En ejecución: costo a la fecha', R.costoAb, {n:R.csAb.length, c:'var(--c-so)', raw:'− '+usd(R.costoAb), extra:'Margen: al cerrar la orden'}):''}
+          ${R.csCer.length?fila('Terminadas: costo', R.costoCer, {n:R.csCer.length, c:'var(--c-so)', raw:'− '+usd(R.costoCer)}):''}
+          ${R.csCer.length?fila('Margen de las terminadas', R.margenCer, {neg:R.margenCer<0, raw:usdNeg(R.margenCer)+(R.ingCer>0?` (${pctTxt(r2(R.margenCer/R.ingCer*100))})`:''), extra:`Monto de esas órdenes ${usd(R.ingCer)}`}):''}
           ${R.porRecuperar>0?fila('Gastado y aún no cobrado', R.porRecuperar, {extra:'Órdenes abiertas con más costo que cobros: se recupera al cobrarlas'}):''}
           ${R.perdidaCerradas>0?fila('Pérdida en órdenes cerradas', R.perdidaCerradas, {neg:true, raw:'− '+usd(R.perdidaCerradas), extra:'Cobradas o canceladas que costaron más de lo que entró'}):''}
         </div></div>
@@ -5160,11 +5186,12 @@ Responde solo con un objeto JSON:
     L.push(''); L.push(`🧭 *Posición: ${usd(R.posicion)}* (caja + inventario + pendiente por cobrar − nómina por pagar)`);
     if(R.invValor>0) L.push(`• Inventario valorado: ${usd(R.invValor)}${R.invBajos?` · ${R.invBajos} ${R.invBajos===1?'ítem':'ítems'} bajo mínimo`:''}`);
     L.push(''); L.push(`📊 *${resF.periodo==='mes'?'Este mes':R.per[0]===inicioSemana(R.hoy)?'Esta semana':'Semana que cerró'} (${fdate(R.per[0])} al ${fdate(R.per[1])})*`);
-    L.push(`• Ingresos cobrados: ${usd(R.ing)}`); if(R.finz>0) L.push(`• Financiamiento recibido (no es ingreso): ${usd(R.finz)}`); L.push(`• Gastos de la empresa: − ${usd(R.gEmp)}${R.gInv>0?` (de esto, compras para inventario ${usd(R.gInv)})`:''}`); L.push(`• *Resultado de la empresa: ${usd(r2(R.ing-R.gEmp))}*`);
+    L.push(`• Ingresos cobrados: ${usd(R.ing)}`); if(R.finz>0) L.push(`• Financiamiento recibido (no es ingreso): ${usd(R.finz)}`); L.push(`• Gastos de la empresa: − ${usd(r2(R.gEmp-R.gInv))}`); if(R.gInv>0) L.push(`• Compras para inventario: − ${usd(R.gInv)}`); L.push(`• *Resultado de la empresa: ${usd(r2(R.ing-R.gEmp))}*`);
     if(R.gPapa>0||R.gFran>0) L.push(`• Gastos personales: papá ${usd(R.gPapa)} · Fran ${usd(R.gFran)}`);
     L.push(''); L.push(`🔧 *Órdenes de trabajo (acumulado)*`);
-    L.push(`• Monto de todas las órdenes: ${usd(R.montoTot)}`); L.push(`• Cobrado hasta hoy: ${usd(R.cobTot)}`); L.push(`• Costo registrado: ${usd(R.costoTot)}`);
-    L.push(`• *Margen de las órdenes con costos: ${usd(r2(R.montoConCosto-R.costoTot))}${R.montoConCosto>0?' ('+nf.format(r2((R.montoConCosto-R.costoTot)/R.montoConCosto*100)).replace(/,00$/,'')+' %)':''}*`);
+    L.push(`• Monto de todas las órdenes: ${usd(R.montoTot)}`); L.push(`• Cobrado hasta hoy: ${usd(R.cobTot)}`);
+    if(R.csAb.length) L.push(`• En ejecución (${R.csAb.length}): costo a la fecha ${usd(R.costoAb)}`);
+    if(R.csCer.length) L.push(`• Terminadas (${R.csCer.length}): monto ${usd(R.ingCer)} · costo ${usd(R.costoCer)} · *margen ${usdNeg(R.margenCer)}${R.ingCer>0?' ('+pctTxt(r2(R.margenCer/R.ingCer*100))+')':''}*`);
     if(R.porRecuperar>0) L.push(`• Gastado y aún no cobrado: ${usd(R.porRecuperar)}`);
     return L.join('\n');
   }
