@@ -4046,7 +4046,6 @@ Responde solo con un objeto JSON:
     if(todo){ const fin=enCuentas(hastaSaldo,t), difU=r2(fin.usd-(ant.usd+vi.usd+vf.usd-vg.usd)), difB=r2(fin.bs-(ant.bs+vi.bs+vf.bs-vg.bs));
       /* Lo que se ganó o se perdió al cambiar bolívares a USDT y al valorar los bolívares a la tasa del reporte: así cada columna suma exacto */
       const sg=(v,f)=>`${v<0?'− ':'+ '}${f(Math.abs(v))}`, pB=Math.abs(difB)>=0.01&&mon!=='usd'?sg(difB,v=>`${fN(v)} Bs`):'', pU=Math.abs(difU)>=0.01&&mon!=='bs'?sg(difU,v=>`$${fN(v)}`):'';
-      if(pB||pU) L.push(`Diferencia cambiaria: ${[pB,pU].filter(Boolean).join(' = ')}`);
       L.push(''); L.push(`✅ *DISPONIBLE: ${cifra(fin.bs,fin.usd)}*`); }
     return L.join('\n');
   }
@@ -4124,7 +4123,6 @@ Responde solo con un objeto JSON:
     if(B.gPapa.length||B.gFran.length){ L.push(''); if(B.gPapa.length) L.push(`Gastos de papá: ${m$(r2(tPapa))}`); if(B.gFran.length) L.push(`Gastos de Fran: ${m$(r2(tFran))}`); }
     /* 3. Por qué el disponible no sale exacto de sumar y restar: bolívares que al cambiarlos valieron otra cosa */
     const esperado=r2(usdIni+totIngG+totFin-tOper-tInv-tPapa-tFran), difT=r2(usdFin-esperado);
-    if(Math.abs(difT)>=0.01 && !unica){ L.push(''); L.push(`Diferencia cambiaria: ${difT<0?'− ':''}${m$(Math.abs(difT))}`); }
     return L.join('\n');
   }
   function renderBal(el){
