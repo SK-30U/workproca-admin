@@ -4265,8 +4265,12 @@ Responde solo con un objeto JSON:
   const bajoMinimo = it => { const e=estadoItem(it.id); return num(it.minimo)>0 && e.existencia<num(it.minimo); };
   /* Tasa para llevar a dólares un costo en bolívares cuando no la ponen: si el pago sale del banco, la tasa a la que entraron
      esos bolívares (orden de llegada, como en Gastos); si no, la última tasa registrada. */
+  /* Tasa de los USDT: la de la última compra de USDT con bolívares hasta esa fecha (lo que costó cada dólar que hay en Binance) */
+  function tasaUsdt(fecha){ const c=movs.filter(m=>m.tipo==='cambio'&&m.fecha<=(fecha||today())&&cuentaDe(m.cuentaOrigen).moneda==='VES'&&cuentaDe(m.cuentaDestino).moneda!=='VES'&&num(m.montoDestino)>0).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))||String(b.creado||'').localeCompare(String(a.creado||'')))[0];
+    return c ? {tasa:num(c.tasa)>0?num(c.tasa):r2(num(c.montoOrigen)/num(c.montoDestino)), fecha:c.fecha} : null; }
   function tasaParaBs(fecha, montoBs, cuentaId){
     if(cuentaId==='banco'){ const f=tasaOrdenLlegada(fecha||today(), montoBs); if(f.tasa>0 && f.completa) return {tasa:f.tasa, de:'la tasa a la que entraron los bolívares del banco'}; }
+    else { const u=tasaUsdt(fecha); if(u) return {tasa:u.tasa, de:`la tasa a la que compraste los USDT el ${fdate(u.fecha)}`}; }   /* pagado con USDT (lo normal): la tasa a la que se compraron */
     const t=tasaSugerida(); return t>0 ? {tasa:t, de:'la última tasa registrada'} : {tasa:0, de:''};
   }
   /* Materiales consumidos en una orden (salidas menos devoluciones), al costo de los lotes que salieron */
@@ -4458,10 +4462,10 @@ Responde solo con un objeto JSON:
       const cu=parseNum($('#imCostoU').value)||0, ct=parseNum($('#imCostoT').value)||0, tb=parseNum($('#imBs').value)||0, ttIn=parseNum($('#imTasa').value)||0;
       if(q>0 && cu>0) txt=`Entra un lote de <b>${cant(q,it.unidad)}</b> a ${usd(cu)} cada ${esc(uni(it.unidad))} = <b>${usd(r2(q*cu))}</b>.`;
       else if(q>0 && ct>0) txt=`Entra un lote de <b>${cant(q,it.unidad)}</b> por ${usd(ct)} = ${usd(r2(ct/q))} cada ${esc(uni(it.unidad))}.`;
-      else if(q>0 && tb>0 && !(ttIn>0)){ const tp=tasaParaBs($('#imFecha').value||today(), tb, $('#imGasto').checked?$('#imCuenta').value:''); txt = tp.tasa>0 ? `Sin tasa escrita se usa <b>${nfT.format(tp.tasa)}</b> (${tp.de}): ${bs(tb)} = <b>${usd(r2(tb/tp.tasa))}</b>, ${usd(r2(tb/tp.tasa/q))} cada ${esc(uni(it.unidad))}.` : 'No hay ninguna tasa registrada todavía: entra sin costo hasta que la pongas.'; }
+      else if(q>0 && tb>0 && !(ttIn>0)){ const tp=tasaParaBs($('#imFecha').value||today(), tb, $('#imGasto').checked?$('#imCuenta').value:'binance'); txt = tp.tasa>0 ? `Sin tasa escrita se usa <b>${nfT.format(tp.tasa)}</b> (${tp.de}): ${bs(tb)} = <b>${usd(r2(tb/tp.tasa))}</b>, ${usd(r2(tb/tp.tasa/q))} cada ${esc(uni(it.unidad))}.` : 'No hay ninguna tasa registrada todavía: entra sin costo hasta que la pongas.'; }
       else if(q>0) txt=`Entra <b>${cant(q,it.unidad)}</b> <b>sin costo</b>: cuenta en la existencia y vale 0 hasta que le pongas el precio (puedes editar la entrada después).`;
       const g=$('#imGasto').checked, cta=cuentaDe($('#imCuenta').value), tot=cu>0&&q>0?r2(q*cu):ct;
-      $('#imGastoCampos').hidden=!g;
+      $('#imGastoCampos').hidden=!g; $('#imGTasa').closest('label').hidden = cta.moneda!=='VES';   /* pagado en dólares o USDT: no hace falta tasa */
       $('#imGastoInfo').textContent = g && tot>0 ? `Se registra un gasto de ${cta.moneda==='VES'?(parseNum($('#imGTasa').value)>0?bs(r2(tot*parseNum($('#imGTasa').value)))+' ('+usd(tot)+')':'bolívares (falta la tasa)'):usd(tot)} en ${cta.nombre}, categoría ${CAT_GASTO_INV[it.categoria]||'Materiales'}, como compra para inventario.` : '';
     } else if(imTipo==='salida'){
       if(q>0){ if(q>e.existencia+0.0005) txt=`<span style="color:var(--danger)">Solo hay ${cant(e.existencia,it.unidad)}. Si de verdad salió más, haz un conteo primero.</span>`; else { const sim=estadoItem(it.id); const c=sim.lotes.length?(()=>{ let r=q,cc=0; for(const l of sim.lotes){ if(r<=0) break; const u=Math.min(l.q,r); cc+=u*l.cu; r-=u; } return cc; })():0; txt=`Salen <b>${cant(q,it.unidad)}</b> = <b>${usd(r2(c))}</b> al costo de los lotes más viejos. Quedan ${cant(r2q(e.existencia-q),it.unidad)}.`; } }
@@ -4500,7 +4504,7 @@ Responde solo con un objeto JSON:
     if(imTipo==='entrada'){
       let cu=parseNum($('#imCostoU').value)||0; const ct=parseNum($('#imCostoT').value)||0, tb=parseNum($('#imBs').value)||0; let tt=parseNum($('#imTasa').value)||0;
       if(!(cu>0) && ct>0) cu=ct/q;
-      if(!(cu>0) && tb>0){ if(!(tt>0)) tt=tasaParaBs(f, tb, $('#imGasto').checked?$('#imCuenta').value:'').tasa; if(tt>0) cu=tb/tt/q; }
+      if(!(cu>0) && tb>0){ if(!(tt>0)) tt=tasaParaBs(f, tb, $('#imGasto').checked?$('#imCuenta').value:'binance').tasa; if(tt>0) cu=tb/tt/q; }
       Object.assign(body,{costoUnit:cu>0?r4(cu):0, sinCosto:!(cu>0), proveedor:proveedorNormalizado($('#imProv').value), referencia:$('#imRef').value.trim(), movId:old&&old.movId||(imPre&&imPre.movId)||''});
       if(tb>0) Object.assign(body,{costoUnitBs:r4(tb/q), totalBs:r2(tb), tasa:tt>0?tt:0});   // el precio de lista en bolívares se guarda aunque falte la tasa
     } else if(imTipo==='salida'||imTipo==='devolucion'){
@@ -4518,7 +4522,7 @@ Responde solo con un objeto JSON:
     const btnIM=$('#imSave'); if(btnIM&&btnIM.dataset.busy) return; if(btnIM){ btnIM.dataset.busy='1'; btnIM.disabled=true; btnIM.textContent='Guardando…'; }
     try{
       if(imTipo==='entrada' && !imEditId && $('#imGasto').checked && !body.movId && (body.costoUnit>0 || body.totalBs>0)){
-        if(!(body.costoUnit>0)){ const tg=parseNum($('#imGTasa').value)||0; if(!(tg>0)) return err('Escribe la tasa del pago para registrar el gasto.'); body.costoUnit=r4(body.totalBs/tg/q); body.sinCosto=false; body.tasa=tg; }
+        if(!(body.costoUnit>0)){ const ctaG=cuentaDe($('#imCuenta').value); const tg=ctaG.moneda==='VES'?(parseNum($('#imGTasa').value)||0):(tasaParaBs(f, body.totalBs, ctaG.id).tasa||0); if(!(tg>0)) return err('Escribe la tasa del pago para registrar el gasto.'); body.costoUnit=r4(body.totalBs/tg/q); body.sinCosto=false; body.tasa=tg; }
         const cta=cuentaDe($('#imCuenta').value), tot=r2(body.costoUnit*q); let gt=parseNum($('#imGTasa').value)||0;
         if(cta.moneda==='VES' && !(gt>0)) gt=body.tasa||tasaParaBs(f, tot*(tasaSugerida()||1), 'banco').tasa;
         if(cta.moneda==='VES' && !(gt>0)) return err('Escribe la tasa del pago en bolívares.');
@@ -4727,7 +4731,7 @@ Responde solo con un objeto JSON:
     fillItemSelects(); pintarProveedores();
     rcLineas=[{itemId:'', nuevo:'', unidad:'und', categoria:icfg.categorias[0]||'Materiales', cant:'', precio:''}]; rcMon='bs';
     $('#rcOrden').innerHTML='<option value="">Para el almacén (sin orden)</option>'+centrosCosto().map(d=>`<option value="${esc(d.id)}">${esc(etiquetaCentro(d))}</option>`).join(''); $('#rcOrden').value=''; comboSync($('#rcOrden'));
-    $('#rcProv').value=''; $('#rcRef').value=''; $('#rcFecha').value=today(); $('#rcCuenta').value='binance'; $('#rcPagado').value=''; $('#rcTasa').value=tasaSugerida()?nfT.format(tasaSugerida()):''; $('#rcErr').textContent='';
+    $('#rcProv').value=''; $('#rcRef').value=''; $('#rcFecha').value=today(); $('#rcCuenta').value='binance'; $('#rcPagado').value=''; { const tu=(tasaUsdt()||{}).tasa||tasaSugerida(); $('#rcTasa').value=tu?nfT.format(tu):''; }   /* se paga con USDT: la tasa a la que se compraron */ $('#rcErr').textContent='';
     pintarLineasCompra(); recalcCompra(); openSheet('#rcSheet');
   }
   function pintarLineasCompra(){
