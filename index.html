@@ -2457,7 +2457,7 @@ Responde solo con un objeto JSON:
       (Array.isArray(d.registros)?d.registros:[]).forEach(r=>{ if(!trabs.some(w=>w.id===r.trabajador_id)) (omitidos[f]=omitidos[f]||[]).push(String(r.trabajador||r.nombre||r.trabajador_id||'alguien sin identificar')); });
     });
     aiDias=Object.keys(dias).sort().filter(f=>dias[f].length).map(f=>{ const regs=dias[f].filter(r=>!diaBloqueado(trabs.find(t=>t.id===r.id),f)); return {fecha:f, regs:regs.sort((a,b)=>(trabs.find(t=>t.id===a.id).nombre).localeCompare(trabs.find(t=>t.id===b.id).nombre,'es')), bloqueado:!regs.length, futuro:f>hoy, previo:!!asis[f]}; });
-    let ultCta=''; try{ ultCta=localStorage.getItem('adCuenta')||''; }catch(_){} if(ultCta==='banco') ultCta='';
+    const ultCta='binance';
     aiAdels=(Array.isArray(res.adelantos)?res.adelantos:[]).map(a=>({t:trabs.find(w=>w.id===a.trabajador_id), fecha:String(a.fecha||hoy).slice(0,10), monto:r2(num(a.monto_usd)), nota:String(a.nota||'').trim(), cuenta:ultCta||'efectivo'})).filter(a=>a.t&&a.monto>0);
     const abiertosAI=docs.filter(abiertoCosto).sort(byOrden);
     const dudas=Array.isArray(res.dudas)?res.dudas.filter(Boolean):[];
@@ -2672,7 +2672,7 @@ Responde solo con un objeto JSON:
   const SUP='Supervisor';
   let nDb=null, nFallo=false, nCfgRef=null, cfgN=JSON.parse(JSON.stringify(CFG_DEF));
   let trabs=[], asis={}, adels=[], cortes=[], nLoaded={t:false,a:false,d:false,c:false};
-  let corteCuenta='binance', corteFechaPago=today(); try{ corteCuenta=localStorage.getItem('corteCuenta')||'binance'; }catch(_){}
+  let corteCuenta='binance', corteFechaPago=today();
   let nView='dia', diaSel=today(), dayDraft=null, dayDirty=false, corteHasta=today(), corteTasa='', supMontos={}, wEditId=null, nDelArmed='';
   /* Mientras el dueño no toque "Hasta" ni "Fecha del pago", van al día de hoy cada vez que se abre el corte (la app puede quedar abierta de un día a otro) */
   let corteFechasAuto=true;
@@ -3143,7 +3143,7 @@ Responde solo con un objeto JSON:
     $('#adTrab').innerHTML=ls.map(t=>`<option value="${esc(t.id)}">${esc(t.nombre)}${t.activo===false?' (inactivo)':''}</option>`).join('');
     $('#adFecha').value=today(); $('#adMonto').value=''; $('#adNota').value=''; $('#adErr').textContent='';
     if(tid && ls.some(t=>t.id===tid)) $('#adTrab').value=tid;
-    let ult=''; try{ ult=localStorage.getItem('adCuenta')||''; }catch(_){} $('#adCuenta').value=ult; $('#adTasa').value=tasaSugerida()?nfT.format(tasaSugerida()):''; $('#adTasaL').hidden=$('#adCuenta').value!=='banco';
+    $('#adCuenta').value='binance'; $('#adTasa').value=tasaSugerida()?nfT.format(tasaSugerida()):''; $('#adTasaL').hidden=$('#adCuenta').value!=='banco';
     limpiarFiltros('#adSheet'); openSheet('#adSheet');
   }
   /* Un botón que guarda: se bloquea mientras escribe, y si la base no responde en 20 segundos avisa en vez de quedarse colgado */
@@ -3695,7 +3695,7 @@ Responde solo con un objeto JSON:
     $('#mvTitle').textContent = m ? 'Editar movimiento' : mvTipo==='gasto'?'Nuevo gasto':mvTipo==='ingreso'?'Nuevo ingreso':'Cambio entre cuentas';
     $('#mvFecha').value=m?m.fecha:today(); $('#mvACargo').value=m&&m.aCargo||'Empresa';
     $('#mvConcepto').value=m?m.concepto||'':''; $('#mvRef').value=m?m.referencia||'':''; $('#mvTrab').value=m&&m.trabajoId||'';
-    $('#mvCuenta').value=m&&m.cuenta||'banco'; $('#mvMonto').value=m&&num(m.monto)?nf.format(num(m.monto)):'';
+    $('#mvCuenta').value=m&&m.cuenta||(mvTipo==='ingreso'?'banco':'binance');   /* lo que sale, sale de Binance salvo que se diga otra cosa */ $('#mvMonto').value=m&&num(m.monto)?nf.format(num(m.monto)):'';
     $('#mvOrig').value=m&&m.cuentaOrigen||'binance'; $('#mvDest').value=m&&m.cuentaDestino||'banco';
     $('#mvOrigMonto').value=m&&num(m.montoOrigen)?nf.format(num(m.montoOrigen)):''; $('#mvDestMonto').value=m&&num(m.montoDestino)?nf.format(num(m.montoDestino)):''; delete $('#mvDestMonto').dataset.manual; if(m&&m.tipo==='cambio') $('#mvDestMonto').dataset.manual='1';
     delete $('#mvTasa').dataset.manual; if(m) $('#mvTasa').dataset.manual='1';
@@ -4073,7 +4073,7 @@ Cada movimiento:
 - fecha: AAAA-MM-DD; si no aparece, usa ${today()}.
 - concepto: corto y claro (por ejemplo "2 bombonas de argón", "Gasolina camioneta").
 - monto y moneda ("VES" para bolívares, "USD" para dólares o USDT).
-- cuenta: una de ${gcfg.cuentas.map(c=>`"${c.id}" (${c.nombre}, ${c.moneda==='VES'?'bolívares':'dólares'})`).join(', ')}. Pago móvil o transferencia en bolívares va a "banco"; USDT o Binance va a "binance"; dólares en efectivo va a "efectivo".
+- cuenta: una de ${gcfg.cuentas.map(c=>`"${c.id}" (${c.nombre}, ${c.moneda==='VES'?'bolívares':'dólares'})`).join(', ')}. Regla de la empresa: todo gasto y todo pago sale de "binance" (se venden USDT), aunque se haya pagado en bolívares por pago móvil o transferencia; solo va a "banco" o "efectivo" si el material lo dice explícitamente (por ejemplo "del banco", "de la cuenta en bolívares", "en efectivo"). Un gasto en bolívares que sale de "binance" lleva su monto en bolívares, moneda "VES" y la tasa a la que se vendieron los USDT. Los cobros de clientes en bolívares sí van a "banco".
 - tasa en bolívares por dólar solo si aparece; si no, 0.
 - a_cargo: "Empresa", "Papá" o "Fran". Por defecto "Empresa"; gastos personales evidentes (colegio, condominio, Cashea, comida de la casa) van a "Fran" salvo que se diga que son de papá.
 - categoria: de la empresa una de [${gcfg.catEmpresa.join('; ')}]; personales una de [${gcfg.catPersonal.join('; ')}]; ingresos una de [${gcfg.catIngreso.join('; ')}].
@@ -4105,13 +4105,13 @@ Responde solo con un objeto JSON:
           ${x.motivo?`<small>${esc(x.motivo)}</small>`:''}<small class="err" data-gerr="${i}"></small></div></div>`;
         const ac=ACARGO.includes(x.a_cargo)?x.a_cargo:'Empresa', cats=x.tipo==='ingreso'?gcfg.catIngreso:(ac==='Empresa'?gcfg.catEmpresa:gcfg.catPersonal);
         const cat=cats.find(c=>norm(c)===norm(x.categoria)) || (cats.includes('Otros')?'Otros':cats[cats.length-1]);
-        const cta=gcfg.cuentas.some(c=>c.id===x.cuenta)?x.cuenta:(x.moneda==='VES'?'banco':'binance');
-        const tasa=num(x.tasa)||(cuentaDe(cta).moneda==='VES'?(x.tipo==='gasto'&&num(x.monto)>0?(tasaOrdenLlegada(x.fecha||today(), num(x.monto)).tasa||ts):ts):0);
+        const cta=gcfg.cuentas.some(c=>c.id===x.cuenta)?x.cuenta:(x.tipo==='ingreso'&&x.moneda==='VES'?'banco':'binance');
+        const tasa=num(x.tasa)||(x.moneda==='VES'&&cuentaDe(cta).moneda!=='VES'?ts:0)||(cuentaDe(cta).moneda==='VES'?(x.tipo==='gasto'&&num(x.monto)>0?(tasaOrdenLlegada(x.fecha||today(), num(x.monto)).tasa||ts):ts):0);
         return `<div class="act tr"><input type="checkbox" data-gchk="${i}" checked aria-label="Incluir"><div style="min-width:0;flex:1"><span class="tag">${x.tipo==='gasto'?'Gasto':'Ingreso'}</span>
           <div class="g">
             <label style="grid-column:1/-1">Concepto<input data-gi="${i}" data-k="concepto" value="${esc(x.concepto||'')}"></label>
             <label>Fecha<input type="date" data-gi="${i}" data-k="fecha" value="${esc(x.fecha||today())}"></label>
-            <label>Monto<input data-gi="${i}" data-k="monto" inputmode="decimal" value="${num(x.monto)?nf.format(num(x.monto)):''}"></label>
+            <label>Monto${x.moneda==='VES'?' (Bs.)':''}<input data-gi="${i}" data-k="monto" inputmode="decimal" value="${num(x.monto)?nf.format(num(x.monto)):''}"></label>
             <label>Cuenta<select data-gi="${i}" data-k="cuenta">${ctaOpts(cta)}</select></label>
             <label>Tasa<input data-gi="${i}" data-k="tasa" inputmode="decimal" value="${tasa?nfT.format(tasa):''}" placeholder="Bs. por USD"></label>
             ${x.tipo==='gasto'?`<label>A cargo de<select data-gi="${i}" data-k="a_cargo">${ACARGO.map(a=>`<option${a===ac?' selected':''}>${a}</option>`).join('')}</select></label>`:''}
@@ -4141,7 +4141,10 @@ Responde solo con un objeto JSON:
       } else {
         const m=parseNum(v('monto')), t=parseNum(v('tasa')), cta=v('cuenta');
         if(!v('concepto')) err='Falta el concepto.'; else if(!(m>0)) err='Falta el monto.'; else if(cuentaDe(cta).moneda==='VES' && !(t>0)) err='Escribe la tasa para llevarlo a dólares.';
-        body={tipo:x.tipo, fecha:v('fecha')||today(), concepto:v('concepto'), monto:r2(m), cuenta:cta, tasa:t>0?t:0, aCargo:x.tipo==='gasto'?v('a_cargo'):'Empresa', categoria:v('categoria'), referencia:String(x.referencia||''), trabajoId:''};
+        /* Pagado en bolívares pero sale de Binance (o efectivo): se guarda en dólares a la tasa, y el concepto conserva los bolívares */
+        const bsEnUsd = x.moneda==='VES' && cuentaDe(cta).moneda!=='VES';
+        if(!err && bsEnUsd && !(t>0)) err='Escribe la tasa a la que se vendieron los USDT.';
+        body={tipo:x.tipo, fecha:v('fecha')||today(), concepto:bsEnUsd&&t>0?`${v('concepto')} (Bs. ${nf.format(m)} a ${nfT.format(t)})`:v('concepto'), monto:bsEnUsd&&t>0?r2(m/t):r2(m), cuenta:cta, tasa:bsEnUsd?0:(t>0?t:0), aCargo:x.tipo==='gasto'?v('a_cargo'):'Empresa', categoria:v('categoria'), referencia:String(x.referencia||''), trabajoId:''};
       }
       if(err){ errEl.textContent=err; conErr++; continue; }
       errEl.textContent=''; body.creado=new Date().toISOString(); body.actualizado=body.creado;
