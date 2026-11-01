@@ -1809,7 +1809,7 @@ select.combo-oculto{display:none}
     const base=docs.filter(d=>(!costF.cliente||(d.cliente||'')===costF.cliente) && (!costF.trabajo||d.id===costF.trabajo) && (costF.cobrados || etapa(d)!=='cobrado')).sort(byOrden)
       .map(d=>({d, c:costoTrabajo(d, gen)})).filter(x=>!costF.trabajo && costF.soloConCosto ? x.c.costo>0 : true);
     const abiertas=base.filter(x=>!x.d.ejecutado&&!x.d.cancelado).length;
-    const L=[`*WORKPROCA · Costo por orden de trabajo${costF.cliente?' · '+costF.cliente:''}${costF.trabajo&&docs.find(d=>d.id===costF.trabajo)?' · '+nombreTrabajo(docs.find(d=>d.id===costF.trabajo)):''}*`, abiertas ? `Corte al ${fdate(today())}${abiertas===base.length?(base.length===1?' (la orden sigue en ejecución)':' (órdenes en ejecución)'):' (hay órdenes en ejecución)'}` : `Al ${fdate(today())}`];
+    const L=[`*WORKPROCA · Costo por orden de trabajo${costF.cliente?' · '+costF.cliente:''}${costF.trabajo&&docs.find(d=>d.id===costF.trabajo)?' · '+nombreTrabajo(docs.find(d=>d.id===costF.trabajo)):''}*`, abiertas ? `Corte al ${fdate(today())}` : `Al ${fdate(today())}`];
     if(!base.length){ L.push(''); L.push('Ningún trabajo tiene mano de obra ni gastos asignados todavía. Asigna la orden en el registro del día y en cada gasto.'); return L.join('\n'); }
     const fmt=n=>nf.format(n).replace(/,00$/,''), jor=n=>`${fmt(n)} ${n===1?'jornada':'jornadas'}`, hx=n=>`${fmt(n)} ${n===1?'hora extra':'horas extra'}`;
     const det=costF.formato==='detallado';
@@ -1832,15 +1832,15 @@ select.combo-oculto{display:none}
       L.push(`*Costo ${enEj?'hasta hoy':'total'}: ${usd(c.costo)}*`);
       /* Compras de material hechas para esta orden: la plata ya salió, pero lo que no se ha usado sigue en el almacén y tiene valor */
       const cp=comprasDeOrden(d.id);
-      if(cp.total>0){ L.push(''); L.push(`_Dinero y material de esta orden_`);
-        L.push(`Material comprado para esta orden: ${usd(cp.total)} · ya salió del almacén ${usd(cp.usado)} · sigue en el almacén ${usd(cp.queda)}`);
-        const matOtro=r2(Math.max(0,c.mat-cp.usado)), salio=r2(c.mo+c.gastos+cp.total+matOtro);
-        L.push(`Plata que ha salido por esta orden: ${usd(salio)} (mano de obra ${usd(c.mo)} + otros gastos ${usd(c.gastos)} + compras ${usd(cp.total)}${matOtro?` + material de otras compras ${usd(matOtro)}`:''})`);
-        L.push(`Cobrado ${usd(c.cobrado)} − plata que salió ${usd(salio)} = *${r2(c.cobrado-salio)<0?'− ':''}${usd(Math.abs(r2(c.cobrado-salio)))} en dinero*, más ${usd(cp.queda)} en material en el almacén.`); }
-      if(d.cancelado) L.push(`*Resultado: ${realizado<0?'− ':''}${usd(Math.abs(realizado))}* (lo cobrado menos el costo)`);
-      else if(enEj) L.push(`Margen: se calcula al terminar la orden (faltan costos y por cobrar ${usd(r2(Math.max(0,c.monto-c.cobrado)))}).`);
-      else { L.push(`*Margen: ${usd(c.margen)}${c.monto>0?' ('+pctTxt(c.pct)+')':''}*`);
-        if(c.cobrado<c.monto-0.005) L.push(`  Falta por cobrar ${usd(r2(c.monto-c.cobrado))}.`); }
+      if(cp.total>0){ const matOtro=r2(Math.max(0,c.mat-cp.usado)), salio=r2(c.mo+c.gastos+cp.total+matOtro), caja=r2(c.cobrado-salio);
+        L.push(''); L.push(`*Caja de la orden*`);
+        L.push(`Cobrado: ${usd(c.cobrado)}`);
+        L.push(`Pagado: − ${usd(salio)} (mano de obra ${usd(c.mo)} · otros gastos ${usd(c.gastos)} · compras de material ${usd(cp.total)}${matOtro?` · material de almacén ${usd(matOtro)}`:''})`);
+        L.push(`*Saldo en dinero: ${caja<0?'− ':''}${usd(Math.abs(caja))}*`);
+        L.push(`Material comprado en almacén: ${usd(cp.queda)}`); }
+      if(d.cancelado) L.push(`*Resultado: ${realizado<0?'− ':''}${usd(Math.abs(realizado))}*`);
+      else if(enEj) L.push(`Margen: al cerrar la orden`);
+      else L.push(`*Margen: ${usd(c.margen)}${c.monto>0?' ('+pctTxt(c.pct)+')':''}*`);
     });
     if(base.length>1){
       const tM=sum(base,x=>x.c.ingreso), tC=sum(base,x=>x.c.costo), tMo=sum(base,x=>x.c.mo), tG=sum(base,x=>x.c.gastos), tMat=sum(base,x=>x.c.mat), tGen=sum(base,x=>x.c.gen), tCob=sum(base,x=>x.c.cobrado);
@@ -1848,7 +1848,7 @@ select.combo-oculto{display:none}
       L.push(`Monto: ${usd(tM)}${base.some(x=>x.d.cancelado)?' (en canceladas, lo cobrado)':''} · Cobrado: ${usd(r2(tCob))}`);
       L.push(`Mano de obra: ${usd(tMo)}${tMat?` · Materiales usados: ${usd(r2(tMat))}`:''}${tG?` · Otros gastos: ${usd(tG)}`:''}${costF.generales?` · Generales: ${usd(r2(tGen))}`:''}`);
       const term=base.filter(x=>x.d.ejecutado||x.d.cancelado), tMt=sum(term,x=>x.c.ingreso), tCt=sum(term,x=>x.c.costo);
-      L.push(`*Costo: ${usd(r2(tC))}*${term.length?` · *Margen de las ${term.length} terminadas: ${usd(r2(tMt-tCt))}${tMt>0?' ('+pctTxt(r2((tMt-tCt)/tMt*100))+')':''}*`:''}${term.length<base.length?` · ${base.length-term.length} en ejecución sin margen todavía`:''}`);
+      L.push(`*Costo: ${usd(r2(tC))}*${term.length?` · *Margen de las ${term.length} terminadas: ${usd(r2(tMt-tCt))}${tMt>0?' ('+pctTxt(r2((tMt-tCt)/tMt*100))+')':''}*`:''}${term.length<base.length?` · ${base.length-term.length} en ejecución`:''}`);
     }
     if(costF.generales && rep.tot.total>0){
       L.push(''); L.push(`_Gastos generales de la empresa: ${usd(rep.tot.total)} (gastos sin orden ${usd(rep.tot.gastos)} · mano de obra sin asignar ${usd(rep.tot.mo)} · supervisores ${usd(rep.tot.sup)}), repartidos ${costF.reparto==='igual'?'por igual':'según los días trabajados'} entre las órdenes activas cada semana.${rep.sinRepartir>0?` Sin repartir: ${usd(rep.sinRepartir)} de semanas sin ninguna orden activa.`:''}_`);
@@ -3859,7 +3859,7 @@ Responde solo con un objeto JSON:
         if(B.finz.length){ L.push(''); L.push('🏦 *Financiamiento (no es ingreso de la operación)*'); B.finz.forEach(m=>L.push(lineaMov(m,B,tasa))); L.push(`*Total financiamiento: ${m$(sum(B.finz,B.u))}*`); }
         tg=bloqueGastos(L,'Gastos de la empresa',B.gOper,B,tasa,corto);
         if(!B.gOper.length){ L.push(''); L.push('*Gastos de la empresa*'); L.push('• Sin gastos'); }
-        if(B.gInv.length){ const ti=bloqueGastos(L,'Compras de materiales para inventario',B.gInv,B,tasa,corto); tg=r2(tg+ti); L.push('_Son material que entra al almacén; su costo pasa a cada orden cuando se retira._'); }
+        if(B.gInv.length){ const ti=bloqueGastos(L,'Compras de materiales para inventario',B.gInv,B,tasa,corto); tg=r2(tg+ti);  }
       }
       const tp=pers.map(([k,n,N,lista])=>{ const t=bloqueGastos(L,`Gastos de ${n}`,lista,B,tasa,corto); if(!lista.length){ L.push(''); L.push(`*Gastos de ${n}*`); L.push('• Sin gastos'); } return [n,t]; });
       const totPers=r2(sum(tp,x=>x[1]));
@@ -3881,7 +3881,7 @@ Responde solo con un objeto JSON:
     const hastaSaldo=hasta>today()?today():hasta, antes=sumarDias(desde,-1);
     const unica=balF.tasaModo==='unica', tIni=unica?tasa:((tasaDelDia(antes)||{}).tasa||tasaSaldoBanco(antes)), tFin=unica?tasa:((tasaDelDia(hastaSaldo)||{}).tasa||tasaSaldoBanco(hastaSaldo));
     L.push(`*BALANCE · Del ${fdate(desde)} al ${fdate(hasta)}*`); if(unica&&tasa>0) L.push(`_Todo a tasa ${nfT.format(tasa)} Bs/$_`);
-    if(fuera.length){ const ini=[...new Set(gcfg.cuentas.map(c=>saldoIni(c.id).fecha))].sort()[0]; L.push(`_La caja se lleva desde el ${fdate(ini)}; ${fuera.length} ${fuera.length===1?'movimiento anterior no entra':'movimientos anteriores no entran'}._`); }
+    if(fuera.length){ const ini=[...new Set(gcfg.cuentas.map(c=>saldoIni(c.id).fecha))].sort()[0]; L.push(`_Caja desde el ${fdate(ini)}_`); }
     /* 1. Cada cuenta: con cuánto empezó, qué entró, qué salió y con cuánto terminó, en su propia moneda */
     const conceptoEn=(m,cid)=>{ if(m.tipo!=='cambio') return m.concepto||m.categoria||m.tipo; const o=cuentaDe(m.cuentaOrigen), d=cuentaDe(m.cuentaDestino), t=num(m.tasa);
       return m.cuentaOrigen===cid ? `${m.concepto||'Cambio'} → a ${d.nombre}${t?` (tasa ${nfT.format(t)})`:''}` : `${m.concepto||'Cambio'} ← de ${o.nombre}${t?` (tasa ${nfT.format(t)})`:''}`; };
@@ -3899,7 +3899,7 @@ Responde solo con un objeto JSON:
     });
     const usdFin=r2(totalUsdCuentas(finales,tFin)), usdIni=r2(totalUsdCuentas(iniciales,tIni));
     L.push(''); L.push(`✅ *DISPONIBLE AL ${fdate(hastaSaldo)}: ${m$(usdFin)}*`);
-    if(hastaSaldo<today()){ const salH={}; gcfg.cuentas.forEach(c=>salH[c.id]=saldoCuenta(c.id,today())); L.push(`_Es lo que había al cierre del ${fdate(hastaSaldo)}. Hoy ${fdate(today())} hay ${m$(r2(totalUsdCuentas(salH,tasaSugerida())))} (lo que dice Gastos y Resumen): la diferencia son los movimientos posteriores._`); }
+    if(hastaSaldo<today()){ const salH={}; gcfg.cuentas.forEach(c=>salH[c.id]=saldoCuenta(c.id,today())); L.push(`_Disponible al ${fdate(today())}: ${m$(r2(totalUsdCuentas(salH,tasaSugerida())))}_`); }
     L.push(gcfg.cuentas.filter(c=>Math.abs(finales[c.id]||0)>0.004).map(c=>`${c.nombre} ${c.moneda==='VES'?`${mBs(finales[c.id])}${tFin>0?' ('+m$(r2(finales[c.id]/tFin))+')':''}`:m$(finales[c.id])}`).join(' + ')||'Todas las cuentas en cero');
     /* 2. Resultado del período en dólares: lo que se cobró contra lo que se gastó (los cambios entre cuentas no son ni ingreso ni gasto) */
     const totIngG=sum(B.ing,B.u), totFin=sum(B.finz,B.u), tOper=sum(B.gOper,B.u), tInv=sum(B.gInv,B.u), tPapa=sum(B.gPapa,B.u), tFran=sum(B.gFran,B.u), res=r2(totIngG-tOper-tInv);
@@ -3913,16 +3913,7 @@ Responde solo con un objeto JSON:
     if(B.gPapa.length||B.gFran.length){ L.push(''); if(B.gPapa.length) L.push(`Gastos de papá: ${m$(r2(tPapa))}`); if(B.gFran.length) L.push(`Gastos de Fran: ${m$(r2(tFran))}`); }
     /* 3. Por qué el disponible no sale exacto de sumar y restar: bolívares que al cambiarlos valieron otra cosa */
     const esperado=r2(usdIni+totIngG+totFin-tOper-tInv-tPapa-tFran), difT=r2(usdFin-esperado);
-    if(Math.abs(difT)>=0.01 && !unica){
-      L.push(''); L.push(`🔄 *Diferencia por tasa: ${difT<0?'− ':''}${m$(Math.abs(difT))}*`);
-      L.push(`Saldo inicial ${m$(usdIni)} + cobrado ${m$(r2(totIngG))}${totFin?` + aportes ${m$(r2(totFin))}`:''} − gastos ${m$(r2(tOper+tInv+tPapa+tFran))} daría ${m$(esperado)}, pero en las cuentas hay ${m$(usdFin)}.`);
-      /* la causa más grande, dicha en palabras */
-      const cambiosBsUsd=B.cam.filter(m=>cuentaDe(m.cuentaOrigen).moneda==='VES'&&cuentaDe(m.cuentaDestino).moneda!=='VES');
-      const cobBs=B.ing.filter(m=>cuentaDe(m.cuenta).moneda==='VES'&&num(m.tasa)>0);
-      if(cambiosBsUsd.length&&cobBs.length){ const tc=r2(sum(cobBs,m=>num(m.monto))/sum(cobBs,m=>B.u(m))), tv=r2(sum(cambiosBsUsd,m=>num(m.montoOrigen))/sum(cambiosBsUsd,m=>num(m.montoDestino)));
-        if(Math.abs(tc-tv)>0.5) L.push(`La razón principal: los bolívares se cobraron a ${nfT.format(tc)} y se cambiaron a USDT a ${nfT.format(tv)}, así que rindieron ${tv>tc?'menos':'más'} dólares de los que se anotaron como cobrados.`); }
-      else L.push('Es lo que se ganó o perdió porque los bolívares se convirtieron a una tasa distinta de la que se usó al anotarlos.');
-    }
+    if(Math.abs(difT)>=0.01 && !unica){ L.push(''); L.push(`🔄 Diferencia cambiaria: ${difT<0?'− ':''}${m$(Math.abs(difT))}`); }
     return L.join('\n');
   }
   function renderBal(el){
