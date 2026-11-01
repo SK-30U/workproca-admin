@@ -14,14 +14,17 @@ service cloud.firestore {
     match /solicitudes/{id} {
       allow create: if invitado() && request.resource.data.autor == request.auth.token.email && request.resource.data.estado == 'pendiente';
       allow read: if invitado() && resource.data.autor == request.auth.token.email;
+      // la persona puede retirar lo suyo mientras esté pendiente
+      allow update: if invitado() && resource.data.autor == request.auth.token.email && resource.data.estado == 'pendiente' && request.resource.data.estado == 'retirada';
     }
-    match /trabajadores/{id} { allow read: if invitado(); }
+    // Solo lee copias livianas (sin montos, cédulas, pagos ni tarifas) que mantiene la app del dueño
+    match /trabajadoresLite/{id} { allow read: if invitado(); }
+    match /ordenesLite/{id} { allow read: if invitado(); }
+    match /cortesLite/{id} { allow read: if invitado(); }
     match /asistencia/{id} { allow read: if invitado(); }
-    match /adelantos/{id} { allow read: if invitado(); }
-    match /cortes/{id} { allow read: if invitado(); }
-    match /facturas/{id} { allow read: if invitado(); }
     match /inventario/{id} { allow read: if invitado(); }
     match /invMovs/{id} { allow read: if invitado(); }
-    match /config/{id} { allow read: if invitado() && id != 'ia'; }
+    match /activos/{id} { allow read: if invitado(); }
+    match /config/{id} { allow read: if invitado() && id in ['gastosLite', 'nominaLite', 'inventario', 'clientes', 'unidades']; }
   }
 }

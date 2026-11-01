@@ -61,13 +61,16 @@ Todo se hace desde el teléfono o la computadora, una sola vez. Son unos 15 minu
 
 ## Personas con acceso (secretaria, supervisor)
 
-Pueden registrar asistencia, adelantos, gastos, retiros de material y conteos, pero **nada cambia hasta que tú lo apruebes**.
+Pueden registrar asistencia, adelantos, gastos, compras que llegan, retiros, devoluciones y conteos de material, pero **nada cambia hasta que tú lo apruebes**. No ven dinero: ni montos de trabajos, ni pagos, ni tarifas, ni caja. Tu app les mantiene copias livianas (solo nombres de órdenes, trabajadores y categorías) y es lo único que leen.
 
-1. **Una sola vez:** Firebase › Firestore Database › **Reglas** → borra todo, pega el contenido nuevo de `firestore.rules` → **Publicar**. Sin este paso la persona invitada no puede entrar.
+1. **Una sola vez:** Firebase › Firestore Database › **Reglas** → borra todo, pega el contenido nuevo de `firestore.rules` → **Publicar**. Sin este paso la persona invitada no puede entrar. Las reglas de esta versión son distintas a las anteriores: vuelve a pegarlas aunque ya lo hayas hecho.
 2. En la app: **Gastos → Ajustes → Personas con acceso** → escribe su correo de Google y su nombre → **Dar acceso**.
-3. Ella abre **https://sk-30u.github.io/workproca-admin/** y entra con ese correo. Ve solo la pantalla **Registrar**: no ve Cobranzas, caja, balance, costos ni la clave del asistente.
-4. Lo que envíe aparece en **Resumen → Por aprobar** (la pestaña dice "Resumen · 2" cuando hay pendientes). Tocas **Aprobar**, **Rechazar** o **Aprobar todo**.
-5. Para quitarle el acceso: **Gastos → Ajustes → Personas con acceso → Quitar acceso** (o **Eliminar**).
+3. Ella abre **https://sk-30u.github.io/workproca-admin/** y entra con ese correo. Ve solo la pantalla **Registrar**, con la banda de días que faltan por registrar.
+4. Lo que envíe aparece en **Resumen → Por aprobar**, agrupado por día y tipo, con totales y los posibles duplicados marcados. Tocas **Aprobar**, **Rechazar** (puedes escribir el motivo, ella lo ve) o **Aprobar todo**. Si tú cambiaste ese mismo registro después de que lo envió, la app te muestra las dos versiones antes de pisar nada.
+5. Ella ve en **Lo que enviaste** qué está pendiente, aprobado o rechazado, y puede **Retirar** lo pendiente si se equivocó.
+6. Para quitarle el acceso: **Gastos → Ajustes → Personas con acceso → Quitar acceso** (o **Eliminar**).
+
+Abre la app tú primero después de actualizar: tu sesión es la que crea las copias livianas que leen las personas invitadas.
 
 ## Actualizaciones
 
