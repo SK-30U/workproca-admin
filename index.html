@@ -865,7 +865,7 @@ select.combo-oculto{display:none}
       <div class="f full" id="mvViaL" hidden><span>¿Cómo entró?</span><div class="seg" id="mvVia" role="group" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button type="button" data-via="directo" class="on">Directo en USDT</button><button type="button" data-via="bs">Comprado con bolívares</button></div></div>
       <label class="f" id="mvViaBsL" hidden>Bolívares que entraron<input id="mvViaBs" inputmode="decimal" placeholder="0,00"></label>
       <label class="f" id="mvViaTasaL" hidden>Tasa de compra (Bs. por USDT)<input id="mvViaTasa" inputmode="decimal" placeholder="0,00"></label>
-      <label class="f full" id="mvBsL" hidden>Si lo pagaste en bolívares: monto en Bs.<input id="mvBs" inputmode="decimal" placeholder="0,00"></label>
+      <label class="f full" id="mvBsL" hidden>¿Lo pagaste en bolívares vendiendo USDT? Monto en Bs.<input id="mvBs" inputmode="decimal" placeholder="0,00"></label>
       <label class="f full" id="mvTasaL">Tasa (Bs. por USD)<input id="mvTasa" inputmode="decimal" placeholder="0,00"></label>
       <label class="f full" id="mvTrabL">Centro de costo: orden o trabajo (opcional)<select data-combo id="mvTrab"></select></label>
       <label class="f full">Referencia (opcional)<input id="mvRef" autocomplete="off"></label>
@@ -3935,6 +3935,10 @@ Responde solo con un objeto JSON:
       const bsReg=esRegistro() && cuentaDe(cta).moneda!=='VES' ? (parseNum($('#mvBs').value)||0) : 0;
       if(!(m>0) && !(bsReg>0)) return err(esRegistro()&&cuentaDe(cta).moneda!=='VES'?'Escribe el monto en dólares o en bolívares.':'Escribe el monto.');
       if(cuentaDe(cta).moneda==='VES' && !(t>0) && !esRegistro()) return err('Escribe la tasa para llevar los bolívares a dólares.');
+      /* Gasto del banco sin bolívares en el banco: casi siempre salieron de vender USDT en Binance */
+      if(mvTipo==='gasto' && cuentaDe(cta).moneda==='VES' && !esRegistro()){ const old=mvEditId?movs.find(x=>x.id===mvEditId):null, disp=r2(saldoCuenta(cta, f>today()?f:today())+(old&&old.cuenta===cta?num(old.monto):0)), kN='mvNeg|'+cta+'|'+r2(m);
+        if(disp-m < -0.005 && tasaArmada!==kN){ tasaArmada=kN; return err(`El banco quedaría en − Bs. ${nf.format(r2(m-disp))}. Si esos bolívares salieron de vender USDT, elige Binance como cuenta y escribe el monto en Bs. Si de verdad salió del banco, toca Guardar otra vez.`); }
+        if(tasaArmada===kN) tasaArmada=''; }
       Object.assign(body,{concepto, categoria:$('#mvCat').value, aCargo: mvTipo==='gasto'?$('#mvACargo').value:'Empresa', cuenta:cta, monto:r2(m), tasa:t>0?t:0, trabajoId: mvTipo==='gasto'&&$('#mvACargo').value==='Empresa'?$('#mvTrab').value:''});
       if(!mvEditId && (mvTipo==='gasto'||mvTipo==='ingreso')){ const dias=(a,b)=>Math.abs(new Date(a+'T12:00:00')-new Date(b+'T12:00:00'))/864e5, cN=normTxt(concepto);
         const igual=movs.find(x=>x.tipo===mvTipo && (x.cuenta||'')===cta && Math.abs(num(x.monto)-r2(m))<0.005 && dias(x.fecha,f)<=3 && (normTxt(x.concepto)===cN || (cN.length>3 && (normTxt(x.concepto).includes(cN)||cN.includes(normTxt(x.concepto))))));
