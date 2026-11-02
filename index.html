@@ -1051,18 +1051,18 @@ select.combo-oculto{display:none}
   <div class="wrap">
     <div class="grab"></div>
     <div class="sh-head"><h3 id="rcTitle">Registrar compra</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
-    <div class="tip">Una factura completa de una vez: crea las entradas al inventario, el gasto y el costo de cada ítem en dólares según lo que de verdad pagaste.</div>
+    <div class="tip" id="rcIntro">Una factura completa de una vez: crea las entradas al inventario, el gasto y el costo de cada ítem en dólares según lo que de verdad pagaste.</div>
     <div class="grid" style="margin-top:8px">
       <label class="f full">Proveedor<input id="rcProv" list="provL" autocomplete="off" placeholder="Ej.: MEOCA"></label>
       <label class="f">N° de factura o nota<input id="rcRef" autocomplete="off"></label>
-      <label class="f full">Comprado para la orden (opcional)<select data-combo id="rcOrden"></select></label>
+      <label class="f full" id="rcOrdenL">Comprado para la orden (opcional)<select data-combo id="rcOrden"></select></label>
       <label class="f">Fecha<input id="rcFecha" type="date"></label>
     </div>
     <div class="seg" id="rcMon" role="group" aria-label="Moneda de los precios" style="margin-top:10px;grid-template-columns:repeat(2,minmax(0,1fr))"><button type="button" data-m="bs" class="on">Precios en bolívares</button><button type="button" data-m="usd">Precios en dólares</button></div>
     <div id="rcLineas" style="margin-top:8px"></div>
     <div class="row-btns" style="margin-top:6px"><button type="button" class="btn sec" id="rcAdd">+ Agregar línea</button></div>
-    <div class="sech dinero" style="margin-top:12px">Cómo se pagó</div>
-    <div class="grid dinero">
+    <div class="sech dinero" id="rcPagoH" style="margin-top:12px">Cómo se pagó</div>
+    <div class="grid dinero" id="rcPagoG">
       <label class="f">Cuenta<select id="rcCuenta"><option value="binance">Binance (dólares)</option><option value="banco">Banco (bolívares)</option><option value="efectivo">Efectivo (dólares)</option><option value="">A crédito: queda por pagar</option></select></label>
       <label class="f" id="rcPagadoL">Monto pagado<input id="rcPagado" inputmode="decimal" placeholder="0,00"></label>
       <label class="f full" id="rcTasaL">Tasa (Bs. por USD)<input id="rcTasa" inputmode="decimal" placeholder="0,00"></label>
@@ -4407,6 +4407,8 @@ Responde solo con un objeto JSON:
     const usdV = cuentaDe(cta).moneda==='VES' ? (tt>0?r2(mo/tt):0) : r2(mo);
     await guardarMov(); if(!$('#mvSheet').hidden) return;
     if(esEquipo(cat, conc)){ openActivo(null); acPre={movId:id}; $('#acNombre').value=conc.replace(/\s*\((cuota|abono|pago|inicial|final)[^)]*\)\s*$/i,''); $('#acFecha').value=f; $('#acCosto').value=usdV?nf.format(usdV):''; $('#acNota').value=`Comprado con el gasto del ${fdate(f)}${ref?' · referencia '+ref:''}`; return; }
+    const catI=/consumib/i.test(cat)?'Consumibles':'Materiales', partes=conc.split(/\s*(?:,|;|\+|\s+y\s+|\s+e\s+)\s*/i).map(x=>x.trim()).filter(x=>x.length>1);
+    if(partes.length>1) return openCompra({movId:id, fecha:f, ref, usd:usdV, concepto:conc, nombres:partes.map(x=>x.charAt(0).toUpperCase()+x.slice(1)), categoria:[...icfg.categorias].includes(catI)?catI:undefined});
     const k=normTxt(conc), it=items.find(x=>x.activo!==false && k && normTxt(x.nombre).length>2 && (k.includes(normTxt(x.nombre))||normTxt(x.nombre).includes(k)));
     openIMov('entrada', null, {movId:id, fecha:f, total:usdV, referencia:ref, nota:conc, cantidad:1, ...(it?{itemId:it.id}:{nuevo:conc, categoria:/consumib/i.test(cat)?'Consumibles':'Materiales'})}); });
 
@@ -4457,7 +4459,7 @@ Cada movimiento:
 - a_cargo: "Empresa", "Papá" o "Fran". Por defecto "Empresa"; gastos personales evidentes (colegio, condominio, Cashea, comida de la casa) van a "Fran" salvo que se diga que son de papá.
 - categoria: de la empresa una de [${gcfg.catEmpresa.join('; ')}]; personales una de [${gcfg.catPersonal.join('; ')}]; ingresos una de [${gcfg.catIngreso.join('; ')}].
 - referencia: número de factura, de operación o de pago si aparece.
-- destino (solo gastos de la empresa): "herramienta" si se compró una herramienta o un equipo que dura (máquina de soldar, esmeril, taladro, compresor); "inventario" si es material o consumible que entra al almacén (electrodos, discos, argón, láminas, tubos, pintura), con cantidad y unidad (una de und, kg, m, l, gal, cil, lam, tubo, par, rollo, caja, saco); "" para lo demás (comida, combustible, servicios, transporte, alquileres).
+- destino (solo gastos de la empresa): "herramienta" si se compró una herramienta o un equipo que dura (máquina de soldar, esmeril, taladro, compresor); "inventario" si es material o consumible que entra al almacén (electrodos, discos, argón, láminas, tubos, pintura), con cantidad y unidad (una de und, kg, m, l, gal, cil, lam, tubo, par, rollo, caja, saco); si la factura trae varios artículos distintos, lístalos en "items", cada uno con nombre, cantidad, unidad y costo_total en la moneda del gasto (0 si no aparece); "" para lo demás (comida, combustible, servicios, transporte, alquileres).
 - Para "cambio": cuenta_origen, monto_origen, cuenta_destino, monto_destino y tasa.
 
 Reglas:
@@ -4469,7 +4471,7 @@ Material a leer:
 ${texto?'Texto:\n<<<\n'+texto+'\n>>>\n':''}${textosArch.join('\n\n')}${nImgs?`\n(Además van ${nImgs} imagen(es) adjunta(s): léelas con cuidado, en especial los montos.)`:''}
 
 Responde solo con un objeto JSON:
-{"resumen":"una frase","movimientos":[{"tipo":"gasto","fecha":"","concepto":"","monto":0,"moneda":"VES","cuenta":"banco","tasa":0,"a_cargo":"Empresa","categoria":"","referencia":"","destino":"","cantidad":0,"unidad":"und","cuenta_origen":"","monto_origen":0,"cuenta_destino":"","monto_destino":0,"motivo":"de dónde lo sacaste"}],"dudas":[]}`;
+{"resumen":"una frase","movimientos":[{"tipo":"gasto","fecha":"","concepto":"","monto":0,"moneda":"VES","cuenta":"banco","tasa":0,"a_cargo":"Empresa","categoria":"","referencia":"","destino":"","cantidad":0,"unidad":"und","items":[{"nombre":"","cantidad":0,"unidad":"und","costo_total":0}],"cuenta_origen":"","monto_origen":0,"cuenta_destino":"","monto_destino":0,"motivo":"de dónde lo sacaste"}],"dudas":[]}`;
   }
   function renderAIGas(res){
     aiMovs=(Array.isArray(res.movimientos)?res.movimientos:[]).filter(x=>x&&['gasto','ingreso','cambio'].includes(x.tipo));
@@ -4497,6 +4499,7 @@ Responde solo con un objeto JSON:
             ${x.tipo==='gasto'?`<label>A cargo de<select data-gi="${i}" data-k="a_cargo">${ACARGO.map(a=>`<option${a===ac?' selected':''}>${a}</option>`).join('')}</select></label>`:''}
             <label${x.tipo==='gasto'?'':' style="grid-column:1/-1"'}>Categoría<select data-gi="${i}" data-k="categoria">${cats.map(c=>`<option${c===cat?' selected':''}>${esc(c)}</option>`).join('')}</select></label>
             ${x.tipo==='gasto'?(()=>{ const dst=['herramienta','inventario'].includes(x.destino)?x.destino:(ac==='Empresa'&&esEquipo(cat,x.concepto)?'herramienta':''); return `<label style="grid-column:1/-1">Además<select data-gi="${i}" data-k="destino"><option value="">Solo el gasto</option><option value="herramienta"${dst==='herramienta'?' selected':''}>Agregarlo a herramientas y equipos</option><option value="inventario"${dst==='inventario'?' selected':''}>Agregarlo al inventario del almacén</option></select></label>
+            ${Array.isArray(x.items)&&x.items.filter(y=>y&&y.nombre).length>1?`<small style="grid-column:1/-1">Si va al inventario entra en ${x.items.filter(y=>y&&y.nombre).length} renglones: ${esc(x.items.filter(y=>y&&y.nombre).map(y=>`${y.nombre}${num(y.cantidad)>0?' ('+nq.format(num(y.cantidad))+' '+uni(y.unidad||'und')+')':''}`).join(', '))}</small>`:''}
             <label>Cantidad (inventario)<input data-gi="${i}" data-k="cantidad" inputmode="decimal" value="${num(x.cantidad)>0?nq.format(num(x.cantidad)):'1'}"></label><label>Unidad<select data-gi="${i}" data-k="unidad">${UNIDADES.map(([k,l])=>`<option value="${k}"${k===(x.unidad||'und')?' selected':''}>${l}</option>`).join('')}</select></label>`; })():''}
           </div>${x.referencia?`<small>Referencia: ${esc(x.referencia)}</small>`:''}${x.motivo?`<small>${esc(x.motivo)}</small>`:''}<small class="err" data-gerr="${i}"></small></div></div>`;
       }).join('')
@@ -4535,10 +4538,14 @@ Responde solo con un objeto JSON:
       try{ const ref=gDb.collection('movimientos').doc(), usdG=usdDe(body, tasaSugerida()), ah=body.creado;
         if(dst==='herramienta'){ const aRef=iDb.collection('activos').doc(); body.activoId=aRef.id; await ref.set(body);
           await aRef.set({nombre:body.concepto, codigo:'', estado:'Bueno', responsableId:'taller', ubicacion:'', fechaCompra:body.fecha, costo:r2(usdG), nota:`Comprado con el gasto del ${fdate(body.fecha)}${body.referencia?' · referencia '+body.referencia:''}`, historial:[], movId:ref.id, creado:ah, actualizado:ah}); }
-        else if(dst==='inventario'){ await ref.set(body); const nom=body.concepto, k=normTxt(nom);
-          let it=items.find(y=>y.activo!==false && normTxt(y.nombre)===k);
-          if(!it){ const r=iDb.collection('inventario').doc(), dI={nombre:nom, categoria:/consumib/i.test(body.categoria)?'Consumibles':(icfg.categorias.includes('Materiales')?'Materiales':icfg.categorias[0]||'Materiales'), unidad:v('unidad')||'und', minimo:0, ubicacion:'', proveedor:'', activo:true, precioRef:0, creado:ah, actualizado:ah}; await r.set(dI); it={id:r.id, ...dI}; }
-          await iDb.collection('invMovs').doc().set({tipo:'entrada', fecha:body.fecha, itemId:it.id, cantidad:r2q(q), costoUnit:r4(usdG/q), sinCosto:false, proveedor:'', referencia:body.referencia, movId:ref.id, porPagar:false, nota:nom, registradoPor:quienRegistra(), creado:ah, actualizado:ah}); }
+        else if(dst==='inventario'){ await ref.set(body);
+          const lst0=Array.isArray(x.items)?x.items.filter(y=>y&&String(y.nombre||'').trim()):[], lst=lst0.length>1?lst0:[{nombre:body.concepto, cantidad:q, unidad:v('unidad')||'und', costo_total:0}];
+          const totC=sum(lst,y=>num(y.costo_total)), todosC=lst.every(y=>num(y.costo_total)>0); let acumU=0;
+          for(let j=0;j<lst.length;j++){ const y=lst[j], nom=String(y.nombre).trim(), qj=num(y.cantidad)>0?num(y.cantidad):(lst.length>1?1:q), k=normTxt(nom);
+          let usdJ = todosC&&totC>0 ? r2(usdG*num(y.costo_total)/totC) : r2(usdG/lst.length); if(j===lst.length-1) usdJ=r2(usdG-acumU); acumU=r2(acumU+usdJ);
+          let it=items.find(z=>z.activo!==false && normTxt(z.nombre)===k);
+          if(!it){ const r=iDb.collection('inventario').doc(), dI={nombre:nom, categoria:/consumib/i.test(body.categoria)?'Consumibles':(icfg.categorias.includes('Materiales')?'Materiales':icfg.categorias[0]||'Materiales'), unidad:(lst.length>1?(UNIDADES.some(u=>u[0]===y.unidad)?y.unidad:'und'):(v('unidad')||'und')), minimo:0, ubicacion:'', proveedor:'', activo:true, precioRef:0, creado:ah, actualizado:ah}; await r.set(dI); it={id:r.id, ...dI}; items.push(it); }
+          await iDb.collection('invMovs').doc().set({tipo:'entrada', fecha:body.fecha, itemId:it.id, cantidad:r2q(qj), costoUnit:r4(usdJ/qj), sinCosto:false, proveedor:'', referencia:body.referencia, movId:ref.id, porPagar:false, nota:body.concepto, registradoPor:quienRegistra(), creado:ah, actualizado:ah}); } }
         else await ref.set(body);
         ok++; chk.checked=false; chk.closest('.act').style.opacity='.5'; }catch(e){ errEl.textContent=errMsg(e); conErr++; }
     }
@@ -5069,7 +5076,7 @@ Responde solo con un objeto JSON:
   $('#cqSave').addEventListener('click', guardarCuadrar);
 
   /* ---------- registrar compra: una factura completa con varias líneas ---------- */
-  let rcLineas=[], rcMon='bs';
+  let rcLineas=[], rcMon='bs', rcPre=null;   /* rcPre: pasar al inventario un gasto ya registrado (no se crea otro gasto) */
   function filasCatalogo(){ return $('#icTexto').value.split(/\n/).map(l=>l.trim()).filter(Boolean).map(l=>{ const p=l.split(/\s*[;\t|]\s*/); return {nombre:(p[0]||'').trim(), unidad:(p[1]||'und').trim()||'und', precio:parseNum(p[2]||'')||0, categoria:(p[3]||'').trim(), proveedor:(p[4]||'').trim()}; }).filter(x=>x.nombre); }
   function previewCatalogo(){ const fs=filasCatalogo(); const rep=fs.filter(x=>items.some(i=>norm(i.nombre)===norm(x.nombre))).length; $('#icPrev').textContent = fs.length ? `${fs.length} ${fs.length===1?'ítem':'ítems'} · ${fs.filter(x=>x.precio>0).length} con precio${rep?` · ${rep} ya ${rep===1?'existe y se salta':'existen y se saltan'}`:''}` : ''; }
   async function guardarCatalogo(){
@@ -5098,11 +5105,16 @@ Responde solo con un objeto JSON:
   }
   $('#clSave').addEventListener('click', guardarConteoLista);
   $('#clQ').addEventListener('input', pintarConteoLista);
-  function openCompra(){
-    fillItemSelects(); pintarProveedores();
+  function openCompra(pre){
+    rcPre=pre||null; fillItemSelects(); pintarProveedores();
     rcLineas=[{itemId:'', nuevo:'', unidad:'und', categoria:icfg.categorias[0]||'Materiales', cant:'', precio:''}]; rcMon='bs'; try{ rcMon=localStorage.getItem('rcMon')||'bs'; }catch(_){} document.querySelectorAll('#rcMon button').forEach(b=>b.classList.toggle('on', b.dataset.m===rcMon));
     $('#rcOrden').innerHTML='<option value="">Para el almacén (sin orden)</option>'+centrosCosto().map(d=>`<option value="${esc(d.id)}">${esc(etiquetaCentro(d))}</option>`).join(''); $('#rcOrden').value=''; comboSync($('#rcOrden'));
     $('#rcProv').value=''; $('#rcRef').value=''; $('#rcFecha').value=today(); $('#rcCuenta').value=esRegistro()?'':'binance'; $('#rcPagado').value=''; delete $('#rcTasa').dataset.manual; { const tu=(tasaUsdt()||{}).tasa||tasaSugerida(); $('#rcTasa').value=tu?nfT.format(tu):''; }   /* se paga con USDT: la tasa a la que se compraron */ $('#rcErr').textContent='';
+    ['#rcPagoH','#rcPagoG','#rcOrdenL'].forEach(x=>$(x).hidden=!!rcPre);
+    $('#rcTitle').textContent = rcPre ? 'Pasar el gasto al inventario' : 'Registrar compra';
+    $('#rcIntro').textContent = rcPre ? `Un renglón por cada cosa del gasto «${rcPre.concepto||''}» de ${usd(rcPre.usd)}. Escribe la cantidad y, si los sabes, los precios: el costo se reparte según ellos; sin precios, en partes iguales. No se crea otro gasto.` : 'Una factura completa de una vez: crea las entradas al inventario, el gasto y el costo de cada ítem en dólares según lo que de verdad pagaste.';
+    if(rcPre){ rcMon='usd'; $('#rcFecha').value=rcPre.fecha||today(); $('#rcRef').value=rcPre.ref||'';
+      rcLineas=(rcPre.nombres||['']).map(n=>{ const k=normTxt(n), it=items.find(x=>x.activo!==false && k && normTxt(x.nombre)===k); return {itemId:it?it.id:'__nuevo', nuevo:it?'':n, unidad:'und', categoria:rcPre.categoria||icfg.categorias[0]||'Materiales', cant:'1', precio:''}; }); }
     pintarLineasCompra(); recalcCompra(); openSheet('#rcSheet');
   }
   function pintarLineasCompra(){
@@ -5123,6 +5135,7 @@ Responde solo con un objeto JSON:
   function datosCompra(){
     const tot=sum(rcLineas,l=>(parseNum(l.cant)||0)*(parseNum(l.precio)||0)), cta=$('#rcCuenta').value, pag=parseNum($('#rcPagado').value)||0, t=parseNum($('#rcTasa').value)||0;
     const enBs=rcMon==='bs';
+    if(rcPre) return {tot, cta:'', pag:0, t, enBs, pagUsd:r2(num(rcPre.usd))};
     /* Lo pagado en dólares: lo que salió de una cuenta en dólares, o los bolívares del banco a la tasa escrita; sin pago, la lista a la tasa */
     const pagUsd = cta && cuentaDe(cta).moneda!=='VES' ? (pag>0?pag:(enBs?(t>0?tot/t:0):tot)) : cta==='banco' ? (pag>0 ? pag/(t>0?t:NaN) : (enBs ? tot/(t>0?t:NaN) : tot)) : (enBs?(t>0?tot/t:0):tot);
     return {tot, cta, pag, t, enBs, pagUsd: isFinite(pagUsd)?r2(pagUsd):0};
@@ -5133,6 +5146,7 @@ Responde solo con un objeto JSON:
     $('#rcTasaL').hidden = !(D.enBs || D.cta==='banco');
     rcLineas.forEach((l,i)=>{ const e=document.querySelector(`[data-rcsub="${i}"]`); if(!e) return; const st=(parseNum(l.cant)||0)*(parseNum(l.precio)||0); e.textContent = st>0 ? `${D.enBs?bs(r2(st)):usd(r2(st))}${D.tot>0&&D.pagUsd>0?' → '+usd(r2(st/D.tot*D.pagUsd)):''}` : ''; });
     const imp = D.enBs && D.pagUsd>0 && D.tot>0 ? D.tot/D.pagUsd : 0, tR=tasaSugerida();
+    if(rcPre){ $('#rcTot').textContent = `Costo total del gasto: ${usd(D.pagUsd)}${D.tot>0?` · se reparte según los precios`:` · sin precios: ${usd(r2(D.pagUsd/Math.max(1,rcLineas.length)))} por renglón`}`; return; }
     $('#rcTot').textContent = D.tot>0 ? `Total de la factura: ${D.enBs?bs(r2(D.tot)):usd(r2(D.tot))}${D.pagUsd>0?` · Costo en dólares: ${usd(D.pagUsd)}`:''}${imp>0?` · Tasa: ${nfT.format(r2(imp))}`:''}${imp>0&&tR>0&&D.tot/tR>D.pagUsd+0.005?` · Ahorro frente a ${nfT.format(tR)}: ${usd(r2(D.tot/tR-D.pagUsd))}`:''}` : 'Agrega las líneas de la factura.';
   }
   $('#rcLineas').addEventListener('input', e=>{ const el=e.target, k=el.dataset.rc, i=+(el.closest('[data-rcl]')||{dataset:{}}).dataset.rcl; if(!k||isNaN(i)) return; rcLineas[i][k]=el.value; recalcCompra(); });
@@ -5159,18 +5173,19 @@ Responde solo con un objeto JSON:
       for(const l of ls){ if(l.itemId!=='__nuevo') continue; const nom=String(l.nuevo).trim().replace(/\s+/g,' '); const ya=items.find(x=>norm(x.nombre)===norm(nom));
         if(ya){ l.itemId=ya.id; continue; } const r=iDb.collection('inventario').doc(); await r.set({nombre:nom, categoria:l.categoria, unidad:l.unidad, minimo:0, ubicacion:'', proveedor:prov, activo:true, precioRef:0, creado:ahora, actualizado:ahora}); l.itemId=r.id; }
       /* 2) el gasto (si se pagó) */
-      let movId='';
-      if(D.cta){ const c=cuentaDe(D.cta), catCnt={}; ls.forEach(l=>{ const it=itemDe(l.itemId)||{categoria:l.categoria}; const k=CAT_GASTO_INV[it.categoria]||'Materiales'; catCnt[k]=(catCnt[k]||0)+1; });
+      let movId=rcPre?rcPre.movId:'';
+      if(D.cta && !rcPre){ const c=cuentaDe(D.cta), catCnt={}; ls.forEach(l=>{ const it=itemDe(l.itemId)||{categoria:l.categoria}; const k=CAT_GASTO_INV[it.categoria]||'Materiales'; catCnt[k]=(catCnt[k]||0)+1; });
         const cat=Object.entries(catCnt).sort((a,b)=>b[1]-a[1])[0][0];
         const montoCta = c.moneda==='VES' ? (D.pag>0?D.pag:r2(D.pagUsd*D.t)) : r2(D.pagUsd);
         const g=gDb.collection('movimientos').doc(); await g.set({tipo:'gasto', fecha:f, concepto:`Compra ${prov||'de materiales'}${ref?' · factura N° '+ref:''} (${ls.length} ${ls.length===1?'ítem':'ítems'})`, categoria:cat, aCargo:'Empresa', cuenta:c.id, monto:montoCta, tasa:c.moneda==='VES'?r4(montoCta/D.pagUsd):0, trabajoId:$('#rcOrden').value||'', referencia:ref, inventario:true, creado:ahora, actualizado:ahora}); movId=g.id; }
       /* 3) las entradas, con el costo repartido según el precio de cada línea */
       let acum=0; const filas=ls.map(l=>({l, sub:l.q*l.p}));
       for(let i=0;i<filas.length;i++){ const {l,sub}=filas[i];
-        let cu = totL>0 ? r4(sub/totL*D.pagUsd/l.q) : 0; if(i===filas.length-1 && totL>0) cu=r4((D.pagUsd-acum)/l.q); acum=r2(acum+cu*l.q);
+        let cu = totL>0 ? r4(sub/totL*D.pagUsd/l.q) : (rcPre ? r4(D.pagUsd/filas.length/l.q) : 0); if(i===filas.length-1 && (totL>0||rcPre)) cu=r4((D.pagUsd-acum)/l.q); acum+=cu*l.q;
         const body={tipo:'entrada', fecha:f, itemId:l.itemId, cantidad:r2q(l.q), costoUnit:cu>0?cu:0, sinCosto:!(cu>0), proveedor:prov, referencia:ref, movId, porPagar:!movId && (cu>0||sub>0), paraOrden:!movId?($('#rcOrden').value||''):'', nota:'', registradoPor:quienRegistra(), creado:ahora, actualizado:ahora};
         if(D.enBs && l.p>0) Object.assign(body,{costoUnitBs:r4(l.p), totalBs:r2(sub), tasa:D.t>0?r2(D.t):(D.pagUsd>0?r2(totL/D.pagUsd):0)});
         await iDb.collection('invMovs').doc().set(body); }
+      if(rcPre){ try{ await gDb.collection('movimientos').doc(rcPre.movId).update({inventario:true, actualizado:ahora}); }catch(_){} rcPre=null; }
       closeSheets(); toast(esRegistro()?'Enviado para aprobar: queda pendiente hasta que el dueño lo apruebe':`Compra registrada: ${ls.length} ${ls.length===1?'línea':'líneas'} · ${usd(D.pagUsd)}${movId?'':' · a crédito, queda por pagar'}`);
     }catch(e){ err(errMsg(e)); }
     finally{ btn.disabled=false; btn.textContent='Guardar compra'; }
