@@ -964,6 +964,9 @@ select.combo-oculto{display:none}
     <div class="tip" id="imTipoTip" style="margin-top:8px"></div>
     <div class="grid" style="margin-top:10px">
       <label class="f full">Ítem<select data-combo id="imItem"></select></label>
+      <label class="f full" id="imNuevoL" hidden>Nombre del ítem nuevo<input id="imNuevo" autocomplete="off"></label>
+      <label class="f" id="imNuevoUL" hidden>Unidad<select id="imNuevoU"></select></label>
+      <label class="f" id="imNuevoCL" hidden>Categoría del ítem<select id="imNuevoC"></select></label>
       <div class="tip num full" id="imExist" style="margin-top:-4px"></div>
       <label class="f">Fecha<input id="imFecha" type="date"></label>
       <label class="f"><span id="imCantLbl">Cantidad</span><input id="imCant" inputmode="decimal" placeholder="0"></label>
@@ -3846,6 +3849,8 @@ Responde solo con un objeto JSON:
 
   /* ---------- hoja de movimiento ---------- */
   const COBRO_FACT='Cobro de factura', PAGO_REP='Pago de cliente por repartir';
+  /* Lo que dura y se usa muchas veces (máquina de soldar, esmeril, taladro) es herramienta o equipo, no material del almacén */
+  const esEquipo = (cat, conc) => /herramient|equipo|maquinari/i.test(String(cat||'')) || /m[aá]quina|esmeril|taladro|compresor|generador|planta el[eé]ctrica|pulidora|tronzadora|andamio|polipasto|diferencial/i.test(String(conc||''));
   function catsPara(tipo, ac){ return tipo==='ingreso' ? [COBRO_FACT, PAGO_REP, ...(gcfg.catIngreso||[]).filter(c=>!['cobro a cliente','cobro de factura'].includes(String(c).toLowerCase()))] : (ac==='Empresa' ? gcfg.catEmpresa : gcfg.catPersonal); }
   const esCobroFact = () => mvTipo==='ingreso' && $('#mvCat').value===COBRO_FACT;
   function fillFactTrab(sel){ const ls=docs.filter(d=>saldo(d)>0).sort((a,b)=>(tieneOrden(b)-tieneOrden(a)) || byOrden(a,b)); $('#mvFactTrab').innerHTML = '<option value="__rep">Todavía sin orden: queda por repartir después</option>' + (ls.length ? ls.map(d=>`<option value="${esc(d.id)}">${tieneOrden(d)?esc(d.ods):'Sin orden'} · ${esc(d.descripcion)}${d.unidad?' ('+esc(d.unidad)+')':''} · saldo ${usd(saldo(d))}</option>`).join('') : ''); $('#mvFactTrab').value = sel && ls.some(d=>d.id===sel) ? sel : (ls[0]?ls[0].id:'__rep'); }
@@ -3981,7 +3986,8 @@ Responde solo con un objeto JSON:
     delete $('#mvTasa').dataset.manual; if(m) $('#mvTasa').dataset.manual='1';
     const ts=mvTipo==='ingreso' ? ((ultimaTasa()||{}).tasa||tasaSugerida()) : tasaSugerida(); $('#mvTasa').value = m ? (num(m.tasa)?nfT.format(num(m.tasa)):'') : (ts?nfT.format(ts):'');
     $('#mvErr').textContent=''; $('#mvDel').hidden=!m; $('#mvDel').textContent='Eliminar'; delete $('#mvDel').dataset.armed;
-    $('#mvInv').hidden = !(m && m.tipo==='gasto' && (m.aCargo||'Empresa')==='Empresa' && !m.inventario);
+    $('#mvInv').hidden = !(m && m.tipo==='gasto' && (m.aCargo||'Empresa')==='Empresa' && !m.inventario && !m.activoId);
+    if(m) $('#mvInv').textContent = esEquipo(m.categoria, m.concepto) ? 'Pasar a herramientas y equipos' : 'Pasar a inventario';
     $('#mvAplicar').hidden = !(m && m.tipo==='ingreso' && m.categoria!==COBRO_FACT && docs.some(d=>saldo(d)>0));
     $('#mvRepartir').hidden = !(m && m.tipo==='ingreso' && m.categoria!==COBRO_FACT && !esFinanciamiento(m) && docs.some(d=>saldo(d)>0));
     $('#mvDeudaChk').checked=false;
@@ -4395,7 +4401,14 @@ Responde solo con un objeto JSON:
   $('#mvSave').addEventListener('click', guardarMov);
   $('#gMain').addEventListener('click', e=>{ const b=e.target.closest('[data-cierre]'); if(!b) return; const txt=reporteCierre(b.dataset.cierre); copyPlain(txt, 'Reporte copiado. Pégalo en WhatsApp o en una hoja', b.textContent); });
   $('#mvDel').addEventListener('click', eliminarMov);
-  $('#mvInv').addEventListener('click', ()=>{ const m=movs.find(x=>x.id===mvEditId); if(!m) return; closeSheets(); openIMov('entrada', null, {movId:m.id, fecha:m.fecha, total:usdDe(m,tasaSugerida()), referencia:m.referencia||'', nota:m.concepto||''}); });
+  /* Primero se guarda lo que estabas editando; después se abre la herramienta o la entrada de inventario ya llena */
+  $('#mvInv').addEventListener('click', async ()=>{ const id=mvEditId; if(!id) return;
+    const cta=$('#mvCuenta').value, mo=parseNum($('#mvMonto').value)||0, tt=parseNum($('#mvTasa').value)||0, f=$('#mvFecha').value||today(), conc=$('#mvConcepto').value.trim(), ref=$('#mvRef').value.trim(), cat=$('#mvCat').value;
+    const usdV = cuentaDe(cta).moneda==='VES' ? (tt>0?r2(mo/tt):0) : r2(mo);
+    await guardarMov(); if(!$('#mvSheet').hidden) return;
+    if(esEquipo(cat, conc)){ openActivo(null); acPre={movId:id}; $('#acNombre').value=conc.replace(/\s*\((cuota|abono|pago|inicial|final)[^)]*\)\s*$/i,''); $('#acFecha').value=f; $('#acCosto').value=usdV?nf.format(usdV):''; $('#acNota').value=`Comprado con el gasto del ${fdate(f)}${ref?' · referencia '+ref:''}`; return; }
+    const k=normTxt(conc), it=items.find(x=>x.activo!==false && k && normTxt(x.nombre).length>2 && (k.includes(normTxt(x.nombre))||normTxt(x.nombre).includes(k)));
+    openIMov('entrada', null, {movId:id, fecha:f, total:usdV, referencia:ref, nota:conc, cantidad:1, ...(it?{itemId:it.id}:{nuevo:conc, categoria:/consumib/i.test(cat)?'Consumibles':'Materiales'})}); });
 
   function iniciarGastos(db){
     gDb=db; gCfgRef=db.doc('config/gastos');
@@ -4444,6 +4457,7 @@ Cada movimiento:
 - a_cargo: "Empresa", "Papá" o "Fran". Por defecto "Empresa"; gastos personales evidentes (colegio, condominio, Cashea, comida de la casa) van a "Fran" salvo que se diga que son de papá.
 - categoria: de la empresa una de [${gcfg.catEmpresa.join('; ')}]; personales una de [${gcfg.catPersonal.join('; ')}]; ingresos una de [${gcfg.catIngreso.join('; ')}].
 - referencia: número de factura, de operación o de pago si aparece.
+- destino (solo gastos de la empresa): "herramienta" si se compró una herramienta o un equipo que dura (máquina de soldar, esmeril, taladro, compresor); "inventario" si es material o consumible que entra al almacén (electrodos, discos, argón, láminas, tubos, pintura), con cantidad y unidad (una de und, kg, m, l, gal, cil, lam, tubo, par, rollo, caja, saco); "" para lo demás (comida, combustible, servicios, transporte, alquileres).
 - Para "cambio": cuenta_origen, monto_origen, cuenta_destino, monto_destino y tasa.
 
 Reglas:
@@ -4455,7 +4469,7 @@ Material a leer:
 ${texto?'Texto:\n<<<\n'+texto+'\n>>>\n':''}${textosArch.join('\n\n')}${nImgs?`\n(Además van ${nImgs} imagen(es) adjunta(s): léelas con cuidado, en especial los montos.)`:''}
 
 Responde solo con un objeto JSON:
-{"resumen":"una frase","movimientos":[{"tipo":"gasto","fecha":"","concepto":"","monto":0,"moneda":"VES","cuenta":"banco","tasa":0,"a_cargo":"Empresa","categoria":"","referencia":"","cuenta_origen":"","monto_origen":0,"cuenta_destino":"","monto_destino":0,"motivo":"de dónde lo sacaste"}],"dudas":[]}`;
+{"resumen":"una frase","movimientos":[{"tipo":"gasto","fecha":"","concepto":"","monto":0,"moneda":"VES","cuenta":"banco","tasa":0,"a_cargo":"Empresa","categoria":"","referencia":"","destino":"","cantidad":0,"unidad":"und","cuenta_origen":"","monto_origen":0,"cuenta_destino":"","monto_destino":0,"motivo":"de dónde lo sacaste"}],"dudas":[]}`;
   }
   function renderAIGas(res){
     aiMovs=(Array.isArray(res.movimientos)?res.movimientos:[]).filter(x=>x&&['gasto','ingreso','cambio'].includes(x.tipo));
@@ -4482,6 +4496,8 @@ Responde solo con un objeto JSON:
             <label>Tasa<input data-gi="${i}" data-k="tasa" inputmode="decimal" value="${tasa?nfT.format(tasa):''}" placeholder="Bs. por USD"></label>
             ${x.tipo==='gasto'?`<label>A cargo de<select data-gi="${i}" data-k="a_cargo">${ACARGO.map(a=>`<option${a===ac?' selected':''}>${a}</option>`).join('')}</select></label>`:''}
             <label${x.tipo==='gasto'?'':' style="grid-column:1/-1"'}>Categoría<select data-gi="${i}" data-k="categoria">${cats.map(c=>`<option${c===cat?' selected':''}>${esc(c)}</option>`).join('')}</select></label>
+            ${x.tipo==='gasto'?(()=>{ const dst=['herramienta','inventario'].includes(x.destino)?x.destino:(ac==='Empresa'&&esEquipo(cat,x.concepto)?'herramienta':''); return `<label style="grid-column:1/-1">Además<select data-gi="${i}" data-k="destino"><option value="">Solo el gasto</option><option value="herramienta"${dst==='herramienta'?' selected':''}>Agregarlo a herramientas y equipos</option><option value="inventario"${dst==='inventario'?' selected':''}>Agregarlo al inventario del almacén</option></select></label>
+            <label>Cantidad (inventario)<input data-gi="${i}" data-k="cantidad" inputmode="decimal" value="${num(x.cantidad)>0?nq.format(num(x.cantidad)):'1'}"></label><label>Unidad<select data-gi="${i}" data-k="unidad">${UNIDADES.map(([k,l])=>`<option value="${k}"${k===(x.unidad||'und')?' selected':''}>${l}</option>`).join('')}</select></label>`; })():''}
           </div>${x.referencia?`<small>Referencia: ${esc(x.referencia)}</small>`:''}${x.motivo?`<small>${esc(x.motivo)}</small>`:''}<small class="err" data-gerr="${i}"></small></div></div>`;
       }).join('')
       + (dudas.length?`<div class="dudas"><b>Revisa antes de guardar</b><ul>${dudas.map(q=>`<li>${esc(q)}</li>`).join('')}</ul></div>`:'')
@@ -4514,7 +4530,17 @@ Responde solo con un objeto JSON:
       }
       if(err){ errEl.textContent=err; conErr++; continue; }
       errEl.textContent=''; body.creado=new Date().toISOString(); body.actualizado=body.creado;
-      try{ await gDb.collection('movimientos').doc().set(body); ok++; chk.checked=false; chk.closest('.act').style.opacity='.5'; }catch(e){ errEl.textContent=errMsg(e); conErr++; }
+      const dst = x.tipo==='gasto' && body.aCargo==='Empresa' ? v('destino') : '', q=parseNum(v('cantidad'))||1;
+      if(dst==='inventario') body.inventario=true;
+      try{ const ref=gDb.collection('movimientos').doc(), usdG=usdDe(body, tasaSugerida()), ah=body.creado;
+        if(dst==='herramienta'){ const aRef=iDb.collection('activos').doc(); body.activoId=aRef.id; await ref.set(body);
+          await aRef.set({nombre:body.concepto, codigo:'', estado:'Bueno', responsableId:'taller', ubicacion:'', fechaCompra:body.fecha, costo:r2(usdG), nota:`Comprado con el gasto del ${fdate(body.fecha)}${body.referencia?' · referencia '+body.referencia:''}`, historial:[], movId:ref.id, creado:ah, actualizado:ah}); }
+        else if(dst==='inventario'){ await ref.set(body); const nom=body.concepto, k=normTxt(nom);
+          let it=items.find(y=>y.activo!==false && normTxt(y.nombre)===k);
+          if(!it){ const r=iDb.collection('inventario').doc(), dI={nombre:nom, categoria:/consumib/i.test(body.categoria)?'Consumibles':(icfg.categorias.includes('Materiales')?'Materiales':icfg.categorias[0]||'Materiales'), unidad:v('unidad')||'und', minimo:0, ubicacion:'', proveedor:'', activo:true, precioRef:0, creado:ah, actualizado:ah}; await r.set(dI); it={id:r.id, ...dI}; }
+          await iDb.collection('invMovs').doc().set({tipo:'entrada', fecha:body.fecha, itemId:it.id, cantidad:r2q(q), costoUnit:r4(usdG/q), sinCosto:false, proveedor:'', referencia:body.referencia, movId:ref.id, porPagar:false, nota:nom, registradoPor:quienRegistra(), creado:ah, actualizado:ah}); }
+        else await ref.set(body);
+        ok++; chk.checked=false; chk.closest('.act').style.opacity='.5'; }catch(e){ errEl.textContent=errMsg(e); conErr++; }
     }
     btn.disabled=false; btn.textContent='Guardar movimientos marcados';
     $('#aiStat').textContent=`${ok} ${ok===1?'movimiento guardado':'movimientos guardados'}.${conErr?` ${conErr} con datos por corregir: revisa los mensajes en rojo.`:''}`;
@@ -4533,7 +4559,7 @@ Responde solo con un objeto JSON:
   const TIPO_INV={entrada:'Entrada', salida:'Salida', conteo:'Conteo', devolucion:'Devolución'};
   const ESTADOS_AC=['Bueno','En reparación','Dañado','Perdido'];
   let iDb=null, icfg=JSON.parse(JSON.stringify(ICFG_DEF)), items=[], invMovs=[], activos=[], iLoaded={i:false,m:false,a:false,c:false};
-  let iView='ex', iQ='', iCat='', iMon='usd', iSemana=inicioSemana(today()), itEditId=null, imEditId=null, imTipo='entrada', imPre=null, acEditId=null, invRep={tipo:'existencias', periodo:'semana'};
+  let iView='ex', iQ='', iCat='', iMon='usd', iSemana=inicioSemana(today()), itEditId=null, imEditId=null, imTipo='entrada', imPre=null, acPre=null, acEditId=null, invRep={tipo:'existencias', periodo:'semana'};
   const nq=new Intl.NumberFormat('es-VE',{maximumFractionDigits:2});
   const r2q = n => Math.round(n*1000)/1000, r4 = n => Math.round(n*10000)/10000;
   const UNI_LARGO={und:['unidad','unidades'],kg:['kilogramo','kilogramos'],m:['metro','metros'],l:['litro','litros'],gal:['galón','galones'],cil:['cilindro','cilindros'],lam:['lámina','láminas'],tubo:['tubo','tubos'],par:['par','pares'],rollo:['rollo','rollos'],caja:['caja','cajas'],saco:['saco','sacos']};
@@ -4754,7 +4780,7 @@ Responde solo con un objeto JSON:
   function fillIMovSelects(itemId){
     const cur=imEditId?invMovs.find(x=>x.id===imEditId):null;
     const ls=items.filter(it=>it.activo!==false || (cur&&cur.itemId===it.id) || it.id===itemId).sort((a,b)=>String(a.nombre).localeCompare(String(b.nombre),'es'));
-    $('#imItem').innerHTML = ls.length ? ls.map(it=>`<option value="${esc(it.id)}">${esc(it.nombre)} (${esc(uni(it.unidad))})</option>`).join('') : '<option value="">Primero agrega ítems en Catálogo</option>';
+    $('#imItem').innerHTML = (ls.length ? ls.map(it=>`<option value="${esc(it.id)}">${esc(it.nombre)} (${esc(uni(it.unidad))})</option>`).join('') : (imTipo==='entrada'?'':'<option value="">Primero agrega ítems en Catálogo</option>')) + (imTipo==='entrada'&&!imEditId?'<option value="__nuevo">+ Ítem nuevo (no está en el catálogo)</option>':'');
     const ts=trabajosActivos();
     $('#imTrab').innerHTML='<option value="">Ninguna (consumo general del taller)</option>'+ts.map(d=>`<option value="${esc(d.id)}">${esc(nombreTrabajo(d))}</option>`).join('');
     $('#imQuien').innerHTML='<option value="">Sin especificar</option>'+trabs.filter(t=>t.activo!==false).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es')).map(t=>`<option value="${esc(t.id)}">${esc(t.nombre)}</option>`).join('');
@@ -4772,7 +4798,10 @@ Responde solo con un objeto JSON:
     $('#imOtro').hidden = !((sal||dev||con) && !imEditId);
     syncIMItem();
   }
-  function syncIMItem(){
+  function imNuevoSync(){ const nv=$('#imItem').value==='__nuevo'; ['#imNuevoL','#imNuevoUL','#imNuevoCL'].forEach(x=>$(x).hidden=!nv);
+    if(nv && !$('#imNuevoU').options.length){ $('#imNuevoU').innerHTML=UNIDADES.map(([k,l])=>`<option value="${k}">${l} · ${UNI_LBL[k]}</option>`).join(''); }
+    if(nv && !$('#imNuevoC').options.length){ $('#imNuevoC').innerHTML=icfg.categorias.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join(''); } }
+  function syncIMItem(){ imNuevoSync();
     const it=itemDe($('#imItem').value); const u=it?uni(it.unidad):'';
     const e=it?estadoItem(it.id):null;
     $('#imCantLbl').textContent = `${imTipo==='conteo'?'Cantidad contada':'Cantidad'}${u?' ('+u+')':''}`;
@@ -4818,12 +4847,18 @@ Responde solo con un objeto JSON:
     $('#imGasto').checked=!m && imTipo==='entrada' && !(pre&&pre.movId); $('#imPorPagar').checked=!!(m&&m.porPagar); $('#imGastoCampos').hidden=!$('#imGasto').checked; $('#imGTasa').value=tasaSugerida()?nfT.format(tasaSugerida()):''; $('#imCuenta').value='binance';
     $('#imErr').textContent=''; $('#imDel').hidden=!m; $('#imDel').textContent='Eliminar'; delete $('#imDel').dataset.armed;
     $('#imCuadrar').hidden = !(m && m.tipo==='entrada' && (m.proveedor||m.referencia) && canWrite);
-    pintarProveedores(); limpiarFiltros('#imSheet'); syncIMTipo(); openSheet('#imSheet');
+    $('#imNuevo').value=''; if(!m && pre && pre.nuevo && !pre.itemId){ $('#imItem').value='__nuevo'; imNuevoSync(); $('#imNuevo').value=pre.nuevo; $('#imNuevoU').value='und'; if(pre.categoria && [...$('#imNuevoC').options].some(o=>o.value===pre.categoria)) $('#imNuevoC').value=pre.categoria; comboSync($('#imItem')); }
+    pintarProveedores(); limpiarFiltros('#imSheet'); syncIMTipo(); imNuevoSync(); openSheet('#imSheet');
   }
   async function guardarIMov(otro){
     otro = otro===true;
     const err=x=>{ $('#imErr').textContent=x; };
-    const it=itemDe($('#imItem').value); if(!it) return err('Elige el ítem.');
+    let it=itemDe($('#imItem').value);
+    if(!it && $('#imItem').value==='__nuevo'){ const nom=$('#imNuevo').value.trim(); if(!nom) return err('Escribe el nombre del ítem nuevo.');
+      const ya=items.find(x=>normTxt(x.nombre)===normTxt(nom)); if(ya) it=ya;
+      else { const ah=new Date().toISOString(), r=iDb.collection('inventario').doc(), d={nombre:nom, categoria:$('#imNuevoC').value||icfg.categorias[0]||'Materiales', unidad:$('#imNuevoU').value||'und', minimo:0, ubicacion:'', proveedor:'', activo:true, precioRef:0, creado:ah, actualizado:ah};
+        try{ await conLimite(r.set(d)); }catch(e){ return err(errMsg(e)); } it={id:r.id, ...d}; } }
+    if(!it) return err('Elige el ítem.');
     const f=$('#imFecha').value; if(!f) return err('Pon la fecha.');
     const q=parseNum($('#imCant').value); if(isNaN(q) || q<0 || (imTipo!=='conteo' && !(q>0))) return err(imTipo==='conteo'?'Escribe la cantidad contada.':'Escribe la cantidad.');
     const old=imEditId?invMovs.find(x=>x.id===imEditId):null;
@@ -4884,7 +4919,7 @@ Responde solo con un objeto JSON:
 
   /* ---------- hoja: herramienta o equipo ---------- */
   function openActivo(id){
-    const a=id?activos.find(x=>x.id===id):null; acEditId=id||null;
+    const a=id?activos.find(x=>x.id===id):null; acEditId=id||null; acPre=null;
     $('#acTitle').textContent=a?'Herramienta o equipo':'Nueva herramienta o equipo';
     $('#acResp').innerHTML='<option value="taller">En el taller</option>'+trabs.filter(t=>t.activo!==false||(a&&a.responsableId===t.id)).sort((x,y)=>x.nombre.localeCompare(y.nombre,'es')).map(t=>`<option value="${esc(t.id)}">${esc(t.nombre)}${t.activo===false?' (inactivo)':''}</option>`).join('');
     $('#itUbiL').innerHTML=icfg.ubicaciones.map(u=>`<option value="${esc(u)}">`).join('');
@@ -4900,7 +4935,10 @@ Responde solo con un objeto JSON:
     const hist=Array.isArray(old&&old.historial)?old.historial.slice():[];
     if(old && (old.responsableId||'taller')!==resp) hist.push({fecha:today(), de:old.responsableId||'taller', a:resp});
     const body={nombre, codigo:$('#acCodigo').value.trim(), estado:$('#acEstado').value, responsableId:resp, ubicacion:$('#acUbi').value.trim(), fechaCompra:$('#acFecha').value||'', costo:r2(parseNum($('#acCosto').value)||0), nota:$('#acNota').value.trim(), historial:hist, creado:old&&old.creado||new Date().toISOString(), actualizado:new Date().toISOString()};
-    try{ await (acEditId?iDb.collection('activos').doc(acEditId):iDb.collection('activos').doc()).set(body); closeSheets(); toast(old?'Guardado':'Agregado'); }
+    if(!acEditId && acPre && acPre.movId) body.movId=acPre.movId; else if(old && old.movId) body.movId=old.movId;
+    try{ const ref=acEditId?iDb.collection('activos').doc(acEditId):iDb.collection('activos').doc(); await ref.set(body);
+      if(!acEditId && acPre && acPre.movId){ try{ await gDb.collection('movimientos').doc(acPre.movId).update({activoId:ref.id, actualizado:new Date().toISOString()}); }catch(_){} acPre=null; }
+      closeSheets(); toast(old?'Guardado':'Agregado a herramientas y equipos'); }
     catch(e){ $('#acErr').textContent=errMsg(e); }
   }
   async function eliminarActivo(){
