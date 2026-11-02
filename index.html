@@ -3658,7 +3658,7 @@ Responde solo con un objeto JSON:
         <button type="button" class="btn sec" data-nuevo="cambio">Cambio entre cuentas</button>
         ${sampleFn&&canWrite?'<button type="button" class="btn sec" id="gAI">Cargar con asistente</button>':''}
       </div>
-      <div class="buscar" style="display:flex;gap:8px;margin-top:12px"><input id="gBuscar" type="search" placeholder="Buscar por concepto, monto, cuenta u orden" value="${esc(gBuscar)}" autocomplete="off" style="flex:1"><button type="button" class="ghost${gDup?' on':''}" id="gDup">Repetidos</button></div>
+      <div class="buscar" style="display:flex;gap:8px;margin-top:12px"><input id="gBuscar" type="search" placeholder="Buscar por concepto, monto, cuenta u orden" value="${esc(gBuscar)}" autocomplete="off" style="flex:1"><button type="button" class="ghost${gDup?' on':''}" id="gDup">${gDup?'Repetidos ✕':'Repetidos'}</button></div>
       ${buscando?`<div class="tip num">${ms.length} ${ms.length===1?'movimiento':'movimientos'}${gDup?' con la misma cuenta y monto en tres días':''}</div>`:''}
       <div class="daynav"${buscando?' hidden':''}><button type="button" id="gPrev" aria-label="Semana anterior">‹</button><div class="panel num" style="flex:1;text-align:center;padding:10px">Semana del ${fdate(ini)} al ${fdate(fin)}</div><button type="button" id="gNext" aria-label="Semana siguiente">›</button></div>
       <div class="tip num">Ingresos ${m$(sum(ing,m=>usdDe(m,tasa)))} · Gastos de la empresa ${m$(porAc('Empresa'))} · Papá ${m$(porAc('Papá'))} · Fran ${m$(porAc('Fran'))}${tasa?` · bolívares a ${nfT.format(tasa)} si no tienen tasa propia`:''}</div>
@@ -3668,7 +3668,9 @@ Responde solo con un objeto JSON:
         const monto = m.tipo==='cambio' ? `${enMoneda(num(m.montoOrigen),cuentaDe(m.cuentaOrigen).moneda)} → ${enMoneda(num(m.montoDestino),cuentaDe(m.cuentaDestino).moneda)}` : `${m.tipo==='gasto'?'− ':'+ '}${enMoneda(num(m.monto),c.moneda)}`;
         const det = m.tipo==='cambio' ? `${fdate(m.fecha)}${num(m.tasa)?' · tasa '+nfT.format(num(m.tasa)):''}${m.concepto?' · '+esc(m.concepto):''}` : `${fdate(m.fecha)} · ${esc(m.categoria||'')}${m.tipo==='gasto'&&m.aCargo&&m.aCargo!=='Empresa'?' · a cargo de '+esc(m.aCargo):''} · ${esc(c.nombre)}${c.moneda==='VES'&&usdDe(m,tasa)?' · '+m$(usdDe(m,tasa)):''}${m.inventario?' · en inventario':''}`;
         return `<button type="button" class="wcard${m.auto?' auto':''}" ${m.auto?`data-auto="${esc(m.auto)}"`:`data-mv="${esc(m.id)}"`}><div class="l"><b>${titulo}</b><small class="num">${det}</small>${m.auto?`<small>Automático desde ${esc(m.auto)}</small>`:''}</div><div class="r num" style="color:${m.tipo==='gasto'?'var(--danger)':m.tipo==='ingreso'?'var(--co)':'var(--ink)'};font-weight:600">${monto}</div></button>`;
-      }).join(''):`<div class="empty"><b>Sin movimientos esta semana</b>Registra un gasto, un ingreso o un cambio entre cuentas.</div>`}</div>
+      }).join(''):(gDup?`<div class="empty"><b>No hay movimientos repetidos</b>Este filtro solo muestra los que se parecen entre sí.<div class="row-btns" style="justify-content:center;margin-top:10px"><button type="button" class="btn sec" id="gDupOff">Ver todos los movimientos</button></div></div>`
+        : qB?`<div class="empty"><b>Nada coincide con la búsqueda</b>Prueba con otra palabra o un monto.</div>`
+        : `<div class="empty"><b>Sin movimientos esta semana</b>Registra un gasto, un ingreso o un cambio entre cuentas.</div>`)}</div>
       <div style="height:24px"></div>`;
   }
 
@@ -4222,6 +4224,7 @@ Responde solo con un objeto JSON:
     if(t.closest('#gAI')) return abrirAI('gas');
     if(t.closest('#gPrev')){ gSemana=sumarDias(gSemana,-7); return renderGas(); }
     if(t.closest('#gDup')){ gDup=!gDup; return renderGas(); }
+    if(t.closest('#gDupOff')){ gDup=false; return renderGas(); }
     const yp=t.closest('[data-yapagada]'); if(yp){ openCuadrar(yp.dataset.yapagada); return; }
     const pd=t.closest('[data-pagardeuda]'); if(pd){ const o=comprasPorPagar().find(x=>x.k===pd.dataset.pagardeuda); if(o) pagarDeuda(o); return; }
     if(t.closest('#gNext')){ gSemana=sumarDias(gSemana,7); return renderGas(); }
