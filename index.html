@@ -766,6 +766,17 @@ select.combo-oculto{display:none}
     <div id="ctaList"></div>
   </div>
 </section>
+<section class="sheet" id="rpSheet" hidden aria-modal="true" role="dialog" aria-labelledby="rpTitle">
+  <div class="wrap">
+    <div class="grab"></div>
+    <div class="sh-head"><h3 id="rpTitle">Repartir pago en órdenes</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
+    <div class="tip num" id="rpInfo"></div>
+    <div id="rpList"></div>
+    <div class="tip num" id="rpQueda" aria-live="polite"></div>
+    <div class="err" id="rpErr"></div>
+    <div class="row-btns" style="margin-top:12px"><button type="button" class="btn pri" id="rpSave">Guardar reparto</button></div>
+  </div>
+</section>
 <section class="sheet" id="shareSheet" hidden aria-modal="true" role="dialog" aria-labelledby="shareTitle">
   <div class="wrap">
     <div class="grab"></div>
@@ -880,6 +891,7 @@ select.combo-oculto{display:none}
       <label class="f full" id="mvTasaL">Tasa (Bs. por USD)<input id="mvTasa" inputmode="decimal" placeholder="0,00"></label>
       <label class="f full" id="mvTrabL">Centro de costo: orden o trabajo (opcional)<select data-combo id="mvTrab"></select></label>
       <label class="f full">Referencia (opcional)<input id="mvRef" autocomplete="off"></label>
+      <label class="chk full" id="mvDeudaL" hidden style="margin-top:4px"><input type="checkbox" id="mvDeudaChk"> Queda por pagar: el dinero todavía no ha salido (alquiler, servicio o crédito)</label>
     </div>
     <div class="conv num" id="mvConv"></div>
     <div class="err" id="mvErr"></div>
@@ -887,6 +899,7 @@ select.combo-oculto{display:none}
       <button type="button" class="btn pri" id="mvSave">Guardar</button>
       <button type="button" class="btn sec" id="mvInv" hidden>Pasar a inventario</button>
       <button type="button" class="btn sec" id="mvAplicar" hidden>Aplicar como pago de un trabajo</button>
+      <button type="button" class="btn sec" id="mvRepartir" hidden>Repartir en varias órdenes</button>
       <button type="button" class="btn del" id="mvDel">Eliminar</button>
     </div>
   </div>
@@ -1457,7 +1470,7 @@ select.combo-oculto{display:none}
   const conLimite = (p, ms) => Promise.race([p, new Promise((_,rej)=>setTimeout(()=>rej(new Error('No hay respuesta de la base de datos (sin señal).')), ms||20000))]);
   /* Aviso que se queda en pantalla (no desaparece como el flotante) hasta que se vuelva a dibujar la vista */
   function avisoFijo(sel, msg){ const el=document.querySelector(sel); if(!el){ toast(msg); return; } let b=el.querySelector('.avfijo'); if(!b){ b=document.createElement('div'); b.className='avfijo'; el.prepend(b); } b.textContent=msg; }
-  function closeSheets(){ ['#sheet','#bulkSheet','#shareSheet','#aiSheet','#wSheet','#adSheet','#mvSheet','#itSheet','#imSheet','#acSheet','#cqSheet','#rcSheet','#clSheet','#icSheet'].forEach(s=>$(s).hidden=true); $('#scrim').hidden=true; document.body.style.overflow=''; draft=null; editingId=null; }
+  function closeSheets(){ document.querySelectorAll('section.sheet').forEach(s=>s.hidden=true); $('#scrim').hidden=true; document.body.style.overflow=''; draft=null; editingId=null; }
 
   function openEditor(id){
     const src = id ? docs.find(d=>d.id===id) : null;
@@ -1786,7 +1799,7 @@ select.combo-oculto{display:none}
       mo+=v; if(!diaPagado(id,a.fecha)) moPend+=v; dias+=p.dias; horas+=p.horas; const o=porT[t.nombre]||(porT[t.nombre]={v:0,dias:0,horas:0}); o.v=r2(o.v+v); o.dias+=p.dias; o.horas+=p.horas;
     }));
     const tasaRep=tasaSugerida();
-    const gs=movs.filter(m=>m.tipo==='gasto' && m.trabajoId===d.id && !m.inventario).map(m=>({m, usd:usdDe(m,tasaRep)}));
+    const gs=movs.filter(m=>((m.tipo==='gasto' && !m.inventario) || (m.tipo==='deuda' && !m.pagado)) && m.trabajoId===d.id).map(m=>({m, usd:usdDe(m,tasaRep)}));
     const matI=materialesTrabajo(d.id), mat=matI.total;
     const gastos=r2(sum(gs,x=>x.usd)), gen=r2((generales||{})[d.id]||0), monto=num(d.monto), costo=r2(mo+gastos+mat+gen), cobrado=r2(pagado(d));
     /* Un trabajo cancelado solo vale lo que de verdad se cobró; el margen se calcula sobre eso */
@@ -3538,7 +3551,7 @@ Responde solo con un objeto JSON:
       const t=num(c.tasa), u=num(c.monto);
       out.push({id:`auto-cob-${d.id}-${i}`, auto:'Cobranzas', tipo:'ingreso', fecha:c.fecha, categoria:'Cobro de factura', aCargo:'Empresa',
         concepto:`Cobro${c.numFactura?' factura N° '+c.numFactura:''} · ${d.descripcion}${d.unidad?' ('+d.unidad+')':''}`,
-        cuenta: modoDe(c), monto: cuentaDe(modoDe(c)).moneda==='VES'?r2(u*t):u, tasa:t, usd:u});
+        cuenta: modoDe(c), monto: cuentaDe(modoDe(c)).moneda==='VES'?(num(c.montoBs)>0?num(c.montoBs):r2(u*t)):u, tasa:t, usd:u});
     }));
     /* Adelantos a trabajadores: salen de la cuenta elegida el día del adelanto */
     adels.forEach(a=>{ if(!a.cuenta||!a.fecha||!(num(a.monto)>0)) return; const enBs=cuentaDe(a.cuenta).moneda==='VES', t=num(a.tasa);
@@ -3664,7 +3677,7 @@ Responde solo con un objeto JSON:
     const ini=gSemana, fin=finSemana(ini);
     const qB=normTxt(gBuscar), nB=parseNum(gBuscar), buscando=!!qB||gDup;
     const coincide=m=>{ if(!qB) return true; const txt=normTxt([m.concepto,m.categoria,m.referencia,cuentaDe(m.cuenta||m.cuentaOrigen).nombre,m.tipo==='cambio'?cuentaDe(m.cuentaDestino).nombre:'',(docs.find(d=>d.id===m.trabajoId)||{}).descripcion].join(' ')); return txt.includes(qB) || (nB>0 && [m.monto,m.montoOrigen,m.montoDestino,m.montoBs].some(v=>Math.abs(num(v)-nB)<0.005)); };
-    const todos=todosMovs(), rep=new Set();
+    const todos=todosMovs().filter(m=>m.tipo!=='deuda'), rep=new Set();
     if(gDup){ const por={}; todos.filter(m=>!m.auto).forEach(m=>{ const k=[m.tipo,m.cuenta||m.cuentaOrigen,r2(num(m.monto||m.montoOrigen))].join('|'); (por[k]=por[k]||[]).push(m); });
       Object.values(por).forEach(ls=>{ ls.sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha))); for(let i=0;i<ls.length;i++) for(let j=i+1;j<ls.length;j++){ if((new Date(ls[j].fecha+'T12:00:00')-new Date(ls[i].fecha+'T12:00:00'))/864e5<=3){ rep.add(ls[i].id); rep.add(ls[j].id); } else break; } }); }
     const ms=(buscando ? todos.filter(m=>coincide(m) && (!gDup || rep.has(m.id))).slice(-80) : todos.filter(m=>m.fecha>=ini && m.fecha<=fin)).reverse();
@@ -3679,8 +3692,11 @@ Responde solo con un objeto JSON:
           ${bloqueTasaDia()}
           ${tasaB&&tEnt&&Math.abs(totEnt-tot)>=0.01?`<div class="tip">A la tasa a la que entraron los bolívares (${nfT.format(r2(tEnt))}) serían ${m$(r2(totEnt))}: ${totEnt>tot?'la devaluación se comió':'ganaste'} ${m$(r2(Math.abs(totEnt-tot)))}.</div>`:''}</div>`; })()}
       ${(()=>{ const ds=comprasPorPagar(); if(!ds.length) return ''; const tot=r2(sum(ds,o=>o.usd));
-        return `<div class="hero"><div class="lbl">Compras por pagar · ${ds.length}</div><div class="big num"><small>USD</small>${nf.format(tot)}</div>
-          <div class="blist num">${ds.map(o=>`<div><span>${esc(etiquetaDeuda(o))}<br><small>${o.bs>0?mBs(o.bs)+' · ':''}${m$(o.usd)}</small></span><span class="hbtns"><button type="button" class="btn sec" data-pagardeuda="${esc(o.k)}">Pagar</button>${o.k.startsWith('id|')?'':`<button type="button" class="btn sec" data-yapagada="${esc(o.k)}">Ya se pagó</button>`}</span></div>`).join('')}</div></div>`; })()}
+        return `<div class="hero"><div class="lbl">Cuentas por pagar · ${ds.length}</div><div class="big num"><small>USD</small>${nf.format(tot)}</div>
+          <div class="blist num">${ds.map(o=>`<div><span>${esc(etiquetaDeuda(o))}<br><small>${o.bs>0?mBs(o.bs)+' · ':''}${m$(o.usd)}</small></span><span class="hbtns"><button type="button" class="btn sec" data-pagardeuda="${esc(o.k)}">Pagar</button>${o.k.startsWith('dv|')?`<button type="button" class="btn sec" data-borrardeuda="${esc(o.k)}">Borrar</button>`:o.k.startsWith('id|')?'':`<button type="button" class="btn sec" data-yapagada="${esc(o.k)}">Ya se pagó</button>`}</span></div>`).join('')}</div></div>`; })()}
+      ${(()=>{ const ps=pagosPorRepartir(); if(!ps.length) return ''; const tot=r2(sum(ps,rpUsd));
+        return `<div class="hero"><div class="lbl">Pagos de clientes por repartir · ${ps.length}</div><div class="big num"><small>USD</small>${nf.format(tot)}</div><div class="tip">Ya están en la caja; falta decir a qué órdenes van.</div>
+          <div class="blist num">${ps.map(m=>`<div><span>${esc(m.concepto||'Pago de cliente')} · ${fdate(m.fecha).slice(0,5)}<br><small>${enMoneda(num(m.monto),cuentaDe(m.cuenta).moneda)}${cuentaDe(m.cuenta).moneda==='VES'?' = '+m$(rpUsd(m)):''}</small></span><span class="hbtns"><button type="button" class="btn sec" data-repartir="${esc(m.id)}">Repartir</button></span></div>`).join('')}</div></div>`; })()}
       <div class="row-btns">
         <button type="button" class="btn pri" data-nuevo="gasto">+ Gasto</button>
         <button type="button" class="btn sec" data-nuevo="ingreso">+ Ingreso</button>
@@ -3829,8 +3845,8 @@ Responde solo con un objeto JSON:
   }
 
   /* ---------- hoja de movimiento ---------- */
-  const COBRO_FACT='Cobro de factura';
-  function catsPara(tipo, ac){ return tipo==='ingreso' ? [COBRO_FACT, ...(gcfg.catIngreso||[]).filter(c=>!['cobro a cliente','cobro de factura'].includes(String(c).toLowerCase()))] : (ac==='Empresa' ? gcfg.catEmpresa : gcfg.catPersonal); }
+  const COBRO_FACT='Cobro de factura', PAGO_REP='Pago de cliente por repartir';
+  function catsPara(tipo, ac){ return tipo==='ingreso' ? [COBRO_FACT, PAGO_REP, ...(gcfg.catIngreso||[]).filter(c=>!['cobro a cliente','cobro de factura'].includes(String(c).toLowerCase()))] : (ac==='Empresa' ? gcfg.catEmpresa : gcfg.catPersonal); }
   const esCobroFact = () => mvTipo==='ingreso' && $('#mvCat').value===COBRO_FACT;
   function fillFactTrab(sel){ const ls=docs.filter(d=>saldo(d)>0).sort((a,b)=>(tieneOrden(b)-tieneOrden(a)) || byOrden(a,b)); $('#mvFactTrab').innerHTML = ls.length ? ls.map(d=>`<option value="${esc(d.id)}">${tieneOrden(d)?esc(d.ods):'Sin orden'} · ${esc(d.descripcion)}${d.unidad?' ('+esc(d.unidad)+')':''} · saldo ${usd(saldo(d))}</option>`).join('') : '<option value="">No hay trabajos con saldo por cobrar</option>'; if(sel && ls.some(d=>d.id===sel)) $('#mvFactTrab').value=sel; }
   function fillMvSelects(){
@@ -3865,6 +3881,7 @@ Responde solo con un objeto JSON:
     $('#mvDestMontoLbl').textContent=`Monto que entra (${d.moneda==='VES'?'Bs.':'USD'})`;
     const cam=mvTipo==='cambio';
     const usdG = mvTipo==='gasto' && c.moneda!=='VES'; $('#mvBsL').hidden=!usdG;
+    $('#mvDeudaL').hidden = !(mvTipo==='gasto' && !mvEditId && !mvDeuda && !esRegistro());
     const usdI = mvTipo==='ingreso' && c.moneda!=='VES' && !esCobroFact() && !mvEditId && !esRegistro(), viaBs = usdI && mvVia==='bs';
     $('#mvViaL').hidden=!usdI; $('#mvViaBsL').hidden=!viaBs; $('#mvViaTasaL').hidden=!viaBs; document.querySelectorAll('#mvVia [data-via]').forEach(b=>b.classList.toggle('on', b.dataset.via===mvVia));
     if(viaBs) $('#mvMontoLbl').textContent='USDT recibidos';
@@ -3897,6 +3914,12 @@ Responde solo con un objeto JSON:
   }
   let mvDeuda=null;
   function pagarDeuda(o){
+    if(o.deuda){ const d=o.deuda; openMov('gasto', null); mvDeuda={deudaId:d.id}; $('#mvDeudaL').hidden=true;
+      $('#mvACargo').value=d.aCargo||'Empresa'; fillCats(); syncMvTipo(); if([...$('#mvCat').options].some(x=>x.value===d.categoria)) $('#mvCat').value=d.categoria;
+      $('#mvConcepto').value=d.concepto||''; $('#mvRef').value=d.referencia||''; if([...$('#mvCuenta').options].some(x=>x.value===d.cuenta)) $('#mvCuenta').value=d.cuenta; syncMvMoneda();
+      $('#mvMonto').value=nf.format(num(d.monto)); if(num(d.montoBs)>0) $('#mvBs').value=nf.format(num(d.montoBs)); if(cuentaDe(d.cuenta).moneda==='VES' && num(d.tasa)>0) $('#mvTasa').value=nfT.format(num(d.tasa));
+      if(d.trabajoId && [...$('#mvTrab').options].some(x=>x.value===d.trabajoId)){ $('#mvTrab').value=d.trabajoId; comboSync($('#mvTrab')); }
+      $('#mvTitle').textContent='Pagar cuenta por pagar'; renderMvConv(); return; }
     openMov('gasto', null); mvDeuda={ids:o.ms.map(m=>m.id), usd:o.usd};
     const it=itemDe(o.ms[0].itemId)||{};
     $('#mvConcepto').value=`Pago ${o.proveedor||it.nombre||'de compra'}${o.referencia?' · factura N° '+o.referencia:''}`;
@@ -3905,6 +3928,43 @@ Responde solo con un objeto JSON:
     if(o.trabajoId && [...$('#mvTrab').options].some(x=>x.value===o.trabajoId)){ $('#mvACargo').value='Empresa'; $('#mvTrab').value=o.trabajoId; comboSync($('#mvTrab')); }
     $('#mvTitle').textContent='Pagar compra a crédito'; renderMvConv();
   }
+  /* Pago de un cliente que entra sin orden y se reparte después en una o varias órdenes */
+  const rpUsd = m => { const enBs=cuentaDe(m.cuenta).moneda==='VES', t=num(m.tasa); return enBs ? (t>0?r2(num(m.monto)/t):0) : r2(num(m.monto)); };
+  const pagosPorRepartir = () => movs.filter(m=>m.tipo==='ingreso' && m.categoria===PAGO_REP && num(m.monto)>0.004).sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha)));
+  let rpId=null;
+  function openRepartir(id){ const m=movs.find(x=>x.id===id); if(!m) return; const enBs=cuentaDe(m.cuenta).moneda==='VES';
+    if(enBs && !(num(m.tasa)>0)) return toast('Ese pago en bolívares no tiene tasa: ábrelo, ponle la tasa y vuelve a repartir.');
+    rpId=id; const tot=rpUsd(m), k=normTxt(m.concepto||'');
+    const ls=docs.filter(d=>saldo(d)>0.004).map(d=>({d, hit:[d.cliente,d.unidad].some(x=>x&&k.includes(normTxt(x)))?1:0})).sort((a,b)=>(b.hit-a.hit)||byOrden(a.d,b.d));
+    $('#rpInfo').innerHTML=`<b>${esc(m.concepto||'Pago de cliente')}</b> · ${fdate(m.fecha)} · ${esc(cuentaDe(m.cuenta).nombre)}<br>Por repartir: <b>${m$(tot)}</b>${enBs?` (${mBs(num(m.monto))} a ${nfT.format(num(m.tasa))})`:''}`;
+    $('#rpList').innerHTML = ls.length ? ls.map(({d})=>`<div class="ctarow"><div><b>${tieneOrden(d)?esc(d.ods):'Sin orden'} · ${esc(d.descripcion)}</b><small>${esc([d.cliente,d.unidad].filter(Boolean).join(' · '))}${d.cliente||d.unidad?' · ':''}debe ${m$(saldo(d))}</small></div><div class="r"><input data-rp="${esc(d.id)}" inputmode="decimal" placeholder="0,00" aria-label="Monto en dólares para ${esc(d.descripcion)}" style="width:110px;text-align:right"><br><button type="button" class="btn sec" data-rptodo="${esc(d.id)}" style="margin-top:6px">Todo lo que debe</button></div></div>`).join('')
+      : '<div class="empty"><b>No hay trabajos que deban</b>Registra el trabajo en Cobranzas y vuelve a repartir.</div>';
+    $('#rpErr').textContent=''; rpQueda(); openSheet('#rpSheet'); }
+  const rpSum = () => r2(sum([...document.querySelectorAll('#rpList [data-rp]')], i=>parseNum(i.value)||0));
+  function rpQueda(){ const m=movs.find(x=>x.id===rpId); if(!m) return; const s=rpSum(), q=r2(rpUsd(m)-s);
+    $('#rpQueda').innerHTML = q<-0.004 ? `<b style="color:var(--danger)">Te pasaste por ${m$(-q)}</b>` : `Repartido ${m$(s)} · queda por repartir <b>${m$(q)}</b>${q>0.004&&s>0?' (sigue pendiente para después)':''}`; }
+  $('#rpList').addEventListener('input', rpQueda);
+  $('#rpList').addEventListener('click', e=>{ const b=e.target.closest('[data-rptodo]'); if(!b) return; const m=movs.find(x=>x.id===rpId), d=docs.find(x=>x.id===b.dataset.rptodo); if(!m||!d) return;
+    const inp=[...document.querySelectorAll('#rpList [data-rp]')].find(i=>i.dataset.rp===d.id); inp.value=''; inp.value=nf.format(Math.max(0, Math.min(saldo(d), r2(rpUsd(m)-rpSum())))); rpQueda(); });
+  $('#rpSave').addEventListener('click', async ()=>{ const m=movs.find(x=>x.id===rpId); if(!m) return; const err=x=>{ $('#rpErr').textContent=x; };
+    const tot=rpUsd(m), enBs=cuentaDe(m.cuenta).moneda==='VES', t=num(m.tasa);
+    const as=[...document.querySelectorAll('#rpList [data-rp]')].map(i=>({d:docs.find(x=>x.id===i.dataset.rp), u:r2(parseNum(i.value)||0)})).filter(x=>x.d&&x.u>0);
+    if(!as.length) return err('Escribe cuánto va a cada orden.');
+    const malo=as.find(x=>x.u>saldo(x.d)+0.005); if(malo) return err(`«${malo.d.descripcion}» solo debe ${m$(saldo(malo.d))}.`);
+    const s=r2(sum(as,x=>x.u)); if(s>tot+0.005) return err(`Repartiste ${m$(s)} y el pago es de ${m$(tot)}.`);
+    const b=$('#rpSave'); if(b.dataset.busy) return; b.dataset.busy='1'; b.disabled=true; b.textContent='Guardando…';
+    try{ const ah=new Date().toISOString(), q=r2(tot-s), todo=q<0.005;
+      /* En bolívares, cada abono lleva sus bolívares exactos y el último se lleva el resto, para que la caja cuadre al céntimo */
+      let bsUsados=0; as.forEach((x,i)=>{ if(enBs){ x.bs = (todo && i===as.length-1) ? r2(num(m.monto)-bsUsados) : r2(x.u*t); bsUsados=r2(bsUsados+x.bs); } });
+      for(const x of as){ await conLimite(coll.doc(x.d.id).update({cobros:[...(x.d.cobros||[]), {monto:x.u, tasa:enBs?t:0, ...(enBs?{montoBs:x.bs}:{}), cuenta:m.cuenta, numFactura:'', fecha:m.fecha, ref:m.referencia||'', dePago:m.id}], actualizado:ah})); }
+      try{ if(todo) await conLimite(gDb.collection('movimientos').doc(m.id).delete());
+        else await conLimite(gDb.collection('movimientos').doc(m.id).update({monto: enBs ? r2(num(m.monto)-bsUsados) : q, montoOriginal: num(m.montoOriginal)||num(m.monto), repartido:[...(m.repartido||[]), ...as.map(x=>({trabajoId:x.d.id, usd:x.u, fecha:ah}))], actualizado:ah})); }
+      catch(e2){ return err('Los abonos quedaron en las órdenes, pero el pago suelto no se pudo rebajar. Ábrelo en Gastos y ajústalo: '+errMsg(e2)); }
+      registrarCambio('movimientos', m.id, `Pago repartido: ${m.concepto||''}`, m$(tot), as.map(x=>`${x.d.descripcion}: ${m$(x.u)}`).join(' · '));
+      closeSheets(); toast(todo?`Pago repartido en ${as.length} ${as.length===1?'orden':'órdenes'}`:`Repartido ${m$(s)}; quedan ${m$(q)} por repartir`); }
+    catch(e){ err(errMsg(e)); } finally{ delete b.dataset.busy; b.disabled=false; b.textContent='Guardar reparto'; } });
+  document.addEventListener('click', e=>{ const b=e.target.closest('[data-repartir]'); if(b) openRepartir(b.dataset.repartir); });
+  $('#mvRepartir').addEventListener('click', ()=>{ const id=mvEditId; closeSheets(); setTimeout(()=>openRepartir(id), 60); });
   let mvVia='directo';
   $('#mvVia').addEventListener('click', e=>{ const b=e.target.closest('[data-via]'); if(!b) return; mvVia=b.dataset.via; syncMvMoneda(); });
   ['#mvViaBs','#mvViaTasa'].forEach(x=>$(x).addEventListener('input', ()=>{ const vb=parseNum($('#mvViaBs').value)||0, vt=parseNum($('#mvViaTasa').value)||0; if(vb>0&&vt>0) $('#mvMonto').value=nf.format(r2(vb/vt)); renderMvConv(); }));
@@ -3923,6 +3983,8 @@ Responde solo con un objeto JSON:
     $('#mvErr').textContent=''; $('#mvDel').hidden=!m; $('#mvDel').textContent='Eliminar'; delete $('#mvDel').dataset.armed;
     $('#mvInv').hidden = !(m && m.tipo==='gasto' && (m.aCargo||'Empresa')==='Empresa' && !m.inventario);
     $('#mvAplicar').hidden = !(m && m.tipo==='ingreso' && m.categoria!==COBRO_FACT && docs.some(d=>saldo(d)>0));
+    $('#mvRepartir').hidden = !(m && m.tipo==='ingreso' && m.categoria!==COBRO_FACT && !esFinanciamiento(m) && docs.some(d=>saldo(d)>0));
+    $('#mvDeudaChk').checked=false;
     $('#mvFactNum').value=''; $('#mvModo').value='banco';
     limpiarFiltros('#mvSheet'); fillCats(m&&m.categoria); syncMvTipo();
     openSheet('#mvSheet');
@@ -3969,7 +4031,7 @@ Responde solo con un objeto JSON:
       if(!(m>0) && !(bsReg>0)) return err(esRegistro()&&cuentaDe(cta).moneda!=='VES'?'Escribe el monto en dólares o en bolívares.':'Escribe el monto.');
       if(cuentaDe(cta).moneda==='VES' && !(t>0) && !esRegistro()) return err('Escribe la tasa para llevar los bolívares a dólares.');
       /* Gasto del banco sin bolívares en el banco: casi siempre salieron de vender USDT en Binance */
-      if(mvTipo==='gasto' && cuentaDe(cta).moneda==='VES' && !esRegistro()){ const old=mvEditId?movs.find(x=>x.id===mvEditId):null, disp=r2(saldoCuenta(cta, f>today()?f:today())+(old&&old.cuenta===cta?num(old.monto):0)), kN='mvNeg|'+cta+'|'+r2(m);
+      if(mvTipo==='gasto' && cuentaDe(cta).moneda==='VES' && !esRegistro() && !$('#mvDeudaChk').checked){ const old=mvEditId?movs.find(x=>x.id===mvEditId):null, disp=r2(saldoCuenta(cta, f>today()?f:today())+(old&&old.cuenta===cta?num(old.monto):0)), kN='mvNeg|'+cta+'|'+r2(m);
         if(disp-m < -0.005 && tasaArmada!==kN){ tasaArmada=kN; return err(`El banco quedaría en − Bs. ${nf.format(r2(m-disp))}. Si esos bolívares salieron de vender USDT, elige Binance como cuenta y escribe el monto en Bs. Si de verdad salió del banco, toca Guardar otra vez.`); }
         if(tasaArmada===kN) tasaArmada=''; }
       Object.assign(body,{concepto, categoria:$('#mvCat').value, aCargo: mvTipo==='gasto'?$('#mvACargo').value:'Empresa', cuenta:cta, monto:r2(m), tasa:t>0?t:0, trabajoId: mvTipo==='gasto'&&$('#mvACargo').value==='Empresa'?$('#mvTrab').value:''});
@@ -3978,16 +4040,20 @@ Responde solo con un objeto JSON:
         const kD='mvDup|'+(igual?igual.id:''); if(igual && tasaArmada!==kD){ tasaArmada=kD; return err(`Ya hay uno igual el ${fdate(igual.fecha)}: «${igual.concepto||igual.categoria}» por ${enMoneda(num(igual.monto),cuentaDe(cta).moneda)}. Si de verdad es otro, toca Guardar otra vez.`); } if(igual) tasaArmada=''; }
       if(esRegistro()){ body.tasa=0; if(bsReg>0){ body.montoBs=r2(bsReg); if(!(m>0)) body.monto=0; } }
       else if(mvTipo==='gasto' && cuentaDe(cta).moneda!=='VES'){ const bG=parseNum($('#mvBs').value)||0, tuG=tasaBsBinance(f); body.tasa=0; delete body.montoBs; if(bG>0&&m>0){ body.montoBs=r2(bG); body.tasa=r4(bG/m); } else if(bG>0&&tuG){ body.montoBs=r2(bG); body.tasa=tuG.tasa; } }
+      /* Queda por pagar: se anota la deuda; el dinero sale cuando se paga */
+      if(mvTipo==='gasto' && !mvEditId && !mvDeuda && !esRegistro() && $('#mvDeudaChk').checked){ body.tipo='deuda'; body.pagado=false; }
     }
     const old=mvEditId?movs.find(x=>x.id===mvEditId):null; body.creado=old&&old.creado||new Date().toISOString();
     const btnMv=$('#mvSave'); if(btnMv&&btnMv.dataset.busy) return; if(btnMv){ btnMv.dataset.busy='1'; btnMv.disabled=true; }
-    if(mvDeuda && !mvEditId && body.tipo==='gasto'){ body.inventario=true; body.aCargo='Empresa'; }
+    if(mvDeuda && mvDeuda.ids && !mvEditId && body.tipo==='gasto'){ body.inventario=true; body.aCargo='Empresa'; }
     try{ const refMv=mvEditId?gDb.collection('movimientos').doc(mvEditId):gDb.collection('movimientos').doc(); await conLimite(refMv.set(body)); registrarCambioMov(body, old);
       /* Pago de una compra a crédito: el gasto queda enlazado a sus entradas y el costo de cada una pasa a ser lo que de verdad se pagó */
-      if(mvDeuda && !mvEditId && body.tipo==='gasto'){ const pagU=usdDe(body, tasaSugerida()), f0=mvDeuda.usd>0?pagU/mvDeuda.usd:1;
+      if(mvDeuda && mvDeuda.deudaId && !mvEditId && body.tipo==='gasto'){ await gDb.collection('movimientos').doc(mvDeuda.deudaId).update({pagado:true, movId:refMv.id, actualizado:new Date().toISOString()}); mvDeuda=null; }
+      if(body.tipo==='deuda') setTimeout(()=>toast('Quedó en cuentas por pagar: no salió dinero todavía'),50);
+      if(mvDeuda && mvDeuda.ids && !mvEditId && body.tipo==='gasto'){ const pagU=usdDe(body, tasaSugerida()), f0=mvDeuda.usd>0?pagU/mvDeuda.usd:1;
         for(const id of mvDeuda.ids){ const e=invMovs.find(x=>x.id===id); if(!e) continue; const upd={movId:refMv.id, porPagar:false, actualizado:new Date().toISOString()}; if(num(e.costoUnit)>0 && Math.abs(f0-1)>0.0001) upd.costoUnit=r4(num(e.costoUnit)*f0); await iDb.collection('invMovs').doc(id).update(upd); }
         mvDeuda=null; setTimeout(()=>{ if(gView==='mov') renderGas(); },300); } /* La tasa del día se aprende de operaciones de mercado (cambios e ingresos), no de gastos: la tasa de un gasto en bolívares es la de llegada de esos bolívares */ if(num(body.tasa)>0 && body.fecha<=today() && (body.tipo==='cambio' || (body.tipo==='ingreso' && cuentaDe(body.cuenta).moneda==='VES'))) aprenderTasa(body.fecha, num(body.tasa), body.tipo==='cambio'?'cambio entre cuentas':'ingreso'); closeSheets(); toast('Movimiento guardado');
-      if(body.tipo!=='ingreso'){ const cS=body.tipo==='cambio'?body.cuentaOrigen:body.cuenta; setTimeout(()=>{ const sl=saldoCuenta(cS,today()), cc=cuentaDe(cS); if(sl<-0.004) toast(`${cc.nombre} queda en − ${cc.moneda==='VES'?bs(-sl):usd(-sl)}. ¿Falta un cobro o un cambio?`); },900); } }
+      if(body.tipo==='gasto'||body.tipo==='cambio'){ const cS=body.tipo==='cambio'?body.cuentaOrigen:body.cuenta; setTimeout(()=>{ const sl=saldoCuenta(cS,today()), cc=cuentaDe(cS); if(sl<-0.004) toast(`${cc.nombre} queda en − ${cc.moneda==='VES'?bs(-sl):usd(-sl)}. ¿Falta un cobro o un cambio?`); },900); } }
     catch(e){ err(errMsg(e)); }
     finally{ if(btnMv){ delete btnMv.dataset.busy; btnMv.disabled=false; } }
   }
@@ -4257,6 +4323,7 @@ Responde solo con un objeto JSON:
     if(t.closest('#gDup')){ gDup=!gDup; return renderGas(); }
     if(t.closest('#gDupOff')){ gDup=false; return renderGas(); }
     const yp=t.closest('[data-yapagada]'); if(yp){ openCuadrar(yp.dataset.yapagada); return; }
+    const bdd=t.closest('[data-borrardeuda]'); if(bdd){ if(!bdd.dataset.armed){ bdd.dataset.armed='1'; bdd.textContent='Toca otra vez'; return; } const id=bdd.dataset.borrardeuda.slice(3), dm=movs.find(x=>x.id===id); if(dm){ const pap=alPapelera('movimientos', id, dm, `Cuenta por pagar: ${dm.concepto||dm.categoria||''} · ${enMoneda(num(dm.monto),cuentaDe(dm.cuenta).moneda)}`); gDb.collection('movimientos').doc(id).delete().then(()=>toastBorrado('Cuenta por pagar borrada', pap), e=>toast(errMsg(e))); } return; }
     const pd=t.closest('[data-pagardeuda]'); if(pd){ const o=comprasPorPagar().find(x=>x.k===pd.dataset.pagardeuda); if(o) pagarDeuda(o); return; }
     if(t.closest('#gNext')){ gSemana=sumarDias(gSemana,7); return renderGas(); }
     const mv=t.closest('[data-mv]'); if(mv) return openMov(null, mv.dataset.mv);
@@ -5073,8 +5140,10 @@ Responde solo con un objeto JSON:
   /* Compras a crédito: entradas marcadas por pagar que todavía no tienen gasto enlazado, agrupadas por proveedor y factura */
   function comprasPorPagar(){ const det=detallesInv(), g={};
     invMovs.filter(m=>m.tipo==='entrada' && m.porPagar && !m.movId && !(m.movIds||[]).length).forEach(m=>{ const k=(m.proveedor||m.referencia)?claveCompra(m):'id|'+m.id; const o=g[k]||(g[k]={k, proveedor:m.proveedor||'', referencia:m.referencia||'', fecha:m.fecha||'', ms:[], usd:0, bs:0, trabajoId:''}); o.ms.push(m); if(m.paraOrden) o.trabajoId=m.paraOrden; o.usd+=(det[m.id]||{}).costo||0; o.bs+=num(m.totalBs)||0; if(String(m.fecha||'')<o.fecha) o.fecha=m.fecha; });
+    /* Alquileres, servicios y demás gastos que quedaron por pagar */
+    movs.filter(m=>m.tipo==='deuda' && !m.pagado).forEach(m=>{ g['dv|'+m.id]={k:'dv|'+m.id, proveedor:m.concepto||m.categoria||'Cuenta por pagar', referencia:m.referencia||'', fecha:m.fecha||'', ms:[], usd:usdDe(m,tasaSugerida()), bs:cuentaDe(m.cuenta).moneda==='VES'?num(m.monto):num(m.montoBs)||0, trabajoId:m.trabajoId||'', deuda:m}; });
     return Object.values(g).map(o=>({...o, usd:r2(o.usd), bs:r2(o.bs)})).sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha))); }
-  const etiquetaDeuda = o => `${o.proveedor||(itemDe(o.ms[0].itemId)||{}).nombre||'Compra'}${o.referencia?' · N° '+o.referencia:''} · ${fdate(o.fecha).slice(0,5)}`;
+  const etiquetaDeuda = o => `${o.proveedor||(o.ms[0]?(itemDe(o.ms[0].itemId)||{}).nombre:'')||'Compra'}${o.referencia?' · N° '+o.referencia:''} · ${fdate(o.fecha).slice(0,5)}`;
   function gruposCompra(){
     const g={};
     invMovs.filter(m=>m.tipo==='entrada' && (m.proveedor||m.referencia)).forEach(m=>{ const k=claveCompra(m); const o=g[k]||(g[k]={k, proveedor:m.proveedor||'', referencia:m.referencia||'', fecha:m.fecha||'', ms:[]}); o.ms.push(m); if(String(m.fecha||'')>o.fecha) o.fecha=m.fecha; });
@@ -5390,7 +5459,8 @@ Responde solo con un objeto JSON:
       ${sinSaldos?`<div class="lock" style="margin-top:14px">Las cuentas arrancan en cero el ${fdate(inicioCaja())} porque no tienen saldo inicial: la caja solo muestra los movimientos desde esa fecha. Pon el saldo real en <button type="button" class="lnk" id="rIrAj">Gastos → Ajustes</button>.</div>`:''}
       ${card('Caja hoy', R.disponible, `Bolívares a la tasa del día, ${nfT.format(R.tasaBs||0)} Bs/$${R.tasaEnt&&Math.abs(R.dispEnt-R.disponible)>=0.01?` · a la tasa a la que entraron (${nfT.format(r2(R.tasaEnt))}) serían ${usd(R.dispEnt)}`:''}`,
         gcfg.cuentas.map(c=>fila(esc(c.nombre)+' ›', 0, {cta:c.id, raw: c.moneda==='VES' ? `${bsNeg(R.sal[c.id]||0)}${R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''}` : usdNeg(R.sal[c.id]||0), neg:(R.sal[c.id]||0)<0})).join('')
-        + (R.porPagar>0?fila('Compras por pagar', R.porPagar, {neg:true, raw:'− '+usd(R.porPagar)}):'')
+        + (R.porPagar>0?fila('Cuentas por pagar', R.porPagar, {neg:true, raw:'− '+usd(R.porPagar), extra:'Compras a crédito, alquileres y servicios'}):'')
+        + (()=>{ const v=r2(sum(pagosPorRepartir(),rpUsd)); return v>0?fila('Pagos de clientes por repartir', v, {extra:'Ya están en la caja; falta asignarlos a órdenes'}):''; })()
         + fila('Nómina por pagar hoy', R.nomPend, {neg:R.nomPend>0, raw:R.nomPend>0?'− '+usd(R.nomPend):usd(0), extra:R.nomPend>0?'Lo trabajado desde el último corte, más supervisores':'Nada pendiente desde el último corte'})
         + (R.adelPend>0?fila('Adelantos por descontar', R.adelPend, {extra:'Ya salieron de la caja; se descuentan en el próximo corte'}):'')
         + (()=>{ const neg=gcfg.cuentas.filter(c=>(R.sal[c.id]||0)<-0.004); return neg.length?`<div class="cap" style="color:var(--danger)">${esc(neg.map(c=>c.nombre).join(' y '))} en negativo: falta registrar un ingreso o un cambio entre cuentas</div>`:''; })())}
@@ -5434,7 +5504,7 @@ Responde solo con un objeto JSON:
     L.push(`*Caja hoy: ${usd(R.disponible)}*`);
     gcfg.cuentas.forEach(c=>L.push(`• ${c.nombre}: ${c.moneda==='VES'?bsNeg(R.sal[c.id]||0)+(R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''):usdNeg(R.sal[c.id]||0)}`));
     if(R.nomPend>0) L.push(`• Nómina por pagar hoy: − ${usd(R.nomPend)}`);
-    if(R.porPagar>0) L.push(`• Compras por pagar: − ${usd(R.porPagar)}`);
+    if(R.porPagar>0) L.push(`• Cuentas por pagar: − ${usd(R.porPagar)}`);
     if(R.adelPend>0) L.push(`• Adelantos entregados por descontar en el próximo corte: ${usd(R.adelPend)}`);
     if(R.deudaInact>0) L.push(`• Adelantos de personas que ya no trabajan: ${usd(R.deudaInact)}`);
     const sIA=saldoIA(); if(sIA&&sIA.tieneCredito) L.push(`• Crédito de Claude IA para los asistentes: ${usd(sIA.saldo)} (estimado)`);
