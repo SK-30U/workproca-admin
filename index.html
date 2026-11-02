@@ -3540,10 +3540,10 @@ Responde solo con un objeto JSON:
     cortes.forEach(k=>{
       const ls=k.lineas||[], sup=ls.filter(l=>l.cargo===SUP), resto=ls.filter(l=>l.cargo!==SUP), t=num(k.tasa), cta=k.cuenta||'binance';
       const totBs=r2(sum(ls,l=>num(l.totalBs))), totU=r2(sum(ls,l=>Math.max(0,num(l.totalUsd))));
-      /* Desde Binance se venden USDT y los bolívares salen del banco; desde el banco solo salen los bolívares; en efectivo salen dólares */
-      if(cta==='binance' && totBs>0 && totU>0) out.push({id:`auto-nom-${k.id}-venta`, auto:'Nómina', tipo:'cambio', fecha:k.fecha, cuentaOrigen:'binance', montoOrigen:totU, cuentaDestino:'banco', montoDestino:totBs, tasa:t, concepto:`Venta de USDT para la nómina del ${fdate((k.lineas||[]).flatMap(l=>(l.dias||[]).map(x=>x.f).concat((l.semanas||[]).length?[k.desde]:[])).sort()[0]||k.desde)} al ${fdate(k.hasta)}`, creado:(k.creado||'')+'0'});
+      /* Desde Binance: se venden USDT y se paga con esos bolívares, sin pasar por el banco (el banco es solo para bolívares que caen directo) */
       const mk=(lin,cat,txt)=>{ const bsT=r2(sum(lin,l=>num(l.totalBs))), uT=r2(sum(lin,l=>Math.max(0,num(l.totalUsd)))); if(bsT<=0&&uT<=0) return; const enUsd=cta==='efectivo';
-        out.push({id:`auto-nom-${k.id}-${cat}`, auto:'Nómina', tipo:'gasto', fecha:k.fecha, categoria:cat, aCargo:'Empresa', concepto:`${txt} ${fdate(k.desde)} al ${fdate(k.hasta)}`, cuenta:enUsd?'efectivo':'banco', monto:enUsd?uT:bsT, tasa:enUsd?0:t, usd:uT}); };
+        const enBin=cta==='binance';
+        out.push({id:`auto-nom-${k.id}-${cat}`, auto:'Nómina', tipo:'gasto', fecha:k.fecha, categoria:cat, aCargo:'Empresa', concepto:`${txt} ${fdate(k.desde)} al ${fdate(k.hasta)}`, cuenta:enUsd?'efectivo':enBin?'binance':'banco', monto:enUsd||enBin?uT:bsT, ...(enBin&&bsT>0?{montoBs:bsT}:{}), tasa:enUsd?0:t, usd:uT}); };
       mk(resto,'Nómina','Nómina, corte del'); mk(sup,'Sueldos de supervisores','Sueldos de supervisores, corte del');
     });
     return out;
