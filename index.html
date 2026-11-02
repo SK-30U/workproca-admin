@@ -1219,7 +1219,7 @@ select.combo-oculto{display:none}
   new MutationObserver(()=>{ clearTimeout(combosAll._t); combosAll._t=setTimeout(combosAll,0); }).observe(document.body,{childList:true, subtree:true});
   document.addEventListener('change', ()=>setTimeout(combosAll,0), true);
   function limpiarFiltros(){ setTimeout(combosAll,0); }
-  function toast(msg, accion){ const t=$('#toast'); if(esRegistro() && window.__standalone && !accion && /guardad|registrad|activad/i.test(String(msg)) && !/no se|error|falt/i.test(String(msg))) msg='Enviado para aprobar: queda pendiente hasta que el dueño lo apruebe'; t.textContent=msg; if(accion){ const b=document.createElement('button'); b.type='button'; b.className='tact'; b.textContent=accion.label; b.onclick=()=>{ t.hidden=true; accion.fn(); }; t.appendChild(b); } t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true, accion?6000:2600); }
+  function toast(msg, accion){ const t=$('#toast'); if(esRegistro() && window.__standalone && !accion && /guardad|registrad|activad/i.test(String(msg)) && !/no se|error|falt/i.test(String(msg))) msg='Enviado para aprobar: queda pendiente hasta que el dueño lo apruebe'; t.textContent=msg; if(accion){ const b=document.createElement('button'); b.type='button'; b.className='tact'; b.textContent=accion.label; b.onclick=()=>{ t.hidden=true; accion.fn(); }; t.appendChild(b); } t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true, accion?(accion.dur||6000):2600); }
   function byClient(){ return docs.filter(d => !cliente || (d.cliente||'')===cliente); }
 
   function renderStats(){
@@ -1592,7 +1592,7 @@ select.combo-oculto{display:none}
     const vinc=[dias?`${dias} ${dias===1?'día':'días'} de asistencia`:'', mats?`${mats} ${mats===1?'movimiento':'movimientos'} de material`:'', gs?`${gs} ${gs===1?'gasto':'gastos'}`:''].filter(Boolean);
     if(!b.classList.contains('armed')){ b.classList.add('armed'); b.textContent='Toca otra vez para eliminar'; delTimer=setTimeout(disarmDel,vinc.length?9000:4000); if(vinc.length) $('#formErr').textContent=`Este trabajo tiene ${vinc.join(', ')}. Si el cliente desistió, marca «Cancelado» en vez de eliminarlo: así esos costos no pasan a las demás órdenes.`; return; }
     if(!coll||!editingId) return;
-    try{ const oldD=docs.find(x=>x.id===editingId); await coll.doc(editingId).delete(); if(oldD) registrarCambio('facturas', editingId, `Trabajo eliminado: ${oldD.descripcion||''}`, `${nf.format(num(oldD.monto))} · ${oldD.cliente||''} · ${(oldD.cobros||[]).length} pagos`, ''); closeSheets(); toast(vinc.length?'Trabajo eliminado · sus costos quedaron sin orden':'Trabajo eliminado'); }
+    try{ const oldD=docs.find(x=>x.id===editingId); const pap=oldD?alPapelera('facturas', editingId, oldD, `Trabajo: ${oldD.descripcion||''}${oldD.cliente?' · '+oldD.cliente:''}`):null; await coll.doc(editingId).delete(); if(oldD) registrarCambio('facturas', editingId, `Trabajo eliminado: ${oldD.descripcion||''}`, `${nf.format(num(oldD.monto))} · ${oldD.cliente||''} · ${(oldD.cobros||[]).length} pagos`, ''); closeSheets(); toastBorrado(vinc.length?'Trabajo eliminado · sus costos quedaron sin orden':'Trabajo eliminado', pap); }
     catch(err){ $('#formErr').textContent='No se pudo eliminar. Inténtalo otra vez.'; }
   }
 
@@ -3279,7 +3279,7 @@ Responde solo con un objeto JSON:
     const usado=Object.values(asis).some(a=>a.registros&&a.registros[wEditId]) || cortes.some(k=>(k.lineas||[]).some(l=>l.trabajadorId===wEditId));
     if(usado){ $('#wErr').textContent='Tiene días o pagos registrados. Desmarca “Activo” en vez de eliminarlo, así se conserva su historial.'; return; }
     if(!b.dataset.armed){ b.dataset.armed='1'; b.textContent='Toca otra vez para eliminar'; return; }
-    try{ await nDb.collection('trabajadores').doc(wEditId).delete(); closeSheets(); toast('Trabajador eliminado'); }catch(err){ $('#wErr').textContent=errMsg(err); }
+    try{ const wO=trabs.find(x=>x.id===wEditId), pap=wO?alPapelera('trabajadores', wEditId, wO, `Trabajador: ${wO.nombre||''}`):null; await nDb.collection('trabajadores').doc(wEditId).delete(); closeSheets(); toastBorrado('Trabajador eliminado', pap); }catch(err){ $('#wErr').textContent=errMsg(err); }
   }
   let adTipo='adelanto';
   function syncAdTipo(){ document.querySelectorAll('#adTipo [data-at]').forEach(b=>b.classList.toggle('on', b.dataset.at===adTipo)); const aj=adTipo!=='adelanto';
@@ -3414,7 +3414,7 @@ Responde solo con un objeto JSON:
     const hr=t.closest('[data-hres]'); if(hr){ const k=cortes.find(x=>x.id===hr.dataset.hres); if(k) copyPlain(resumenCorte(k), 'Resumen copiado. Pégalo en WhatsApp', 'Resumen del corte'); return; }
     const an=t.closest('[data-anular]'); if(an){ const key='co:'+an.dataset.anular; if(nDelArmed!==key){ nDelArmed=key; renderNom(); return; } return anularCorte(an.dataset.anular); }
     if(t.closest('#adNew')) return openAdelanto();
-    const ad=t.closest('[data-adel]'); if(ad){ const key='ad:'+ad.dataset.adel; if(nDelArmed!==key){ nDelArmed=key; renderNom(); return; } nDelArmed=''; nDb.collection('adelantos').doc(ad.dataset.adel).delete().then(()=>toast('Adelanto eliminado'), err=>toast(errMsg(err))); return; }
+    const ad=t.closest('[data-adel]'); if(ad){ const key='ad:'+ad.dataset.adel; if(nDelArmed!==key){ nDelArmed=key; renderNom(); return; } nDelArmed=''; const aO=adels.find(x=>x.id===ad.dataset.adel), pap=aO?alPapelera('adelantos', aO.id, aO, `Adelanto a ${nombreT(aO.trabajadorId)} · ${fdate(aO.fecha)} · ${m$(num(aO.monto))}`):null; nDb.collection('adelantos').doc(ad.dataset.adel).delete().then(()=>toastBorrado('Adelanto eliminado', pap), err=>toast(errMsg(err))); return; }
     if(t.closest('#wNew')) return openTrab(null);
     if(t.closest('#wAI')) return abrirAI('trab');
     const wc=t.closest('[data-wid]'); if(wc) return openTrab(wc.dataset.wid);
@@ -3478,6 +3478,12 @@ Responde solo con un objeto JSON:
   let gDb=null, gCfgRef=null, gcfg=JSON.parse(JSON.stringify(GCFG_DEF)), movs=[], gLoaded={m:false,c:false};
   /* Bitácora: cada cambio a una cifra del pasado deja rastro (qué, antes, después, quién y cuándo) */
   let cambios=[];
+  /* Papelera: todo lo que se borra queda guardado y se puede recuperar con un toque */
+  let papelera=[];
+  function alPapelera(col, id, datos, que){ if(!gDb||!datos||!id||esRegistro()) return null; const d=JSON.parse(JSON.stringify(datos)); delete d.id; const x={col, docId:id, datos:d, que:String(que||'').slice(0,160), fecha:new Date().toISOString(), quien:document.documentElement.dataset.user||''}; const ref=gDb.collection('papelera').doc(); x.pid=ref.id; ref.set(x).catch(()=>{}); return x; }
+  async function recuperar(x){ if(!x||!gDb) return; try{ await gDb.collection(x.col).doc(x.docId).set(x.datos); if(x.col==='invMovs'&&x.datos.movId){ try{ await gDb.collection('movimientos').doc(x.datos.movId).update({inventario:true, actualizado:new Date().toISOString()}); }catch(_){} } try{ await gDb.collection('papelera').doc(x.pid||x.id).delete(); }catch(_){} registrarCambio(x.col, x.docId, 'Recuperado: '+x.que, '', ''); toast('Recuperado: '+x.que); }catch(e){ toast(errMsg(e)); } }
+  function toastBorrado(msg, x){ toast(msg, x?{label:'Deshacer', fn:()=>recuperar(x), dur:15000}:null); }
+  document.addEventListener('click', e=>{ const b=e.target.closest('[data-recup]'); if(!b) return; const x=papelera.find(p=>p.id===b.dataset.recup); if(x){ b.disabled=true; recuperar(x); } });
   function registrarCambio(col, docId, que, antes, despues){ if(!gDb||!esDueno()) return; try{ gDb.collection('cambios').doc().set({fecha:new Date().toISOString(), quien:document.documentElement.dataset.user||'', col, docId:docId||'', que:String(que||'').slice(0,160), antes:String(antes==null?'':antes).slice(0,200), despues:String(despues==null?'':despues).slice(0,200)}).catch(()=>{}); }catch(_){} }
   /* Compara dos objetos campo por campo y anota lo que cambió */
   function diffCampos(col, docId, nombre, old, nuevo, campos){ if(!old) return; campos.forEach(([k,lbl,fmt])=>{ const a=old[k], b=nuevo[k]; const f=fmt||(v=>v==null?'':String(v)); if(f(a)!==f(b)) registrarCambio(col, docId, `${nombre}: ${lbl}`, f(a), f(b)); }); }
@@ -3721,6 +3727,8 @@ Responde solo con un objeto JSON:
       <label class="f full">Crédito comprado en la Consola (USD, total acumulado)<input id="iaCredito" inputmode="decimal" value="${esc(($('#iaCredito')||{}).value??(iaCfg.credito?nf.format(iaCfg.credito):''))}" placeholder="Por ejemplo 10"></label></div>
       <div class="row-btns"><button type="button" class="btn sec" id="iaProbar">Probar el asistente</button><button type="button" class="btn sec" id="iaReset">Reiniciar contador de uso</button></div><div class="tip" id="iaEstado"></div>
       <div class="tip" id="iaUso">${textoUsoIA()}</div>`:''}
+      ${esDueno()?`<div class="sech">Recuperar lo borrado</div><div class="tip">Lo que borres en los últimos 90 días: movimientos, trabajos, adelantos, trabajadores y lo del inventario. Al recuperarlo vuelve tal como estaba.</div>
+        ${papelera.length?papelera.slice(0,40).map(p=>`<div class="ctarow"><div><b>${esc(p.que||p.col)}</b><small>Borrado el ${fechaHora(p.fecha)}</small></div><div class="r"><button type="button" class="btn sec" data-recup="${esc(p.id)}">Recuperar</button></div></div>`).join(''):'<div class="tip">No has borrado nada.</div>'}`:''}
       ${window.__standalone&&esDueno()?`<div class="sech">Personas con acceso</div>
       <div class="tip">Cada persona entra con su cuenta de Google y ve solo el modo registro: asistencia, adelantos, gastos, retiros y conteos. Lo que registra te llega a Resumen › Por aprobar y no cuenta hasta que lo apruebes.</div>
       ${accesos.length?accesos.map(a=>`<div class="solic"><b>${esc(a.nombre||a.id)}</b><div class="tip" style="border:0;margin:2px 0 0">${esc(a.id)} · ${a.activo===false?'sin acceso por ahora':a.area==='oficina'?'registra asistencia, adelantos y gastos':a.area==='almacen'?'registra material y herramientas':'puede registrar todo'}</div><div class="acts"><button type="button" class="btn sec" data-accact="${esc(a.id)}">${a.activo===false?'Dar acceso':'Quitar acceso'}</button><button type="button" class="btn del" data-accdel="${esc(a.id)}">Eliminar</button></div></div>`).join(''):'<div class="tip">Nadie más tiene acceso todavía.</div>'}
@@ -3987,7 +3995,7 @@ Responde solo con un objeto JSON:
     const b=$('#mvDel'); if(!mvEditId) return;
     const ent=invMovs.filter(m=>m.movId===mvEditId||(m.movIds||[]).includes(mvEditId));
     if(!b.dataset.armed){ b.dataset.armed='1'; b.textContent='Toca otra vez para eliminar'; if(ent.length) $('#mvErr').textContent=`Esta compra tiene ${ent.length} ${ent.length===1?'entrada':'entradas'} de inventario enlazadas. Si la borras, el material sigue en el almacén con su costo pero sin pago registrado.`; return; }
-    try{ const oldM=movs.find(x=>x.id===mvEditId); await gDb.collection('movimientos').doc(mvEditId).delete(); if(oldM) registrarCambio('movimientos', mvEditId, `Movimiento eliminado: ${oldM.concepto||oldM.tipo}`, `${oldM.fecha} · ${nf.format(num(oldM.monto||oldM.montoOrigen))} ${cuentaDe(oldM.cuenta||oldM.cuentaOrigen).nombre}`, ''); closeSheets(); toast(ent.length?'Movimiento eliminado · las entradas de inventario quedaron sin gasto enlazado':'Movimiento eliminado'); }catch(e){ $('#mvErr').textContent=errMsg(e); }
+    try{ const oldM=movs.find(x=>x.id===mvEditId); const pap=oldM?alPapelera('movimientos', mvEditId, oldM, `${oldM.tipo==='cambio'?`${cuentaDe(oldM.cuentaOrigen).nombre} → ${cuentaDe(oldM.cuentaDestino).nombre}`:(oldM.concepto||oldM.tipo)} · ${fdate(oldM.fecha)} · ${enMoneda(num(oldM.monto||oldM.montoOrigen), cuentaDe(oldM.cuenta||oldM.cuentaOrigen).moneda)}`):null; await gDb.collection('movimientos').doc(mvEditId).delete(); if(oldM) registrarCambio('movimientos', mvEditId, `Movimiento eliminado: ${oldM.concepto||oldM.tipo}`, `${oldM.fecha} · ${nf.format(num(oldM.monto||oldM.montoOrigen))} ${cuentaDe(oldM.cuenta||oldM.cuentaOrigen).nombre}`, ''); closeSheets(); toastBorrado(ent.length?'Movimiento eliminado · las entradas de inventario quedaron sin gasto enlazado':'Movimiento eliminado', pap); }catch(e){ $('#mvErr').textContent=errMsg(e); }
   }
 
   /* ---------- balance y reportes ---------- */
@@ -4322,6 +4330,9 @@ Responde solo con un objeto JSON:
     if(window.__standalone && !esRegistro()) db.collection('acceso').onSnapshot(s=>{ accesos=s.docs.map(d=>Object.assign({id:d.id}, d.data())).sort((a,b)=>String(a.nombre||a.id).localeCompare(String(b.nombre||b.id),'es')); if(modulo==='gas'&&gView==='aj'&&!$('#iaClave')) renderGas(); }, ()=>{});
     if(window.__standalone) db.collection('solicitudes').onSnapshot(s=>{ solicitudes=s.docs.map(d=>Object.assign({id:d.id}, d.data())); if(modulo==='res') renderRes(); if(modulo==='reg') renderReg(); avisarPendientes(); }, ()=>{});
     db.collection('movimientos').onSnapshot(s=>{ movs=s.docs.map(d=>Object.assign({id:d.id}, d.data())); gLoaded.m=true; renderGas(); }, ()=>{ gLoaded.m=true; renderGas(); });
+    if(esDueno()) db.collection('papelera').onSnapshot(s=>{ const lim=new Date(Date.now()-90*864e5).toISOString(); papelera=s.docs.map(d=>Object.assign({id:d.id}, d.data())).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+      papelera.filter(p=>String(p.fecha)<lim).forEach(p=>db.collection('papelera').doc(p.id).delete().catch(()=>{})); papelera=papelera.filter(p=>String(p.fecha)>=lim);
+      if(modulo==='gas'&&gView==='aj'&&!$('#iaClave')) renderGas(); }, ()=>{});
     if(esDueno()) db.collection('cambios').onSnapshot(s=>{ cambios=s.docs.map(d=>Object.assign({id:d.id}, d.data())).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))); if(modulo==='gas'&&gView==='aj'&&!$('#iaClave')) renderGas(); }, ()=>{});
     if(window.__standalone && !esRegistro()) db.doc('config/ia').onSnapshot(s=>{ const d=s.exists?(s.data()||{}):{}, u=d.uso&&typeof d.uso==='object'?d.uso:null;
       iaCfg={clave:String(d.clave||'').trim(), modelo:String(d.modelo||'').trim(), credito:num(d.credito), uso: u ? {llamadas:num(u.llamadas), entrada:num(u.entrada), salida:num(u.salida), costo:num(u.costo), ultimo:String(u.ultimo||''), ultimoCosto:num(u.ultimoCosto), ultimoModelo:String(u.ultimoModelo||'')} : null};
@@ -4663,7 +4674,7 @@ Responde solo con un objeto JSON:
     const b=$('#itDel'); if(!itEditId) return;
     if(invMovs.some(m=>m.itemId===itEditId)){ $('#itErr').textContent='Tiene movimientos registrados. Márcalo como inactivo en vez de eliminarlo.'; return; }
     if(!b.dataset.armed){ b.dataset.armed='1'; b.textContent='Toca otra vez para eliminar'; return; }
-    try{ await iDb.collection('inventario').doc(itEditId).delete(); closeSheets(); toast('Ítem eliminado'); }catch(e){ $('#itErr').textContent=errMsg(e); }
+    try{ const iO=items.find(x=>x.id===itEditId), pap=iO?alPapelera('inventario', itEditId, iO, `Ítem del inventario: ${iO.nombre||''}`):null; await iDb.collection('inventario').doc(itEditId).delete(); closeSheets(); toastBorrado('Ítem eliminado', pap); }catch(e){ $('#itErr').textContent=errMsg(e); }
   }
 
   /* ---------- hoja: movimiento de inventario ---------- */
@@ -4791,9 +4802,10 @@ Responde solo con un objeto JSON:
     if(!b.dataset.armed){ b.dataset.armed='1'; b.textContent='Toca otra vez para eliminar'; return; }
     const old=invMovs.find(x=>x.id===imEditId);
     try{
+      const pap=old?alPapelera('invMovs', imEditId, old, `Inventario: ${(TIPO_INV[old.tipo]||old.tipo)} de ${(itemDe(old.itemId)||{}).nombre||'ítem'} · ${fdate(old.fecha)}`):null;
       await iDb.collection('invMovs').doc(imEditId).delete();
       if(old&&old.movId && !invMovs.some(m=>m.id!==old.id&&m.movId===old.movId)){ try{ await gDb.collection('movimientos').doc(old.movId).update({inventario:false, actualizado:new Date().toISOString()}); }catch(_){} }
-      closeSheets(); toast('Movimiento eliminado'+(old&&old.movId?'; el gasto sigue en Gastos':''));
+      closeSheets(); toastBorrado('Movimiento eliminado'+(old&&old.movId?'; el gasto sigue en Gastos':''), pap);
     }catch(e){ $('#imErr').textContent=errMsg(e); }
   }
 
@@ -4821,7 +4833,7 @@ Responde solo con un objeto JSON:
   async function eliminarActivo(){
     const b=$('#acDel'); if(!acEditId) return;
     if(!b.dataset.armed){ b.dataset.armed='1'; b.textContent='Toca otra vez para eliminar'; return; }
-    try{ await iDb.collection('activos').doc(acEditId).delete(); closeSheets(); toast('Eliminado'); }catch(e){ $('#acErr').textContent=errMsg(e); }
+    try{ const aO=activos.find(x=>x.id===acEditId), pap=aO?alPapelera('activos', acEditId, aO, `Herramienta o equipo: ${aO.nombre||''}`):null; await iDb.collection('activos').doc(acEditId).delete(); closeSheets(); toastBorrado('Eliminado', pap); }catch(e){ $('#acErr').textContent=errMsg(e); }
   }
 
   /* ---------- reportes de inventario (formato de WhatsApp) ---------- */
