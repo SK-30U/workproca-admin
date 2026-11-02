@@ -3848,7 +3848,7 @@ Responde solo con un objeto JSON:
   const COBRO_FACT='Cobro de factura', PAGO_REP='Pago de cliente por repartir';
   function catsPara(tipo, ac){ return tipo==='ingreso' ? [COBRO_FACT, PAGO_REP, ...(gcfg.catIngreso||[]).filter(c=>!['cobro a cliente','cobro de factura'].includes(String(c).toLowerCase()))] : (ac==='Empresa' ? gcfg.catEmpresa : gcfg.catPersonal); }
   const esCobroFact = () => mvTipo==='ingreso' && $('#mvCat').value===COBRO_FACT;
-  function fillFactTrab(sel){ const ls=docs.filter(d=>saldo(d)>0).sort((a,b)=>(tieneOrden(b)-tieneOrden(a)) || byOrden(a,b)); $('#mvFactTrab').innerHTML = ls.length ? ls.map(d=>`<option value="${esc(d.id)}">${tieneOrden(d)?esc(d.ods):'Sin orden'} · ${esc(d.descripcion)}${d.unidad?' ('+esc(d.unidad)+')':''} · saldo ${usd(saldo(d))}</option>`).join('') : '<option value="">No hay trabajos con saldo por cobrar</option>'; if(sel && ls.some(d=>d.id===sel)) $('#mvFactTrab').value=sel; }
+  function fillFactTrab(sel){ const ls=docs.filter(d=>saldo(d)>0).sort((a,b)=>(tieneOrden(b)-tieneOrden(a)) || byOrden(a,b)); $('#mvFactTrab').innerHTML = '<option value="__rep">Todavía sin orden: queda por repartir después</option>' + (ls.length ? ls.map(d=>`<option value="${esc(d.id)}">${tieneOrden(d)?esc(d.ods):'Sin orden'} · ${esc(d.descripcion)}${d.unidad?' ('+esc(d.unidad)+')':''} · saldo ${usd(saldo(d))}</option>`).join('') : ''); $('#mvFactTrab').value = sel && ls.some(d=>d.id===sel) ? sel : (ls[0]?ls[0].id:'__rep'); }
   function fillMvSelects(){
     const opts=gcfg.cuentas.map(c=>`<option value="${esc(c.id)}">${esc(c.nombre)} (${c.moneda==='VES'?'Bs.':'USD'})</option>`).join('');
     ['#mvCuenta','#mvOrig','#mvDest'].forEach(s=>{ const v=$(s).value; $(s).innerHTML=opts; if(v) $(s).value=v; });
@@ -3857,7 +3857,7 @@ Responde solo con un objeto JSON:
   }
   function fillCats(sel){
     const ls=catsPara(mvTipo, $('#mvACargo').value);
-    $('#mvCat').innerHTML=(mvTipo==='gasto'&&!sel?'<option value="">Elige la categoría…</option>':'')+ls.filter(c=>c!=='Nómina'&&c!=='Sueldos de supervisores'||sel===c).map(c=>`<option value="${esc(c)}">${c===COBRO_FACT?'Cobro a cliente (factura, abono o anticipo)':esc(c)}</option>`).join('');
+    $('#mvCat').innerHTML=(mvTipo==='gasto'&&!sel?'<option value="">Elige la categoría…</option>':'')+ls.filter(c=>c!=='Nómina'&&c!=='Sueldos de supervisores'||sel===c).map(c=>`<option value="${esc(c)}">${c===COBRO_FACT?'Cobro a cliente (factura, abono o anticipo)':c===PAGO_REP?'Pago de cliente sin orden (se reparte después)':esc(c)}</option>`).join('');
     if(sel && !ls.includes(sel)) $('#mvCat').insertAdjacentHTML('afterbegin', `<option value="${esc(sel)}">${esc(sel)}</option>`);
     if(sel) $('#mvCat').value=sel;
   }
@@ -4378,7 +4378,13 @@ Responde solo con un objeto JSON:
     $('#mvAplicar').hidden=true; $('#mvErr').textContent='';
     $('#mvConv').innerHTML=($('#mvConv').innerHTML?$('#mvConv').innerHTML+'<br>':'')+`Elige la orden y toca Guardar: este ingreso pasa a ser un pago de ese trabajo en Cobranzas y deja de estar suelto aquí (la caja no lo cuenta dos veces).`;
   });
-  $('#mvFactTrab').addEventListener('change', ()=>{ const d=docs.find(x=>x.id===$('#mvFactTrab').value); if(d && !mvAplicando) $('#mvMonto').value=nf.format(saldo(d)); renderMvConv(); });
+  $('#mvFactTrab').addEventListener('change', ()=>{
+    /* Sin orden todavía: pasa a pago por repartir con la misma cuenta, monto y tasa */
+    if($('#mvFactTrab').value==='__rep'){ const md=$('#mvModo').value, u=parseNum($('#mvMonto').value)||0, t=parseNum($('#mvTasa').value)||0;
+      fillCats(PAGO_REP); syncMvTipo(); if([...$('#mvCuenta').options].some(x=>x.value===md)) $('#mvCuenta').value=md; syncMvMoneda();
+      const enBs=cuentaDe($('#mvCuenta').value).moneda==='VES'; $('#mvMonto').value = u>0 ? nf.format(enBs&&t>0?r2(u*t):u) : ''; if(t>0) $('#mvTasa').value=nfT.format(t);
+      if(!$('#mvConcepto').value) $('#mvConcepto').placeholder='Cliente o embarcación, por ejemplo: Pago Lupara V'; renderMvConv(); $('#mvConcepto').focus(); return; }
+    const d=docs.find(x=>x.id===$('#mvFactTrab').value); if(d && !mvAplicando) $('#mvMonto').value=nf.format(saldo(d)); renderMvConv(); });
   ['#mvCuenta','#mvOrig','#mvDest'].forEach(s=>$(s).addEventListener('change', ()=>{ delete $('#mvDestMonto').dataset.manual; syncMvMoneda(); }));
   ['#mvMonto','#mvOrigMonto'].forEach(s=>$(s).addEventListener('input', renderMvConv));
   const tasaBsBinance = f => tasaUsdt(f) || (td=>td?{tasa:td.tasa, fecha:td.fecha}:null)(tasaDelDia(f)) || (tasaSugerida()>0?{tasa:tasaSugerida(), fecha:f}:null);
