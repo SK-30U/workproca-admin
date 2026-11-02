@@ -528,6 +528,10 @@ select.combo-oculto{display:none}
 .avfijo{background:var(--so);color:#fff;border-radius:10px;padding:8px 10px;font-weight:600;margin:0 0 8px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(140px + env(safe-area-inset-bottom,0px));z-index:30;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:600;font-size:14px;max-width:calc(100% - 32px)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}.card:active{transform:none}}
+  .ctarow{display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}
+  .ctarow small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+  .ctarow .r{text-align:right;white-space:nowrap}
+  [data-cta]{cursor:pointer}
 </style>
 
 <div class="topnav" id="topnav">
@@ -755,6 +759,13 @@ select.combo-oculto{display:none}
   </div>
 </section>
 
+<section class="sheet" id="ctaSheet" hidden aria-modal="true" role="dialog" aria-labelledby="ctaTitle">
+  <div class="wrap">
+    <div class="grab"></div>
+    <div class="sh-head"><h3 id="ctaTitle">Cuenta</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
+    <div id="ctaList"></div>
+  </div>
+</section>
 <section class="sheet" id="shareSheet" hidden aria-modal="true" role="dialog" aria-labelledby="shareTitle">
   <div class="wrap">
     <div class="grab"></div>
@@ -3587,6 +3598,18 @@ Responde solo con un objeto JSON:
     const s=saldoIni(cid);
     return r2(num(s.monto) + sum(todosMovs().filter(m=>m.fecha && (!s.fecha || m.fecha>=s.fecha) && m.fecha<=hastaIncl), m=>delta(m,cid)));
   }
+  /* Cada entrada y salida de una cuenta con el saldo que va quedando: de dónde sale lo que hay */
+  function openCuenta(cid){ if(esRegistro()) return; const c=cuentaDe(cid), s=saldoIni(cid), hoy=today();
+    const ms=todosMovs().filter(m=>m.fecha && m.fecha>=s.fecha && m.fecha<=hoy && Math.abs(delta(m,cid))>=0.005);
+    let run=num(s.monto); const filas=ms.map(m=>{ const d=delta(m,cid); run=r2(run+d);
+      const tit = m.tipo==='cambio' ? `${esc(cuentaDe(m.cuentaOrigen).nombre)} → ${esc(cuentaDe(m.cuentaDestino).nombre)}${m.concepto?' · '+esc(m.concepto):''}` : esc(m.concepto||m.categoria||(m.tipo==='ingreso'?'Ingreso':'Gasto'));
+      return `<div class="ctarow"><div><b>${tit}</b><small>${fdate(m.fecha)}${m.auto?' · automático desde '+esc(m.auto):''}</small></div><div class="r num"><b style="color:${d<0?'var(--danger)':'var(--co)'}">${d<0?'− ':'+ '}${enMoneda(Math.abs(d),c.moneda)}</b><small>Queda ${run<0?'− ':''}${enMoneda(Math.abs(run),c.moneda)}</small></div></div>`; }).reverse();
+    $('#ctaTitle').textContent=`${c.nombre}: de dónde sale el saldo`;
+    $('#ctaList').innerHTML = `<div class="tip num">Saldo hoy: <b>${run<0?'− ':''}${enMoneda(Math.abs(run),c.moneda)}</b> · ${ms.length} ${ms.length===1?'movimiento':'movimientos'}, el más reciente arriba</div>`
+      + (filas.join('') || '<div class="empty"><b>Sin movimientos</b>Esta cuenta no ha tenido entradas ni salidas.</div>')
+      + `<div class="ctarow"><div><b>Saldo inicial</b><small>${fdate(s.fecha)}</small></div><div class="r num"><b>${num(s.monto)<0?'− ':''}${enMoneda(Math.abs(num(s.monto)),c.moneda)}</b></div></div>`;
+    openSheet('#ctaSheet'); }
+  document.addEventListener('click', e=>{ const ct=e.target.closest('[data-cta]'); if(ct) openCuenta(ct.dataset.cta); });
   function saldoAntesDe(cid, fecha){ return saldoCuenta(cid, sumarDias(fecha,-1)); }
   const totalUsdCuentas = (saldos, tasa) => sum(gcfg.cuentas, c=>{ const v=saldos[c.id]||0; return c.moneda==='VES' ? (tasa>0? v/tasa : 0) : v; });
 
@@ -3646,7 +3669,7 @@ Responde solo con un objeto JSON:
       ${sinSaldos?`<div class="lock" style="margin-top:14px">Las cuentas arrancan en cero el ${fdate(inicioCaja())}; los cobros anteriores no cuentan. Para que el disponible sea real, pon el saldo de hoy de cada cuenta en <button type="button" class="lnk" id="gIrAj">Ajustes</button>.</div>`:''}
       ${(()=>{ const sal={}; gcfg.cuentas.forEach(c=>sal[c.id]=saldoCuenta(c.id,hoy)); const td=tasaDelDia(), tasaB=tasaSugerida(), tEnt=tasaSaldoBanco(hoy); const tot=totalUsdCuentas(sal,tasaB), totEnt=totalUsdCuentas(sal,tEnt);
         return `<div class="hero"><div class="lbl">Disponible hoy</div><div class="big num"><small>USD</small>${nf.format(r2(tot))}</div>
-          <div class="brk num" style="margin-top:8px">${gcfg.cuentas.map(c=>`<div><span>${esc(c.nombre)}</span><b>${c.moneda==='VES'?mBs(sal[c.id])+(tasaB?' = '+m$(r2(sal[c.id]/tasaB)):''):m$(sal[c.id])}</b></div>`).join('')}</div>
+          <div class="brk num" style="margin-top:8px">${gcfg.cuentas.map(c=>`<div data-cta="${esc(c.id)}" role="button" tabindex="0"><span>${esc(c.nombre)} ›</span><b>${c.moneda==='VES'?mBs(sal[c.id])+(tasaB?' = '+m$(r2(sal[c.id]/tasaB)):''):m$(sal[c.id])}</b></div>`).join('')}</div>
           ${bloqueTasaDia()}
           ${tasaB&&tEnt&&Math.abs(totEnt-tot)>=0.01?`<div class="tip">A la tasa a la que entraron los bolívares (${nfT.format(r2(tEnt))}) serían ${m$(r2(totEnt))}: ${totEnt>tot?'la devaluación se comió':'ganaste'} ${m$(r2(Math.abs(totEnt-tot)))}.</div>`:''}</div>`; })()}
       ${(()=>{ const ds=comprasPorPagar(); if(!ds.length) return ''; const tot=r2(sum(ds,o=>o.usd));
@@ -5346,7 +5369,7 @@ Responde solo con un objeto JSON:
     const el=$('#rMain');
     if(!coll||!loaded||!(nLoaded.t&&nLoaded.a&&nLoaded.c&&nLoaded.d)||!(gLoaded.m&&gLoaded.c)){ el.innerHTML='<div class="empty"><b>Cargando resumen…</b>Cobranzas, nómina y gastos en una sola pantalla.</div>'; return; }
     const R=datosResumen();
-    const fila=(lbl,v,op={})=>`<div class="row"><i class="sw" style="background:${op.c||'transparent'};${op.c?'':'width:0'}"></i><span class="nm">${lbl}${op.n!=null?`<em>${op.n}</em>`:''}</span><b${op.neg?' style="color:var(--danger)"':''}>${op.raw||usd(v)}</b>${op.extra?`<small>${op.extra}</small>`:''}</div>`;
+    const fila=(lbl,v,op={})=>`<div class="row"${op.cta?` data-cta="${esc(op.cta)}" role="button" tabindex="0"`:''}><i class="sw" style="background:${op.c||'transparent'};${op.c?'':'width:0'}"></i><span class="nm">${lbl}${op.n!=null?`<em>${op.n}</em>`:''}</span><b${op.neg?' style="color:var(--danger)"':''}>${op.raw||usd(v)}</b>${op.extra?`<small>${op.extra}</small>`:''}</div>`;
     const card=(lbl,big,sub,rows)=>`<div class="hero"><div class="lbl">${lbl}</div>${big!=null?`<div class="big num">${usdHtml(big)}</div>`:''}${sub?`<div class="sub">${sub}</div>`:''}<div class="rows num">${rows}</div></div>`;
     const perLbl = resF.periodo==='mes' ? `Del 01/${R.hoy.slice(5,7)} al ${fdate(R.hoy)}` : `Semana del ${fdate(R.per[0])} al ${fdate(R.per[1])}`;
     const sinSaldos=!gcfg.cuentas.some(c=>((gcfg.saldos||{})[c.id]||{}).fecha);
@@ -5354,7 +5377,7 @@ Responde solo con un objeto JSON:
       <div class="row-btns" style="margin-top:12px"><button type="button" class="btn sec" id="rExcel">Exportar todo a Excel</button><button type="button" class="btn sec" id="rCopy">Copiar resumen</button></div>
       ${sinSaldos?`<div class="lock" style="margin-top:14px">Las cuentas arrancan en cero el ${fdate(inicioCaja())} porque no tienen saldo inicial: la caja solo muestra los movimientos desde esa fecha. Pon el saldo real en <button type="button" class="lnk" id="rIrAj">Gastos → Ajustes</button>.</div>`:''}
       ${card('Caja hoy', R.disponible, `Bolívares a la tasa del día, ${nfT.format(R.tasaBs||0)} Bs/$${R.tasaEnt&&Math.abs(R.dispEnt-R.disponible)>=0.01?` · a la tasa a la que entraron (${nfT.format(r2(R.tasaEnt))}) serían ${usd(R.dispEnt)}`:''}`,
-        gcfg.cuentas.map(c=>fila(c.nombre, 0, {raw: c.moneda==='VES' ? `${bsNeg(R.sal[c.id]||0)}${R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''}` : usdNeg(R.sal[c.id]||0), neg:(R.sal[c.id]||0)<0})).join('')
+        gcfg.cuentas.map(c=>fila(esc(c.nombre)+' ›', 0, {cta:c.id, raw: c.moneda==='VES' ? `${bsNeg(R.sal[c.id]||0)}${R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''}` : usdNeg(R.sal[c.id]||0), neg:(R.sal[c.id]||0)<0})).join('')
         + (R.porPagar>0?fila('Compras por pagar', R.porPagar, {neg:true, raw:'− '+usd(R.porPagar)}):'')
         + fila('Nómina por pagar hoy', R.nomPend, {neg:R.nomPend>0, raw:R.nomPend>0?'− '+usd(R.nomPend):usd(0), extra:R.nomPend>0?'Lo trabajado desde el último corte, más supervisores':'Nada pendiente desde el último corte'})
         + (R.adelPend>0?fila('Adelantos por descontar', R.adelPend, {extra:'Ya salieron de la caja; se descuentan en el próximo corte'}):'')
