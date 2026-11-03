@@ -1798,7 +1798,7 @@ select.combo-oculto{display:none}
     let mo=0, dias=0, horas=0, moPend=0; const porT={};
     Object.values(asis).forEach(a=>Object.entries(a.registros||{}).forEach(([id,r])=>{
       const pt=partesReg(r).find(x=>x.tid===d.id); if(!pt) return; const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return;
-      const p0=pagoDia(t,r,a.fecha), pv=valorPagado(id,a.fecha), p={dias:p0.dias*pt.f, horas:p0.horas*pt.f}, v=(pv!=null?pv:(p0.montoDias+p0.montoExtra))*pt.f; if(v<=0) return;
+      const p0=pagoDia(t,r,a.fecha), pv=valorPagado(id,a.fecha), p={dias:p0.dias*pt.f, horas:p0.horas*pt.f}, v=(pv!=null?pv:(p0.montoDias+p0.montoExtra+p0.montoBono))*pt.f; if(v<=0) return;
       mo+=v; if(!diaPagado(id,a.fecha)) moPend+=v; dias+=p.dias; horas+=p.horas; const o=porT[t.nombre]||(porT[t.nombre]={v:0,dias:0,horas:0}); o.v=r2(o.v+v); o.dias+=p.dias; o.horas+=p.horas;
     }));
     const tasaRep=tasaSugerida();
@@ -1815,7 +1815,7 @@ select.combo-oculto{display:none}
     const tasaRep=tasaSugerida();
     movs.filter(m=>m.tipo==='gasto' && m.fecha && (m.aCargo||'Empresa')==='Empresa' && !m.inventario && !['Nómina','Sueldos de supervisores','Adelantos de nómina'].includes(m.categoria) && !tieneTrabajo(m.trabajoId)).forEach(m=>add(inicioSemana(m.fecha),'gastos',usdDe(m,tasaRep)));
     Object.entries(mermasPorSemana()).forEach(([w,v])=>add(w,'gastos',v));   // lo que faltó en los conteos de inventario
-    Object.values(asis).forEach(a=>Object.entries(a.registros||{}).forEach(([id,r])=>{ const f=sum(partesReg(r).filter(x=>!tieneTrabajo(x.tid)),x=>x.f); if(!(f>0)) return; const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return; const p=pagoDia(t,r,a.fecha); const v=(p.montoDias+p.montoExtra)*f; if(v>0) add(inicioSemana(a.fecha),'mo',v); }));
+    Object.values(asis).forEach(a=>Object.entries(a.registros||{}).forEach(([id,r])=>{ const f=sum(partesReg(r).filter(x=>!tieneTrabajo(x.tid)),x=>x.f); if(!(f>0)) return; const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return; const p=pagoDia(t,r,a.fecha); const v=(p.montoDias+p.montoExtra+p.montoBono)*f; if(v>0) add(inicioSemana(a.fecha),'mo',v); }));
     cortes.forEach(k=>(k.lineas||[]).forEach(l=>{ if(l.cargo!==SUP || !(num(l.sueldoFijo)>0)) return; const sem=Array.isArray(l.semanas)&&l.semanas.length?l.semanas:[inicioSemana(k.hasta)]; sem.forEach(w=>add(w,'sup',num(l.sueldoFijo)/sem.length)); }));
     return por;
   }
@@ -2823,7 +2823,8 @@ Responde solo con un objeto JSON:
     const horas = num(reg.horasExtra);
     const montoDias = tar*factor*dias;
     const montoExtra = horas * horaExtraDe(t, tar);
-    return {dias, horas, montoDias, montoExtra, especial: dias>0 && factor!==1 ? td.lbl : ''};
+    const montoBono = Math.max(0, num(reg.bono));   /* asignación especial del día (bonificación), en dólares */
+    return {dias, horas, montoDias, montoExtra, montoBono, especial: dias>0 && factor!==1 ? td.lbl : ''};
   }
   const esAjuste = a => a && a.tipo==='ajuste';
   /* Lo que de verdad se pagó por un día de una persona: lo del corte más los ajustes de ese día (null si ese día no se ha pagado) */
@@ -2833,7 +2834,7 @@ Responde solo con un objeto JSON:
   /* Diferencias de días ya pagados (corrección del día o tarifa con fecha hacia atrás): un ajuste por persona para el próximo corte */
   async function crearAjuste(t, dias, nota){ const ds=dias.filter(x=>Math.abs(x.m)>=0.005); const tot=r2(sum(ds,x=>x.m)); if(Math.abs(tot)<0.01) return 0;
     await nDb.collection('adelantos').doc().set({tipo:'ajuste', trabajadorId:t.id, fecha:today(), monto:tot, nota, dias:ds.map(x=>({f:x.f, m:r2(x.m)})), cuenta:'', tasa:0, corteId:'', creado:new Date().toISOString()}); return tot; }
-  async function ajustesRetro(t, desde, nota){ const dias=[]; Object.values(asis).filter(a=>a.fecha>=desde).forEach(a=>{ const r=(a.registros||{})[t.id]; if(!r) return; const pv=valorPagado(t.id, a.fecha); if(pv==null) return; const p=pagoDia(t,r,a.fecha); dias.push({f:a.fecha, m:r2(p.montoDias+p.montoExtra-pv)}); });
+  async function ajustesRetro(t, desde, nota){ const dias=[]; Object.values(asis).filter(a=>a.fecha>=desde).forEach(a=>{ const r=(a.registros||{})[t.id]; if(!r) return; const pv=valorPagado(t.id, a.fecha); if(pv==null) return; const p=pagoDia(t,r,a.fecha); dias.push({f:a.fecha, m:r2(p.montoDias+p.montoExtra+p.montoBono-pv)}); });
     return crearAjuste(t, dias, nota); }
   const ultimoCorte = () => cortes.slice().sort((a,b)=>String(b.hasta).localeCompare(String(a.hasta)))[0]||null;
   const pagadoHasta = () => { const u=ultimoCorte(); return u?u.hasta:''; };
@@ -2868,18 +2869,18 @@ Responde solo con un objeto JSON:
     const incl = t => !F.cargos || F.cargos.includes(t.cargo||'');
     const primeraAsis = Object.keys(asis).sort()[0] || hasta;
     const lineas={}; let desdeMin='';
-    const linea = id => lineas[id] || (lineas[id]={trabajadorId:id, completos:0, medios:0, horasExtra:0, especiales:{}, montoDias:0, montoExtra:0, sueldoFijo:0, adelantos:0, adelantoIds:[], atrasados:0, ajuste:0, ajustes:[]});
+    const linea = id => lineas[id] || (lineas[id]={trabajadorId:id, completos:0, medios:0, horasExtra:0, especiales:{}, montoDias:0, montoExtra:0, montoBono:0, sueldoFijo:0, adelantos:0, adelantoIds:[], atrasados:0, ajuste:0, ajustes:[]});
     Object.values(asis).filter(a=>a.fecha<=hasta).forEach(a=>{
       Object.entries(a.registros||{}).forEach(([id,reg])=>{
         const t=trabs.find(x=>x.id===id); if(!t||esSup(t)||!incl(t)) return;
         if(diaPagado(id,a.fecha)) return;
-        const p=pagoDia(t,reg,a.fecha); if(!p.dias && !p.horas) return;
+        const p=pagoDia(t,reg,a.fecha); if(!p.dias && !p.horas && !p.montoBono) return;
         const L=linea(id); if(!L.desde||a.fecha<L.desde) L.desde=a.fecha; if(!desdeMin||a.fecha<desdeMin) desdeMin=a.fecha;   // el período empieza en el primer día que de verdad se paga
         { const h=pagadoHastaDe(id); if(h && a.fecha<=h) L.atrasados++; }   // un día de un período ya pagado que no entró en ese corte: se paga ahora
         if(p.dias===1) L.completos++; else if(p.dias===0.5) L.medios++;
-        L.horasExtra+=p.horas; L.montoDias+=p.montoDias; L.montoExtra+=p.montoExtra;
+        L.horasExtra+=p.horas; L.montoDias+=p.montoDias; L.montoExtra+=p.montoExtra; L.montoBono+=p.montoBono;
         if(p.especial) L.especiales[p.especial]=(L.especiales[p.especial]||0)+p.dias;
-        (L.dias=L.dias||[]).push({f:a.fecha, t:reg.tipo, h:p.horas, e:p.especial, tj:reg.trabajoId||'', m:r2(p.montoDias+p.montoExtra)});
+        (L.dias=L.dias||[]).push({f:a.fecha, t:reg.tipo, h:p.horas, e:p.especial, tj:reg.trabajoId||'', ...(p.montoBono?{b:r2(p.montoBono), bn:reg.bonoNota||''}:{}), m:r2(p.montoDias+p.montoExtra+p.montoBono)});
       });
     });
     const supPagados=[], semanasSupPend=new Set();
@@ -2899,7 +2900,7 @@ Responde solo con un objeto JSON:
     adels.filter(a=>!a.corteId && (esAjuste(a) || a.fecha<=hasta)).forEach(a=>{ const t=trabs.find(x=>x.id===a.trabajadorId); if(t && !incl(t)) return; const L=linea(a.trabajadorId);
       if(esAjuste(a)){ L.ajuste=r2(L.ajuste+num(a.monto)); L.ajustes.push({id:a.id, monto:num(a.monto), nota:a.nota||'', fecha:a.fecha}); } else L.adelantos+=num(a.monto); L.adelantoIds.push(a.id); });
     const activoT=id=>(trabs.find(t=>t.id===id)||{}).activo!==false;
-    const ls=Object.values(lineas).map(L=>{ L.bruto=r2(L.montoDias+L.montoExtra+L.sueldoFijo+L.ajuste); L.totalUsd=r2(L.bruto-L.adelantos); return L; })
+    const ls=Object.values(lineas).map(L=>{ L.bruto=r2(L.montoDias+L.montoExtra+num(L.montoBono)+L.sueldoFijo+L.ajuste); L.totalUsd=r2(L.bruto-L.adelantos); return L; })
       .filter(L=>L.bruto>0 || ((L.adelantos>0||Math.abs(L.ajuste)>0.004) && activoT(L.trabajadorId)) || (L.semanas&&L.semanas.length))
       .sort((a,b)=>nombreT(a.trabajadorId).localeCompare(nombreT(b.trabajadorId),'es'));
     return {desde: desdeMin||hasta, hasta, lineas:ls, supPagados, semanasSupPend:[...semanasSupPend].sort()};
@@ -2922,7 +2923,7 @@ Responde solo con un objeto JSON:
       L.semanas.forEach(w=>Ls.push(`• Sueldo semana del ${fdate(w)} al ${fdate(finSemana(w))}: ${usd(r2(num(L.sueldoFijo)/L.semanas.length))}`));
     } else {
       const ds=(L.dias||[]).slice().sort((a,b)=>a.f.localeCompare(b.f));
-      ds.forEach(x=>{ const dow=DIAS[new Date(x.f+'T12:00:00').getDay()]; const partes=[x.t==='completo'?'día completo':x.t==='medio'?'medio día':'', x.h?`${nf.format(x.h).replace(/,00$/,'')} ${x.h===1?'hora extra':'horas extra'}`:'', x.e?x.e.toLowerCase():''].filter(Boolean).join(', ');
+      ds.forEach(x=>{ const dow=DIAS[new Date(x.f+'T12:00:00').getDay()]; const partes=[x.t==='completo'?'día completo':x.t==='medio'?'medio día':'', x.h?`${nf.format(x.h).replace(/,00$/,'')} ${x.h===1?'hora extra':'horas extra'}`:'', x.e?x.e.toLowerCase():'', num(x.b)?`bonificación ${usd(num(x.b))}${x.bn?' ('+x.bn+')':''}`:''].filter(Boolean).join(', ');
         Ls.push(`• ${dow.charAt(0).toUpperCase()+dow.slice(1)} ${fdate(x.f).slice(0,5)}: ${partes} → ${usd(x.m)}`); });
       Ls.push('');
       const tramos={}, hxs={}; let baseT=0;
@@ -2934,6 +2935,7 @@ Responde solo con un objeto JSON:
       if(Math.abs(rec)>=0.01 && Object.keys(L.especiales||{}).length) Ls.push(`Recargo por ${Object.entries(L.especiales||{}).map(([k,v])=>`${k.toLowerCase()} (${nf.format(v).replace(/,00$/,'')} ${v===1?'día':'días'})`).join(' y ')||'días especiales'}: ${usd(rec)}`);
       const lsH=Object.values(hxs).sort((a,b)=>a.ph-b.ph), fh=n=>nf.format(n).replace(/,00$/,'');
       if(lsH.length) Ls.push(`Horas extra: ${lsH.map(o=>`${fh(o.h)} ${o.h===1?'hora':'horas'} a ${usd(o.ph)}`).join(' + ')} = ${usd(r2(L.montoExtra))}`);
+      if(num(L.montoBono)>0) Ls.push(`Bonificación: ${usd(r2(num(L.montoBono)))}`);
     }
     (L.ajustes||[]).forEach(a=>Ls.push(`${num(a.monto)<0?'Descuento':'Pago extra'}${a.nota?' ('+a.nota+')':''}: ${num(a.monto)<0?'− ':'+ '}${usd(Math.abs(num(a.monto)))}`));
     Ls.push(`Devengado: ${usd(L.bruto)}`);
@@ -2948,6 +2950,7 @@ Responde solo con un objeto JSON:
     if(L.completos) p.push(`${L.completos} ${L.completos===1?'día':'días'}`);
     if(L.medios) p.push(`${L.medios} ${L.medios===1?'medio día':'medios días'}`);
     if(L.horasExtra) p.push(`${nf.format(L.horasExtra).replace(/,00$/,'')} ${L.horasExtra===1?'hora extra':'horas extra'}`);
+    if(num(L.montoBono)>0) p.push(`bonificación ${usd(r2(num(L.montoBono)))}`);
     const esp=Object.entries(L.especiales||{}).map(([k,v])=>`${nf.format(v).replace(/,00$/,'')} ${k.toLowerCase()}`);
     if(esp.length) p.push('incluye '+esp.join(', '));
     if(L.sueldoFijo) p.push(L.semanas&&L.semanas.length>1 ? `sueldo de ${L.semanas.length} semanas` : 'sueldo semanal');
@@ -3007,7 +3010,7 @@ Responde solo con un objeto JSON:
   function copiarDiaAnterior(){ const u=ultimoDiaAntes(diaSel); if(!u) return; const regs=(asis[u]||{}).registros||{}; dayDraft={}; Object.entries(regs).forEach(([id,r])=>{ const t=trabs.find(x=>x.id===id); if(!t||diaBloqueado(t,diaSel)) return; dayDraft[id]={tipo:r.tipo||'completo', horasExtra:0, trabajoId:r.trabajoId||'', ...(r.dividir&&r.trabajoId2?{dividir:true, trabajoId2:r.trabajoId2}:{})}; }); Object.keys(dayDraft).forEach(id=>diaAgregados.add(id)); dayDirty=true; todosTocado=true; renderNom(); toast(`Copiado el ${fdate(u)}: revisa y guarda`); }
   function renderDia(el){
     if(!dayDraft){ dayDraft=JSON.parse(JSON.stringify((asis[diaSel]||{}).registros||{})); dayDirty=false; diaAgregados=new Set(); diaCorregir=new Set(); todosTocado=false; calcPrefill(); }
-    const tieneReg = id => { const r=dayDraft[id]; return !!r && (r.tipo==='completo' || r.tipo==='medio' || num(r.horasExtra)>0); };
+    const tieneReg = id => { const r=dayDraft[id]; return !!r && (r.tipo==='completo' || r.tipo==='medio' || num(r.horasExtra)>0 || num(r.bono)>0); };
     const lista=trabs.filter(t=>!esSup(t) && (t.activo!==false || tieneReg(t.id))).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
     const td=tipoDia(diaSel), bloqT = t => diaBloqueado(t, diaSel) && !diaCorregir.has(t.id), bloqueado = lista.length>0 && lista.every(bloqT), algunosBloq = !bloqueado && lista.some(bloqT);
     const compactoDia=diaCompacto(), visiblesDia = compactoDia ? lista.filter(t=>tieneReg(t.id)||diaAgregados.has(t.id)) : lista, ocultosDia = compactoDia ? lista.filter(t=>!visiblesDia.includes(t)) : [];
@@ -3055,6 +3058,10 @@ Responde solo con un objeto JSON:
             <label>Horas extra<input type="text" inputmode="decimal" data-hx value="${num(r.horasExtra)?nf.format(num(r.horasExtra)).replace(/,00$/,''):''}" placeholder="0"${bq?' disabled':''}></label>
             <label>Orden o trabajo (centro de costo)<select data-tj${bq?' disabled':''}><option value="">Sin asignar</option>${trabajosAbiertos.map(d=>`<option value="${esc(d.id)}"${r.trabajoId===d.id?' selected':''}>${esc(etiquetaCentro(d))}</option>`).join('')}</select></label>
           </div>
+          <div class="wex dinero">
+            <label>Bonificación (USD)<input type="text" inputmode="decimal" data-bono value="${num(r.bono)?nf.format(num(r.bono)):''}" placeholder="0,00"${bq?' disabled':''}></label>
+            <label>Motivo (opcional)<input type="text" data-bononota value="${esc(r.bonoNota||'')}" placeholder="Por ejemplo: trabajo nocturno"${bq?' disabled':''}></label>
+          </div>
           ${r.trabajoId2!=null&&r.trabajoId2!==undefined&&r.dividir?`<div class="wex"><label style="grid-column:1/-1">La otra mitad del día (y de las horas extra) en<select data-tj2${bq?' disabled':''}><option value="">Elige la otra orden…</option>${trabajosAbiertos.filter(d=>d.id!==r.trabajoId).map(d=>`<option value="${esc(d.id)}"${r.trabajoId2===d.id?' selected':''}>${esc(d.descripcion)}${d.unidad?' · '+esc(d.unidad):''}${tieneOrden(d)?' · '+esc(d.ods):''}</option>`).join('')}</select></label></div>`:''}
           <div class="wacts">${!bq&&r.trabajoId&&!r.dividir?`<button type="button" class="lnk" data-dividir="${esc(t.id)}">Dividir el día entre dos órdenes</button>`:''}${!bq&&r.dividir?`<button type="button" class="lnk" data-nodividir="${esc(t.id)}">Todo el día en una orden</button>`:''}${bq&&canWrite&&!esRegistro()?`<button type="button" class="lnk" data-corregir="${esc(t.id)}">Corregir</button>`:''}${canWrite?`<button type="button" class="lnk" data-adelanto="${esc(t.id)}">Adelanto</button>`:''}</div>
         </div>`;}).join('')}</div>
@@ -3074,10 +3081,10 @@ Responde solo con un objeto JSON:
   }
   function renderDiaSum(){
     const el=$('#dSum'); if(!el) return;
-    let c=0,m=0,h=0,cost=0;
-    Object.entries(dayDraft||{}).forEach(([id,r])=>{ const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return; const p=pagoDia(t,r,diaSel); if(p.dias===1)c++; else if(p.dias===0.5)m++; h+=p.horas; cost+=p.montoDias+p.montoExtra; });
+    let c=0,m=0,h=0,cost=0,bo=0;
+    Object.entries(dayDraft||{}).forEach(([id,r])=>{ const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return; const p=pagoDia(t,r,diaSel); if(p.dias===1)c++; else if(p.dias===0.5)m++; h+=p.horas; cost+=p.montoDias+p.montoExtra+p.montoBono; bo+=p.montoBono; });
     const soloHx=Object.entries(dayDraft||{}).filter(([id,r])=>r.tipo==='no'&&num(r.horasExtra)>0).length;
-    const partes=[c?`${c} ${c===1?'persona':'personas'} día completo`:'', m?`${m} ${m===1?'persona':'personas'} medio día`:'', h?`${nf.format(h).replace(/,00$/,'')} h extra`:'', soloHx?`<span class="warn">${soloHx} ${soloHx===1?'cobra':'cobran'} solo horas extra</span>`:''].filter(Boolean);
+    const partes=[c?`${c} ${c===1?'persona':'personas'} día completo`:'', m?`${m} ${m===1?'persona':'personas'} medio día`:'', h?`${nf.format(h).replace(/,00$/,'')} h extra`:'', bo?`<span class="dinero">bonificaciones ${usd(r2(bo))}</span>`:'', soloHx?`<span class="warn">${soloHx} ${soloHx===1?'cobra':'cobran'} solo horas extra</span>`:''].filter(Boolean);
     el.innerHTML = `${partes.length?partes.join(' · '):'Nadie registrado todavía'}<span class="dinero"> · Costo del día: <b>${usd(r2(cost))}</b></span>${dayDirty?' · <span class="warn">sin guardar</span>':''}`;
     const sv=$('#dSave'); if(sv && !sv.dataset.busy){ const nadie=!Object.values(regsDe(dayDraft)).length && !asis[diaSel], igual=!hayCambiosDia(); sv.disabled=nadie||igual; sv.textContent=nadie?'Nadie marcado':igual?(asis[diaSel]?'Guardado':'Sin cambios'):'Guardar día'; }
   }
@@ -3092,7 +3099,7 @@ Responde solo con un objeto JSON:
   let salidaArmada=false;
   function confirmarSalida(){ if(salidaArmada){ salidaArmada=false; return true; } salidaArmada=true; toast('Tienes cambios sin guardar. Toca otra vez para salir sin guardar.'); setTimeout(()=>salidaArmada=false,4000); return false; }
   /* Registros que valen la pena guardar, y comparación con lo ya guardado */
-  function regsDe(o){ const regs={}; Object.keys(o||{}).sort().forEach(id=>{ const r=o[id]; if(r && (r.tipo!=='no' || num(r.horasExtra)>0)) regs[id]={tipo:r.tipo||'no', horasExtra:num(r.horasExtra), trabajoId:r.trabajoId||''}; if(r.dividir&&r.trabajoId2&&r.trabajoId2!==r.trabajoId){ regs[id].trabajoId2=r.trabajoId2; regs[id].dividir=true; } }); return regs; }
+  function regsDe(o){ const regs={}; Object.keys(o||{}).sort().forEach(id=>{ const r=o[id]; if(r && (r.tipo!=='no' || num(r.horasExtra)>0 || num(r.bono)>0)) regs[id]={tipo:r.tipo||'no', horasExtra:num(r.horasExtra), trabajoId:r.trabajoId||'', ...(num(r.bono)>0?{bono:r2(num(r.bono)), ...(r.bonoNota?{bonoNota:String(r.bonoNota).slice(0,80)}:{})}:{})}; if(!regs[id]) return; if(r.dividir&&r.trabajoId2&&r.trabajoId2!==r.trabajoId){ regs[id].trabajoId2=r.trabajoId2; regs[id].dividir=true; } }); return regs; }
   const hayCambiosDia = () => JSON.stringify(regsDe(dayDraft)) !== JSON.stringify(regsDe((asis[diaSel]||{}).registros));
   /* Quita a un trabajador de este día y lo guarda de una vez, sin tocar los demás cambios pendientes */
   async function quitarDelDia(id){
@@ -3114,7 +3121,7 @@ Responde solo con un objeto JSON:
     /* Lo ya pagado no se toca: para esos trabajadores se conserva lo guardado */
     trabs.filter(t=>diaBloqueado(t,diaSel) && !diaCorregir.has(t.id)).forEach(t=>{ if(saved[t.id]) regs[t.id]=saved[t.id]; else delete regs[t.id]; });
     /* Días pagados que se corrigen: lo nuevo contra lo que ya se pagó por ese día */
-    const difPagados=[...diaCorregir].map(id=>{ const t=trabs.find(x=>x.id===id); const pv=t?valorPagado(id,diaSel):null; if(!t||pv==null) return null; const p=regs[id]?pagoDia(t,regs[id],diaSel):{montoDias:0,montoExtra:0}; return {t, m:r2(p.montoDias+p.montoExtra-pv)}; }).filter(x=>x&&Math.abs(x.m)>=0.01);
+    const difPagados=[...diaCorregir].map(id=>{ const t=trabs.find(x=>x.id===id); const pv=t?valorPagado(id,diaSel):null; if(!t||pv==null) return null; const p=regs[id]?pagoDia(t,regs[id],diaSel):{montoDias:0,montoExtra:0,montoBono:0}; return {t, m:r2(p.montoDias+p.montoExtra+p.montoBono-pv)}; }).filter(x=>x&&Math.abs(x.m)>=0.01);
     const btn=$('#dSave'); if(btn){ if(btn.dataset.busy) return; btn.dataset.busy='1'; btn.disabled=true; btn.textContent='Guardando…'; }
     try{
       const ref=nDb.collection('asistencia').doc(diaSel);
@@ -3212,7 +3219,7 @@ Responde solo con un objeto JSON:
     const c=calcCorte(corteHasta), ls=conBs(c.lineas,tasa); if(!ls.length) return;
     const btn=$('#cPagar'); if(!btn.dataset.armed){ btn.dataset.armed='1'; btn.textContent=`Confirmar pago de ${corteCuenta==='efectivo'?usd(sum(ls,l=>Math.max(0,l.totalUsd))):bs(sum(ls,l=>l.totalBs))} a ${nfT.format(tasa)} desde ${cuentaDe(corteCuenta).nombre}`; setTimeout(()=>{ if(btn.isConnected){ delete btn.dataset.armed; btn.textContent='Marcar pagado'; } },5000); return; }
     btn.disabled=true; btn.textContent='Guardando…';
-    const lineas=ls.map(l=>{ const t=trabs.find(x=>x.id===l.trabajadorId)||{}; const pm=pmDe(t); return {trabajadorId:l.trabajadorId, nombre:t.nombre||'', cargo:t.cargo||'', cedula:String(pm.cedula||''), telefono:String(pm.telefono||''), banco:pm.banco||'', titular:pm.titular||'', completos:l.completos, medios:l.medios, horasExtra:r2(l.horasExtra), especiales:l.especiales, montoDias:r2(l.montoDias), montoExtra:r2(l.montoExtra), sueldoFijo:r2(l.sueldoFijo), semanas:l.semanas||[], dias:l.dias||[], adelantos:r2(l.adelantos), bruto:l.bruto, totalUsd:l.totalUsd, totalBs:l.totalBs}; });
+    const lineas=ls.map(l=>{ const t=trabs.find(x=>x.id===l.trabajadorId)||{}; const pm=pmDe(t); return {trabajadorId:l.trabajadorId, nombre:t.nombre||'', cargo:t.cargo||'', cedula:String(pm.cedula||''), telefono:String(pm.telefono||''), banco:pm.banco||'', titular:pm.titular||'', completos:l.completos, medios:l.medios, horasExtra:r2(l.horasExtra), especiales:l.especiales, montoDias:r2(l.montoDias), montoExtra:r2(l.montoExtra), montoBono:r2(num(l.montoBono)), sueldoFijo:r2(l.sueldoFijo), semanas:l.semanas||[], dias:l.dias||[], adelantos:r2(l.adelantos), bruto:l.bruto, totalUsd:l.totalUsd, totalBs:l.totalBs}; });
     const adIds=ls.flatMap(l=>l.adelantoIds);
     const body={fecha:corteFechaPago||today(), cuenta:corteCuenta, desde:c.desde, hasta:c.hasta, tasa, lineas, adelantoIds:adIds, totalUsd:r2(sum(ls,l=>Math.max(0,l.totalUsd))), totalBs:r2(sum(ls,l=>l.totalBs)), creado:new Date().toISOString()};
     try{
@@ -3442,6 +3449,8 @@ Responde solo con un objeto JSON:
   });
   $('#nMain').addEventListener('input', e=>{
     const t=e.target;
+    if(t.matches('[data-bono]')){ const id=t.closest('[data-w]').dataset.w; const v=parseNum(t.value); dayDraft[id]={...(dayDraft[id]||defReg(id)), bono:isNaN(v)?0:Math.max(0,v)}; dayDirty=true; renderDiaSum(); return; }
+    if(t.matches('[data-bononota]')){ const id=t.closest('[data-w]').dataset.w; dayDraft[id]={...(dayDraft[id]||defReg(id)), bonoNota:t.value.trim()}; dayDirty=true; renderDiaSum(); return; }
     if(t.matches('[data-hx]')){ const id=t.closest('[data-w]').dataset.w; const v=parseNum(t.value); dayDraft[id]={...(dayDraft[id]||defReg(id)), horasExtra:isNaN(v)?0:v}; dayDirty=true; renderDiaSum(); sincronizarTodos(); }
     if(t.id==='dTodosHx'){ const v=parseNum(t.value), hx=isNaN(v)?0:Math.max(0,v); document.querySelectorAll('.wrow[data-w]:not([data-bloq])').forEach(w=>{ const id=w.dataset.w; const r=dayDraft[id]||defReg(id); if(r.tipo==='no') return;   // a quien no trabajó no se le ponen horas
         dayDraft[id]={...r, horasExtra:hx}; const i=w.querySelector('[data-hx]'); if(i) i.value=hx?nf.format(hx).replace(/,00$/,''):''; }); dayDirty=true; renderDiaSum(); }
