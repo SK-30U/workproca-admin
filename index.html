@@ -3899,7 +3899,10 @@ Responde solo con un objeto JSON:
     let txt='';
     if(cam){
       const o=cuentaDe($('#mvOrig').value), d=cuentaDe($('#mvDest').value), mo=parseNum($('#mvOrigMonto').value);
-      if(o.moneda!==d.moneda && t>0 && mo>0){ const calc = o.moneda==='USD' ? r2(mo*t) : r2(mo/t); txt=`Entran <b>${enMoneda(calc,d.moneda)}</b>`; if(!$('#mvDestMonto').dataset.manual) $('#mvDestMonto').value=nf.format(calc); }
+      const md=parseNum($('#mvDestMonto').value), omEl=$('#mvOrigMonto'), dmEl=$('#mvDestMonto');
+      /* Con la tasa se calcula el lado que no escribiste: de lo que sale a lo que entra, o de lo que entra a lo que sale. Lo que escribes no se toca */
+      if(o.moneda!==d.moneda && t>0 && dmEl.dataset.manual && !omEl.dataset.manual && md>0){ const calcO = o.moneda==='USD' ? r2(md/t) : r2(md*t); omEl.value=nf.format(calcO); txt=`Salen <b>${enMoneda(calcO,o.moneda)}</b>`; }
+      else if(o.moneda!==d.moneda && t>0 && mo>0){ const calc = o.moneda==='USD' ? r2(mo*t) : r2(mo/t); txt=`Entran <b>${enMoneda(calc,d.moneda)}</b>`; if(!dmEl.dataset.manual) dmEl.value=nf.format(calc); }
       else if(o.moneda===d.moneda && mo>0 && !$('#mvDestMonto').dataset.manual){ $('#mvDestMonto').value=nf.format(mo); }
     } else {
       const c=cuentaDe($('#mvCuenta').value), m=parseNum($('#mvMonto').value);
@@ -3982,7 +3985,7 @@ Responde solo con un objeto JSON:
     $('#mvCuenta').value=m&&m.cuenta||(mvTipo==='ingreso'?'banco':'binance');   /* lo que sale, sale de Binance salvo que se diga otra cosa */ $('#mvMonto').value=m&&num(m.monto)?nf.format(num(m.monto)):'';
     $('#mvOrig').value=m&&m.cuentaOrigen||'banco'; $('#mvDest').value=m&&m.cuentaDestino||'binance';   /* lo normal: con los bolívares del banco se compran USDT */
     $('#mvBs').value=m&&m.tipo==='gasto'&&num(m.montoBs)>0?nf.format(num(m.montoBs)):'';
-    $('#mvOrigMonto').value=m&&num(m.montoOrigen)?nf.format(num(m.montoOrigen)):''; $('#mvDestMonto').value=m&&num(m.montoDestino)?nf.format(num(m.montoDestino)):''; delete $('#mvDestMonto').dataset.manual; if(m&&m.tipo==='cambio') $('#mvDestMonto').dataset.manual='1';
+    $('#mvOrigMonto').value=m&&num(m.montoOrigen)?nf.format(num(m.montoOrigen)):''; $('#mvDestMonto').value=m&&num(m.montoDestino)?nf.format(num(m.montoDestino)):''; delete $('#mvDestMonto').dataset.manual; delete $('#mvOrigMonto').dataset.manual; if(m&&m.tipo==='cambio'){ $('#mvDestMonto').dataset.manual='1'; $('#mvOrigMonto').dataset.manual='1'; }
     delete $('#mvTasa').dataset.manual; if(m) $('#mvTasa').dataset.manual='1';
     const ts=mvTipo==='ingreso' ? ((ultimaTasa()||{}).tasa||tasaSugerida()) : tasaSugerida(); $('#mvTasa').value = m ? (num(m.tasa)?nfT.format(num(m.tasa)):'') : (ts?nfT.format(ts):'');
     $('#mvErr').textContent=''; $('#mvDel').hidden=!m; $('#mvDel').textContent='Eliminar'; delete $('#mvDel').dataset.armed;
@@ -4397,7 +4400,8 @@ Responde solo con un objeto JSON:
   $('#mvBs').addEventListener('input', ()=>{ const b=parseNum($('#mvBs').value)||0, tu=tasaBsBinance($('#mvFecha').value||today()); if(b>0&&tu) $('#mvMonto').value=nf.format(r2(b/tu.tasa)); renderMvConv(); });
   $('#mvTasa').addEventListener('input', ()=>{ $('#mvTasa').dataset.manual='1'; renderMvConv(); });
   $('#mvFecha').addEventListener('change', renderMvConv);
-  $('#mvDestMonto').addEventListener('input', ()=>{ $('#mvDestMonto').dataset.manual='1'; });
+  $('#mvDestMonto').addEventListener('input', ()=>{ $('#mvDestMonto').dataset.manual='1'; if(!$('#mvDestMonto').value.trim()) delete $('#mvDestMonto').dataset.manual; renderMvConv(); });
+  $('#mvOrigMonto').addEventListener('input', ()=>{ $('#mvOrigMonto').dataset.manual='1'; if(!$('#mvOrigMonto').value.trim()) delete $('#mvOrigMonto').dataset.manual; });
   $('#mvSave').addEventListener('click', guardarMov);
   $('#gMain').addEventListener('click', e=>{ const b=e.target.closest('[data-cierre]'); if(!b) return; const txt=reporteCierre(b.dataset.cierre); copyPlain(txt, 'Reporte copiado. Pégalo en WhatsApp o en una hoja', b.textContent); });
   $('#mvDel').addEventListener('click', eliminarMov);
