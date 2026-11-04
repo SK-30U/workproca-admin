@@ -4203,7 +4203,8 @@ Responde solo con un objeto JSON:
 
   /* ---------- balance y reportes ---------- */
   function periodoBal(){
-    if(balF.modo==='rango' && balF.desde && balF.hasta) return balF.desde<=balF.hasta ? [balF.desde, balF.hasta] : [balF.hasta, balF.desde];
+    /* Rango: la fecha que no se haya tocado toma la de la semana en curso, para que el reporte use lo que muestran las dos casillas */
+    if(balF.modo==='rango'){ const d=balF.desde||balF.semana, h=balF.hasta||finSemana(balF.semana); return d<=h ? [d, h] : [h, d]; }
     if(balF.modo==='mes'){ const h=today(); return [h.slice(0,8)+'01', h]; }
     if(balF.modo==='mesAnt'){ const h=today(), p=sumarDias(h.slice(0,8)+'01',-1); return [p.slice(0,8)+'01', p]; }
     return [balF.semana, finSemana(balF.semana)];
