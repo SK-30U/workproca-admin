@@ -892,6 +892,13 @@ select.combo-oculto{display:none}
       <label class="f full" id="mvTrabL">Centro de costo: orden o trabajo (opcional)<select data-combo id="mvTrab"></select></label>
       <label class="f full">Referencia (opcional)<input id="mvRef" autocomplete="off"></label>
       <label class="chk full" id="mvDeudaL" hidden style="margin-top:4px"><input type="checkbox" id="mvDeudaChk"> Queda por pagar: el dinero todavía no ha salido (alquiler, servicio o crédito)</label>
+      <!-- Compra a crédito con cuotas (Cashea, proveedor): el gasto de hoy es solo la inicial; el resto queda en cuentas por pagar con su cronograma -->
+      <label class="chk full" id="mvCredL" hidden style="margin-top:4px"><input type="checkbox" id="mvCredChk"> A crédito con cuotas (Cashea o proveedor): inicial opcional y el resto en cuotas</label>
+      <label class="f" id="mvCredAcreL" hidden>Acreedor<input id="mvCredAcre" autocomplete="off" placeholder="Cashea, proveedor…" list="mvCredAcreOpts"><datalist id="mvCredAcreOpts"><option value="Cashea"></option><option value="Proveedor"></option></datalist></label>
+      <label class="f" id="mvCredIniL" hidden><span id="mvCredIniLbl">Inicial pagada hoy (Bs.)</span><input id="mvCredIni" inputmode="decimal" placeholder="0 si no hubo inicial"></label>
+      <label class="f" id="mvCredNL" hidden>Número de cuotas<input id="mvCredN" inputmode="numeric" placeholder="3"></label>
+      <label class="f" id="mvCredDiasL" hidden>Cada cuántos días<input id="mvCredDias" inputmode="numeric" placeholder="14"></label>
+      <label class="f full" id="mvCredF1L" hidden>Primera cuota<input id="mvCredF1" type="date"></label>
     </div>
     <div class="conv num" id="mvConv"></div>
     <div class="err" id="mvErr"></div>
@@ -3581,9 +3588,12 @@ Responde solo con un objeto JSON:
   }
   const todosMovs = () => [...movs, ...movsAuto()].sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha)) || String(a.creado||'').localeCompare(String(b.creado||'')));
   /* Valor en dólares de un movimiento: con su propia tasa si la tiene, si no con la del reporte */
+  /* Compra a crédito con cuotas: la cuenta por pagar vale lo que falta por pagar (las cuotas pendientes, a la tasa de la compra) */
+  const cuotasPend = d => ((d&&d.credito||{}).cuotas||[]).filter(c=>!c.pagado);
   function usdDe(m, tasaRep){
     if(m.usd!=null) return num(m.usd);
     if(m.tipo==='cambio') return 0;
+    if(m.tipo==='deuda' && m.credito) return r2(sum(cuotasPend(m),c=>num(c.usd)));
     const c=cuentaDe(m.cuenta);
     if(c.moneda!=='VES') return num(m.monto);
     const t=num(m.tasa)>0?num(m.tasa):((tasaDelDia(m.fecha)||{}).tasa||num(tasaRep));
@@ -3705,7 +3715,9 @@ Responde solo con un objeto JSON:
           ${tasaB&&tEnt&&Math.abs(totEnt-tot)>=0.01?`<div class="tip">A la tasa a la que entraron los bolívares (${nfT.format(r2(tEnt))}) serían ${m$(r2(totEnt))}: ${totEnt>tot?'la devaluación se comió':'ganaste'} ${m$(r2(Math.abs(totEnt-tot)))}.</div>`:''}</div>`; })()}
       ${(()=>{ const ds=comprasPorPagar(); if(!ds.length) return ''; const tot=r2(sum(ds,o=>o.usd));
         return `<div class="hero"><div class="lbl">Cuentas por pagar · ${ds.length}</div><div class="big num"><small>USD</small>${nf.format(tot)}</div>
-          <div class="blist num">${ds.map(o=>`<div><span>${esc(etiquetaDeuda(o))}<br><small>${o.bs>0?mBs(o.bs)+' · ':''}${m$(o.usd)}</small></span><span class="hbtns"><button type="button" class="btn sec" data-pagardeuda="${esc(o.k)}">Pagar</button>${o.k.startsWith('dv|')?`<button type="button" class="btn sec" data-borrardeuda="${esc(o.k)}">Borrar</button>`:o.k.startsWith('id|')?'':`<button type="button" class="btn sec" data-yapagada="${esc(o.k)}">Ya se pagó</button>`}</span></div>`).join('')}</div></div>`; })()}
+          <div class="blist num">${ds.map(o=>{ if(o.credito){ const d=o.deuda, cs=d.credito.cuotas||[], pend=cuotasPend(d), nx=pend[0], atras=pend.filter(c=>c.fecha&&c.fecha<hoy).length;
+              return `<div><span>${esc(etiquetaDeuda(o))}<br><small>${pend.length} de ${cs.length} ${cs.length===1?'cuota':'cuotas'} por pagar: ${o.bs>0?mBs(o.bs)+' = ':''}${m$(o.usd)}${nx?`<br>Próxima: cuota ${nx.n} el ${fdate(nx.fecha)} · ${txtCuota(nx)}`:''}${atras?`<br><b style="color:var(--danger)">${atras} ${atras===1?'cuota vencida':'cuotas vencidas'}</b>`:''}</small></span><span class="hbtns"><button type="button" class="btn sec" data-pagardeuda="${esc(o.k)}">Pagar cuota ${nx?nx.n:''}</button>${pend.length>1?`<button type="button" class="btn sec" data-pagartodo="${esc(o.k)}">Pagar todo</button>`:''}<button type="button" class="btn sec" data-borrardeuda="${esc(o.k)}">Borrar</button></span></div>`; }
+            return `<div><span>${esc(etiquetaDeuda(o))}<br><small>${o.bs>0?mBs(o.bs)+' · ':''}${m$(o.usd)}</small></span><span class="hbtns"><button type="button" class="btn sec" data-pagardeuda="${esc(o.k)}">Pagar</button>${o.k.startsWith('dv|')?`<button type="button" class="btn sec" data-borrardeuda="${esc(o.k)}">Borrar</button>`:o.k.startsWith('id|')?'':`<button type="button" class="btn sec" data-yapagada="${esc(o.k)}">Ya se pagó</button>`}</span></div>`; }).join('')}</div></div>`; })()}
       ${(()=>{ const ps=pagosPorRepartir(); if(!ps.length) return ''; const tot=r2(sum(ps,rpUsd));
         return `<div class="hero"><div class="lbl">Pagos de clientes por repartir · ${ps.length}</div><div class="big num"><small>USD</small>${nf.format(tot)}</div><div class="tip">Ya están en la caja; falta decir a qué órdenes van.</div>
           <div class="blist num">${ps.map(m=>`<div><span>${esc(m.concepto||'Pago de cliente')} · ${fdate(m.fecha).slice(0,5)}<br><small>${enMoneda(num(m.monto),cuentaDe(m.cuenta).moneda)}${cuentaDe(m.cuenta).moneda==='VES'?' = '+m$(rpUsd(m)):''}</small></span><span class="hbtns"><button type="button" class="btn sec" data-repartir="${esc(m.id)}">Repartir</button></span></div>`).join('')}</div></div>`; })()}
@@ -3895,7 +3907,8 @@ Responde solo con un objeto JSON:
     $('#mvDestMontoLbl').textContent=`Monto que entra (${d.moneda==='VES'?'Bs.':'USD'})`;
     const cam=mvTipo==='cambio';
     const usdG = mvTipo==='gasto' && c.moneda!=='VES'; $('#mvBsL').hidden=!usdG;
-    $('#mvDeudaL').hidden = !(mvTipo==='gasto' && !mvEditId && !mvDeuda && !esRegistro());
+    $('#mvDeudaL').hidden = !(mvTipo==='gasto' && !mvEditId && !mvDeuda && !esRegistro()) || $('#mvCredChk').checked;
+    syncMvCredito();
     const usdI = mvTipo==='ingreso' && c.moneda!=='VES' && !esCobroFact() && !mvEditId && !esRegistro(), viaBs = usdI && mvVia==='bs';
     $('#mvViaL').hidden=!usdI; $('#mvViaBsL').hidden=!viaBs; $('#mvViaTasaL').hidden=!viaBs; document.querySelectorAll('#mvVia [data-via]').forEach(b=>b.classList.toggle('on', b.dataset.via===mvVia));
     if(viaBs) $('#mvMontoLbl').textContent='USDT recibidos';
@@ -3927,11 +3940,97 @@ Responde solo con un objeto JSON:
       else if(esCobroFact()){ const md=$('#mvModo').value; if(md!=='banco'){ if(m>0) txt=`Entran <b>${m$(r2(m))}</b> a ${esc(cuentaDe(md).nombre)} y el trabajo se actualiza en Cobranzas.`; } else if(m>0 && t>0) txt=`Monto de la factura: <b>${mBs(r2(m*t))}</b> = ${m$(r2(m))} a la tasa del cliente. Entra al banco y el trabajo se actualiza en Cobranzas.`; }
       else if(m>0 && t>0) txt = c.moneda==='VES' ? `Equivale a <b>${m$(r2(m/t))}</b>.` : `Equivale a <b>${mBs(r2(m*t))}</b>.`;
     }
-    $('#mvConv').innerHTML=txt;
+    const nc=notaCredito(); $('#mvConv').innerHTML=txt+(nc?(txt?'<br>':'')+nc:'');
+  }
+  /* ---------- compra a crédito con cuotas (Cashea, proveedor) ----------
+     El gasto que se guarda es solo la inicial (lo que de verdad salió de la cuenta). El resto queda como cuenta por pagar
+     (tipo 'deuda') con su cronograma en `credito.cuotas`; cada cuota se paga desde Cuentas por pagar y genera su propio gasto
+     a la tasa de ese día. Las cuotas quedan fijas en bolívares cuando la compra fue en bolívares (así trabaja Cashea). */
+  function syncMvCredito(){
+    const old=mvEditId?movs.find(x=>x.id===mvEditId):null;
+    const puede = mvTipo==='gasto' && !mvDeuda && !esRegistro() && !esCobroFact() && !(old && (old.credito || old.tipo==='deuda'));
+    const chk=$('#mvCredChk'); if(!puede) chk.checked=false;
+    $('#mvCredL').hidden=!puede;
+    const on=puede && chk.checked;
+    ['#mvCredAcreL','#mvCredIniL','#mvCredNL','#mvCredDiasL','#mvCredF1L'].forEach(s=>$(s).hidden=!on);
+    if(on){ const c=cuentaDe($('#mvCuenta').value), enBs = c.moneda==='VES' || (parseNum($('#mvBs').value)||0)>0;
+      $('#mvCredIniLbl').textContent=`Inicial pagada (${enBs?'Bs.':'USD'})`;
+      if(!$('#mvCredAcre').value.trim()) $('#mvCredAcre').value='Cashea';
+      if(!(parseInt($('#mvCredN').value)>0)) $('#mvCredN').value='3';
+      if(!(parseInt($('#mvCredDias').value)>0)) $('#mvCredDias').value='14';
+      if(!$('#mvCredF1').value || !$('#mvCredF1').dataset.manual) $('#mvCredF1').value=sumarDias($('#mvFecha').value||today(), parseInt($('#mvCredDias').value)||14); }
+  }
+  /* Lee el crédito del formulario y arma el cronograma. Devuelve {error} si falta algo. */
+  function datosCredito(){
+    const c=cuentaDe($('#mvCuenta').value), f=$('#mvFecha').value||today(), m=parseNum($('#mvMonto').value)||0, t=parseNum($('#mvTasa').value)||0, bG=parseNum($('#mvBs').value)||0;
+    if(!(m>0)) return {error:'Escribe el monto total de la compra.'};
+    let enBs, tasa, totalUsd, totalBs;
+    if(c.moneda==='VES'){ if(!(t>0)) return {error:'Escribe la tasa para llevar los bolívares a dólares.'}; enBs=true; tasa=t; totalBs=r2(m); totalUsd=r2(m/t); }
+    else if(bG>0){ enBs=true; tasa=r4(bG/m); totalBs=r2(bG); totalUsd=r2(m); }
+    else { enBs=false; tasa=0; totalBs=0; totalUsd=r2(m); }
+    const acreedor=$('#mvCredAcre').value.trim(); if(!acreedor) return {error:'Escribe a quién se le debe (Cashea, proveedor…).'};
+    const iniTxt=$('#mvCredIni').value.trim(), ini=iniTxt?parseNum(iniTxt):0; if(!(ini>=0)) return {error:'La inicial no se entiende: escribe un número o déjala vacía.'};
+    const total=enBs?totalBs:totalUsd; if(ini>=total-0.004) return {error:'La inicial no puede ser igual o mayor al total: si pagaste todo, es de contado.'};
+    const n=parseInt($('#mvCredN').value)||0; if(n<1||n>60) return {error:'Escribe cuántas cuotas (de 1 a 60).'};
+    const dias=parseInt($('#mvCredDias').value)||0; if(dias<1) return {error:'Escribe cada cuántos días se paga la cuota.'};
+    const f1=$('#mvCredF1').value||sumarDias(f,dias);
+    const inicialBs=enBs?r2(ini):0, inicialUsd=enBs?r2(ini/tasa):r2(ini), restoBs=enBs?r2(totalBs-inicialBs):0, restoUsd=r2(totalUsd-inicialUsd);
+    const base=enBs?restoBs:restoUsd, q=r2(base/n), cuotas=[]; let acBase=0, acUsd=0;
+    for(let i=1;i<=n;i++){ const ult=i===n, b=ult?r2(base-acBase):q; acBase=r2(acBase+b);
+      const u=enBs?(ult?r2(restoUsd-acUsd):r2(b/tasa)):b; acUsd=r2(acUsd+u);
+      cuotas.push({n:i, fecha:sumarDias(f1, dias*(i-1)), usd:u, bs:enBs?b:0, pagado:false, movId:''}); }
+    return {acreedor, enBs, tasa, totalUsd, totalBs, inicialUsd, inicialBs, restoUsd, restoBs, n, dias, f1, cuotas, cuenta:c};
+  }
+  const txtCuota = c => `${c.bs>0?mBs(c.bs)+' = ':''}${m$(c.usd)}`;
+  function notaCredito(){
+    const old=mvEditId?movs.find(x=>x.id===mvEditId):null;
+    if(old && old.credito && old.credito.deudaId){ const d=movs.find(x=>x.id===old.credito.deudaId); if(!d||!d.credito) return ''; const cs=d.credito.cuotas||[], pend=cuotasPend(d);
+      const que = old.credito.cuotas ? `Pago de ${old.credito.cuotas.length===1?'la cuota '+old.credito.cuotas[0]:'las cuotas '+old.credito.cuotas.join(', ')} de ${cs.length}` : 'Inicial';
+      return `${que} de la compra a crédito «${esc(d.concepto||'')}» (${esc(d.credito.acreedor||'')}). ${pend.length?`Quedan ${pend.length} ${pend.length===1?'cuota':'cuotas'} por pagar: ${m$(r2(sum(pend,c=>num(c.usd))))}.`:'Ya está toda pagada.'}`; }
+    if(mvDeuda && mvDeuda.cuotas){ const d=movs.find(x=>x.id===mvDeuda.deudaId); if(d&&d.credito){ const pend=cuotasPend(d).filter(c=>!mvDeuda.cuotas.includes(c.n)); return `Al guardar, ${mvDeuda.cuotas.length===1?'la cuota '+mvDeuda.cuotas[0]:'las cuotas '+mvDeuda.cuotas.join(', ')} de ${(d.credito.cuotas||[]).length} queda${mvDeuda.cuotas.length===1?'':'n'} pagada${mvDeuda.cuotas.length===1?'':'s'}${pend.length?`; faltarían ${pend.length} (${m$(r2(sum(pend,c=>num(c.usd))))})`:' y la compra queda saldada'}. Si vendiste USDT, escribe los dólares que de verdad salieron.`; } }
+    if($('#mvCredL').hidden || !$('#mvCredChk').checked) return '';
+    const D=datosCredito(); if(D.error) return `<span style="color:var(--danger)">${esc(D.error)}</span>`;
+    const c1=D.cuotas[0], cn=D.cuotas[D.cuotas.length-1];
+    return `${D.inicialUsd>0?`Inicial <b>${D.enBs?mBs(D.inicialBs)+' = ':''}${m$(D.inicialUsd)}</b> sale de ${esc(D.cuenta.nombre)} el ${fdate($('#mvFecha').value||today())}. `:'Sin inicial: hoy no sale dinero. '}${D.n} ${D.n===1?'cuota':'cuotas'} de <b>${txtCuota(c1)}</b>${D.n>1?` cada ${D.dias} días (${fdate(c1.fecha)} a ${fdate(cn.fecha)})`:` el ${fdate(c1.fecha)}`}. Queda por pagar a ${esc(D.acreedor)}: <b>${D.enBs?mBs(D.restoBs)+' = ':''}${m$(D.restoUsd)}</b>.`;
+  }
+  $('#mvCredChk').addEventListener('change', ()=>{ if($('#mvCredChk').checked) $('#mvDeudaChk').checked=false; syncMvMoneda(); });
+  $('#mvDeudaChk').addEventListener('change', ()=>{ if($('#mvDeudaChk').checked) $('#mvCredChk').checked=false; syncMvMoneda(); });
+  ['#mvCredAcre','#mvCredIni','#mvCredN'].forEach(s=>$(s).addEventListener('input', renderMvConv));
+  $('#mvCredDias').addEventListener('input', ()=>{ delete $('#mvCredF1').dataset.manual; syncMvCredito(); renderMvConv(); });
+  $('#mvCredF1').addEventListener('change', ()=>{ $('#mvCredF1').dataset.manual='1'; renderMvConv(); });
+  /* Guarda una compra a crédito: la inicial como gasto (si la hubo) y el resto como cuenta por pagar con cuotas.
+     Si se está editando un gasto de contado, ese registro pasa a ser la inicial (o la cuenta por pagar, si no hubo inicial). */
+  async function guardarCredito(body, old, D){
+    const ah=new Date().toISOString(), concepto=body.concepto;
+    const credito={acreedor:D.acreedor, totalUsd:D.totalUsd, totalBs:D.totalBs, inicialUsd:D.inicialUsd, inicialBs:D.inicialBs, inicialMovId:'', cada:D.dias, cuotas:D.cuotas};
+    const deuda={...body, tipo:'deuda', pagado:false, monto:D.enBs&&D.cuenta.moneda==='VES'?D.restoBs:D.restoUsd, tasa:D.tasa, credito, creado:old&&old.creado||ah, actualizado:ah};
+    if(D.enBs && D.cuenta.moneda!=='VES') deuda.montoBs=D.restoBs; else delete deuda.montoBs;
+    const ini = D.inicialUsd>0 ? {...body, tipo:'gasto', monto:D.cuenta.moneda==='VES'?D.inicialBs:D.inicialUsd, tasa:D.tasa, concepto:/inicial/i.test(concepto)?concepto:`${concepto} · inicial ${D.acreedor}`, creado:old&&old.creado||ah, actualizado:ah} : null;
+    if(ini){ if(D.enBs && D.cuenta.moneda!=='VES') ini.montoBs=D.inicialBs; else delete ini.montoBs; }
+    const col=gDb.collection('movimientos'), refMv=mvEditId?col.doc(mvEditId):null;
+    const refD = (refMv && !ini) ? refMv : col.doc(), refI = ini ? (refMv||col.doc()) : null;
+    deuda.credito.inicialMovId = refI?refI.id:''; if(ini) ini.credito={deudaId:refD.id, parte:'inicial'};
+    await conLimite(refD.set(deuda)); if(refI) await conLimite(refI.set(ini));
+    if(old) registrarCambio('movimientos', mvEditId, `Pasado a compra a crédito: ${concepto}`, `${old.fecha} · ${nf.format(num(old.monto))} ${cuentaDe(old.cuenta).nombre}`, `${D.acreedor}: inicial ${m$(D.inicialUsd)} + ${D.n} ${D.n===1?'cuota':'cuotas'} (${m$(D.restoUsd)})`);
+    closeSheets();
+    toast(`${D.inicialUsd>0?`Inicial ${m$(D.inicialUsd)} salió de ${D.cuenta.nombre}. `:''}Quedan ${D.n} ${D.n===1?'cuota':'cuotas'} con ${D.acreedor} (${m$(D.restoUsd)}) en Cuentas por pagar`);
+    if(ini){ const cS=ini.cuenta; setTimeout(()=>{ const sl=saldoCuenta(cS,today()), cc=cuentaDe(cS); if(sl<-0.004) toast(`${cc.nombre} queda en − ${cc.moneda==='VES'?bs(-sl):usd(-sl)}. ¿Falta un cobro o un cambio?`); },900); }
   }
   let mvDeuda=null;
   function pagarDeuda(o){
-    if(o.deuda){ const d=o.deuda; openMov('gasto', null); mvDeuda={deudaId:d.id}; $('#mvDeudaL').hidden=true;
+    if(o.deuda && o.deuda.credito){ const d=o.deuda, pend=cuotasPend(d); if(!pend.length) return toast('Esa compra ya está pagada.');
+      const cs=o.todo?pend:pend.slice(0,1), tot=(d.credito.cuotas||[]).length;
+      openMov('gasto', null); mvDeuda={deudaId:d.id, cuotas:cs.map(c=>c.n)}; $('#mvDeudaL').hidden=true; syncMvCredito();
+      $('#mvACargo').value=d.aCargo||'Empresa'; fillCats(); syncMvTipo(); if([...$('#mvCat').options].some(x=>x.value===d.categoria)) $('#mvCat').value=d.categoria;
+      $('#mvConcepto').value=`${d.concepto||''} · ${cs.length===1?`cuota ${cs[0].n}/${tot}`:`cuotas ${cs[0].n} a ${cs[cs.length-1].n} de ${tot}`} ${d.credito.acreedor||''}`.trim(); $('#mvRef').value=d.referencia||'';
+      if([...$('#mvCuenta').options].some(x=>x.value===d.cuenta)) $('#mvCuenta').value=d.cuenta; syncMvMoneda();
+      const bsC=r2(sum(cs,c=>num(c.bs))), usdC=r2(sum(cs,c=>num(c.usd))), hoy=today();
+      if(cuentaDe(d.cuenta).moneda==='VES'){ $('#mvMonto').value=nf.format(bsC); delete $('#mvTasa').dataset.manual; }
+      else if(bsC>0){ $('#mvBs').value=nf.format(bsC); const tu=tasaBsBinance(hoy); $('#mvMonto').value = tu ? nf.format(r2(bsC/tu.tasa)) : nf.format(usdC); }
+      else $('#mvMonto').value=nf.format(usdC);
+      if(d.trabajoId && [...$('#mvTrab').options].some(x=>x.value===d.trabajoId)){ $('#mvTrab').value=d.trabajoId; comboSync($('#mvTrab')); }
+      $('#mvTitle').textContent=cs.length===1?`Pagar cuota ${cs[0].n} de ${tot}`:'Pagar lo que falta'; renderMvConv(); return; }
+    if(o.deuda){ const d=o.deuda; openMov('gasto', null); mvDeuda={deudaId:d.id}; $('#mvDeudaL').hidden=true; syncMvCredito();
       $('#mvACargo').value=d.aCargo||'Empresa'; fillCats(); syncMvTipo(); if([...$('#mvCat').options].some(x=>x.value===d.categoria)) $('#mvCat').value=d.categoria;
       $('#mvConcepto').value=d.concepto||''; $('#mvRef').value=d.referencia||''; if([...$('#mvCuenta').options].some(x=>x.value===d.cuenta)) $('#mvCuenta').value=d.cuenta; syncMvMoneda();
       $('#mvMonto').value=nf.format(num(d.monto)); if(num(d.montoBs)>0) $('#mvBs').value=nf.format(num(d.montoBs)); if(cuentaDe(d.cuenta).moneda==='VES' && num(d.tasa)>0) $('#mvTasa').value=nfT.format(num(d.tasa));
@@ -4003,6 +4102,7 @@ Responde solo con un objeto JSON:
     $('#mvAplicar').hidden = !(m && m.tipo==='ingreso' && m.categoria!==COBRO_FACT && docs.some(d=>saldo(d)>0));
     $('#mvRepartir').hidden = !(m && m.tipo==='ingreso' && m.categoria!==COBRO_FACT && !esFinanciamiento(m) && docs.some(d=>saldo(d)>0));
     $('#mvDeudaChk').checked=false;
+    $('#mvCredChk').checked=false; $('#mvCredAcre').value='Cashea'; $('#mvCredIni').value=''; $('#mvCredN').value='3'; $('#mvCredDias').value='14'; $('#mvCredF1').value=''; delete $('#mvCredF1').dataset.manual;
     $('#mvFactNum').value=''; $('#mvModo').value='banco';
     limpiarFiltros('#mvSheet'); fillCats(m&&m.categoria); syncMvTipo();
     openSheet('#mvSheet');
@@ -4049,7 +4149,7 @@ Responde solo con un objeto JSON:
       if(!(m>0) && !(bsReg>0)) return err(esRegistro()&&cuentaDe(cta).moneda!=='VES'?'Escribe el monto en dólares o en bolívares.':'Escribe el monto.');
       if(cuentaDe(cta).moneda==='VES' && !(t>0) && !esRegistro()) return err('Escribe la tasa para llevar los bolívares a dólares.');
       /* Gasto del banco sin bolívares en el banco: casi siempre salieron de vender USDT en Binance */
-      if(mvTipo==='gasto' && cuentaDe(cta).moneda==='VES' && !esRegistro() && !$('#mvDeudaChk').checked){ const old=mvEditId?movs.find(x=>x.id===mvEditId):null, disp=r2(saldoCuenta(cta, f>today()?f:today())+(old&&old.cuenta===cta?num(old.monto):0)), kN='mvNeg|'+cta+'|'+r2(m);
+      if(mvTipo==='gasto' && cuentaDe(cta).moneda==='VES' && !esRegistro() && !$('#mvDeudaChk').checked && !(!$('#mvCredL').hidden && $('#mvCredChk').checked)){ const old=mvEditId?movs.find(x=>x.id===mvEditId):null, disp=r2(saldoCuenta(cta, f>today()?f:today())+(old&&old.cuenta===cta?num(old.monto):0)), kN='mvNeg|'+cta+'|'+r2(m);
         if(disp-m < -0.005 && tasaArmada!==kN){ tasaArmada=kN; return err(`El banco quedaría en − Bs. ${nf.format(r2(m-disp))}. Si esos bolívares salieron de vender USDT, elige Binance como cuenta y escribe el monto en Bs. Si de verdad salió del banco, toca Guardar otra vez.`); }
         if(tasaArmada===kN) tasaArmada=''; }
       Object.assign(body,{concepto, categoria:$('#mvCat').value, aCargo: mvTipo==='gasto'?$('#mvACargo').value:'Empresa', cuenta:cta, monto:r2(m), tasa:t>0?t:0, trabajoId: mvTipo==='gasto'&&$('#mvACargo').value==='Empresa'?$('#mvTrab').value:''});
@@ -4062,9 +4162,22 @@ Responde solo con un objeto JSON:
       if(mvTipo==='gasto' && !mvEditId && !mvDeuda && !esRegistro() && $('#mvDeudaChk').checked){ body.tipo='deuda'; body.pagado=false; }
     }
     const old=mvEditId?movs.find(x=>x.id===mvEditId):null; body.creado=old&&old.creado||new Date().toISOString();
+    /* Compra a crédito con cuotas: se guarda aparte (inicial + cuenta por pagar) */
+    const credito = mvTipo==='gasto' && !mvDeuda && !esRegistro() && !$('#mvCredL').hidden && $('#mvCredChk').checked ? datosCredito() : null;
+    if(credito && credito.error) return err(credito.error);
+    if(old && old.credito) body.credito=old.credito;   /* un gasto que es inicial o cuota conserva su enlace al editarlo */
+    if(old && body.tipo==='gasto'){ if(old.inventario) body.inventario=true; if(old.activoId) body.activoId=old.activoId; }   /* editar un gasto no le quita su enlace a inventario o herramientas */
     const btnMv=$('#mvSave'); if(btnMv&&btnMv.dataset.busy) return; if(btnMv){ btnMv.dataset.busy='1'; btnMv.disabled=true; }
+    if(credito){ try{ await guardarCredito(body, old, credito); }catch(e){ err(errMsg(e)); } finally{ if(btnMv){ delete btnMv.dataset.busy; btnMv.disabled=false; } } return; }
     if(mvDeuda && mvDeuda.ids && !mvEditId && body.tipo==='gasto'){ body.inventario=true; body.aCargo='Empresa'; }
+    if(mvDeuda && mvDeuda.cuotas && !mvEditId && body.tipo==='gasto') body.credito={deudaId:mvDeuda.deudaId, cuotas:[...mvDeuda.cuotas]};
     try{ const refMv=mvEditId?gDb.collection('movimientos').doc(mvEditId):gDb.collection('movimientos').doc(); await conLimite(refMv.set(body)); registrarCambioMov(body, old);
+      /* Pago de cuotas de una compra a crédito: se marcan pagadas; con la última, la cuenta por pagar queda saldada */
+      if(mvDeuda && mvDeuda.deudaId && mvDeuda.cuotas && !mvEditId && body.tipo==='gasto'){ const d=movs.find(x=>x.id===mvDeuda.deudaId);
+        if(d && d.credito){ const cu=(d.credito.cuotas||[]).map(c=>mvDeuda.cuotas.includes(c.n)?{...c, pagado:true, movId:refMv.id, fechaPago:body.fecha, usdPagado:usdDe(body, tasaSugerida())}:c), todas=cu.every(c=>c.pagado);
+          await gDb.collection('movimientos').doc(d.id).update({credito:{...d.credito, cuotas:cu}, pagado:todas, movId:todas?refMv.id:'', actualizado:new Date().toISOString()});
+          const quedan=cu.filter(c=>!c.pagado); setTimeout(()=>toast(quedan.length?`Quedan ${quedan.length} ${quedan.length===1?'cuota':'cuotas'} con ${d.credito.acreedor||'el acreedor'}: ${m$(r2(sum(quedan,c=>num(c.usd))))}`:`Compra saldada con ${d.credito.acreedor||'el acreedor'}`),50); }
+        mvDeuda=null; }
       /* Pago de una compra a crédito: el gasto queda enlazado a sus entradas y el costo de cada una pasa a ser lo que de verdad se pagó */
       if(mvDeuda && mvDeuda.deudaId && !mvEditId && body.tipo==='gasto'){ await gDb.collection('movimientos').doc(mvDeuda.deudaId).update({pagado:true, movId:refMv.id, actualizado:new Date().toISOString()}); mvDeuda=null; }
       if(body.tipo==='deuda') setTimeout(()=>toast('Quedó en cuentas por pagar: no salió dinero todavía'),50);
@@ -4079,7 +4192,13 @@ Responde solo con un objeto JSON:
     const b=$('#mvDel'); if(!mvEditId) return;
     const ent=invMovs.filter(m=>m.movId===mvEditId||(m.movIds||[]).includes(mvEditId));
     if(!b.dataset.armed){ b.dataset.armed='1'; b.textContent='Toca otra vez para eliminar'; if(ent.length) $('#mvErr').textContent=`Esta compra tiene ${ent.length} ${ent.length===1?'entrada':'entradas'} de inventario enlazadas. Si la borras, el material sigue en el almacén con su costo pero sin pago registrado.`; return; }
-    try{ const oldM=movs.find(x=>x.id===mvEditId); const pap=oldM?alPapelera('movimientos', mvEditId, oldM, `${oldM.tipo==='cambio'?`${cuentaDe(oldM.cuentaOrigen).nombre} → ${cuentaDe(oldM.cuentaDestino).nombre}`:(oldM.concepto||oldM.tipo)} · ${fdate(oldM.fecha)} · ${enMoneda(num(oldM.monto||oldM.montoOrigen), cuentaDe(oldM.cuenta||oldM.cuentaOrigen).moneda)}`):null; await gDb.collection('movimientos').doc(mvEditId).delete(); if(oldM) registrarCambio('movimientos', mvEditId, `Movimiento eliminado: ${oldM.concepto||oldM.tipo}`, `${oldM.fecha} · ${nf.format(num(oldM.monto||oldM.montoOrigen))} ${cuentaDe(oldM.cuenta||oldM.cuentaOrigen).nombre}`, ''); closeSheets(); toastBorrado(ent.length?'Movimiento eliminado · las entradas de inventario quedaron sin gasto enlazado':'Movimiento eliminado', pap); }catch(e){ $('#mvErr').textContent=errMsg(e); }
+    try{ const oldM=movs.find(x=>x.id===mvEditId); const pap=oldM?alPapelera('movimientos', mvEditId, oldM, `${oldM.tipo==='cambio'?`${cuentaDe(oldM.cuentaOrigen).nombre} → ${cuentaDe(oldM.cuentaDestino).nombre}`:(oldM.concepto||oldM.tipo)} · ${fdate(oldM.fecha)} · ${enMoneda(num(oldM.monto||oldM.montoOrigen), cuentaDe(oldM.cuenta||oldM.cuentaOrigen).moneda)}`):null; await gDb.collection('movimientos').doc(mvEditId).delete(); if(oldM) registrarCambio('movimientos', mvEditId, `Movimiento eliminado: ${oldM.concepto||oldM.tipo}`, `${oldM.fecha} · ${nf.format(num(oldM.monto||oldM.montoOrigen))} ${cuentaDe(oldM.cuenta||oldM.cuentaOrigen).nombre}`, '');
+      /* Si era la inicial o una cuota de una compra a crédito, la cuenta por pagar vuelve a mostrar esas cuotas como pendientes */
+      if(oldM && oldM.credito && oldM.credito.deudaId){ const d=movs.find(x=>x.id===oldM.credito.deudaId); if(d && d.credito){ const upd={actualizado:new Date().toISOString()};
+        if(oldM.credito.cuotas){ upd.credito={...d.credito, cuotas:(d.credito.cuotas||[]).map(c=>oldM.credito.cuotas.includes(c.n)?{...c, pagado:false, movId:'', fechaPago:'', usdPagado:0}:c)}; upd.pagado=false; upd.movId=''; }
+        else upd.credito={...d.credito, inicialMovId:''};
+        try{ await gDb.collection('movimientos').doc(d.id).update(upd); }catch(_){} } }
+      closeSheets(); toastBorrado(ent.length?'Movimiento eliminado · las entradas de inventario quedaron sin gasto enlazado':'Movimiento eliminado', pap); }catch(e){ $('#mvErr').textContent=errMsg(e); }
   }
 
   /* ---------- balance y reportes ---------- */
@@ -4343,6 +4462,7 @@ Responde solo con un objeto JSON:
     const yp=t.closest('[data-yapagada]'); if(yp){ openCuadrar(yp.dataset.yapagada); return; }
     const bdd=t.closest('[data-borrardeuda]'); if(bdd){ if(!bdd.dataset.armed){ bdd.dataset.armed='1'; bdd.textContent='Toca otra vez'; return; } const id=bdd.dataset.borrardeuda.slice(3), dm=movs.find(x=>x.id===id); if(dm){ const pap=alPapelera('movimientos', id, dm, `Cuenta por pagar: ${dm.concepto||dm.categoria||''} · ${enMoneda(num(dm.monto),cuentaDe(dm.cuenta).moneda)}`); gDb.collection('movimientos').doc(id).delete().then(()=>toastBorrado('Cuenta por pagar borrada', pap), e=>toast(errMsg(e))); } return; }
     const pd=t.closest('[data-pagardeuda]'); if(pd){ const o=comprasPorPagar().find(x=>x.k===pd.dataset.pagardeuda); if(o) pagarDeuda(o); return; }
+    const pt=t.closest('[data-pagartodo]'); if(pt){ const o=comprasPorPagar().find(x=>x.k===pt.dataset.pagartodo); if(o) pagarDeuda({...o, todo:true}); return; }
     if(t.closest('#gNext')){ gSemana=sumarDias(gSemana,7); return renderGas(); }
     const mv=t.closest('[data-mv]'); if(mv) return openMov(null, mv.dataset.mv);
     const au=t.closest('[data-auto]'); if(au){ toast(`Este movimiento viene de ${au.dataset.auto}; se cambia allá.`); return; }
@@ -4406,9 +4526,9 @@ Responde solo con un objeto JSON:
   ['#mvCuenta','#mvOrig','#mvDest'].forEach(s=>$(s).addEventListener('change', ()=>{ delete $('#mvDestMonto').dataset.manual; syncMvMoneda(); }));
   ['#mvMonto','#mvOrigMonto'].forEach(s=>$(s).addEventListener('input', renderMvConv));
   const tasaBsBinance = f => tasaUsdt(f) || (td=>td?{tasa:td.tasa, fecha:td.fecha}:null)(tasaDelDia(f)) || (tasaSugerida()>0?{tasa:tasaSugerida(), fecha:f}:null);
-  $('#mvBs').addEventListener('input', ()=>{ const b=parseNum($('#mvBs').value)||0, tu=tasaBsBinance($('#mvFecha').value||today()); if(b>0&&tu) $('#mvMonto').value=nf.format(r2(b/tu.tasa)); renderMvConv(); });
+  $('#mvBs').addEventListener('input', ()=>{ const b=parseNum($('#mvBs').value)||0, tu=tasaBsBinance($('#mvFecha').value||today()); if(b>0&&tu) $('#mvMonto').value=nf.format(r2(b/tu.tasa)); syncMvCredito(); renderMvConv(); });
   $('#mvTasa').addEventListener('input', ()=>{ $('#mvTasa').dataset.manual='1'; renderMvConv(); });
-  $('#mvFecha').addEventListener('change', renderMvConv);
+  $('#mvFecha').addEventListener('change', ()=>{ syncMvCredito(); renderMvConv(); });
   $('#mvDestMonto').addEventListener('input', ()=>{ $('#mvDestMonto').dataset.manual='1'; if(!$('#mvDestMonto').value.trim()) delete $('#mvDestMonto').dataset.manual; renderMvConv(); });
   $('#mvOrigMonto').addEventListener('input', ()=>{ $('#mvOrigMonto').dataset.manual='1'; if(!$('#mvOrigMonto').value.trim()) delete $('#mvOrigMonto').dataset.manual; });
   $('#mvSave').addEventListener('click', guardarMov);
@@ -5213,7 +5333,10 @@ Responde solo con un objeto JSON:
   function comprasPorPagar(){ const det=detallesInv(), g={};
     invMovs.filter(m=>m.tipo==='entrada' && m.porPagar && !m.movId && !(m.movIds||[]).length).forEach(m=>{ const k=(m.proveedor||m.referencia)?claveCompra(m):'id|'+m.id; const o=g[k]||(g[k]={k, proveedor:m.proveedor||'', referencia:m.referencia||'', fecha:m.fecha||'', ms:[], usd:0, bs:0, trabajoId:''}); o.ms.push(m); if(m.paraOrden) o.trabajoId=m.paraOrden; o.usd+=(det[m.id]||{}).costo||0; o.bs+=num(m.totalBs)||0; if(String(m.fecha||'')<o.fecha) o.fecha=m.fecha; });
     /* Alquileres, servicios y demás gastos que quedaron por pagar */
-    movs.filter(m=>m.tipo==='deuda' && !m.pagado).forEach(m=>{ g['dv|'+m.id]={k:'dv|'+m.id, proveedor:m.concepto||m.categoria||'Cuenta por pagar', referencia:m.referencia||'', fecha:m.fecha||'', ms:[], usd:usdDe(m,tasaSugerida()), bs:cuentaDe(m.cuenta).moneda==='VES'?num(m.monto):num(m.montoBs)||0, trabajoId:m.trabajoId||'', deuda:m}; });
+    movs.filter(m=>m.tipo==='deuda' && !m.pagado).forEach(m=>{
+      /* Compra a crédito con cuotas: vale lo que falta (cuotas pendientes), no el total */
+      if(m.credito){ const pend=cuotasPend(m); if(!pend.length) return; g['dv|'+m.id]={k:'dv|'+m.id, proveedor:`${m.credito.acreedor||'Crédito'} · ${m.concepto||m.categoria||''}`, referencia:m.referencia||'', fecha:m.fecha||'', ms:[], usd:r2(sum(pend,c=>num(c.usd))), bs:r2(sum(pend,c=>num(c.bs))), trabajoId:m.trabajoId||'', deuda:m, credito:true}; return; }
+      g['dv|'+m.id]={k:'dv|'+m.id, proveedor:m.concepto||m.categoria||'Cuenta por pagar', referencia:m.referencia||'', fecha:m.fecha||'', ms:[], usd:usdDe(m,tasaSugerida()), bs:cuentaDe(m.cuenta).moneda==='VES'?num(m.monto):num(m.montoBs)||0, trabajoId:m.trabajoId||'', deuda:m}; });
     return Object.values(g).map(o=>({...o, usd:r2(o.usd), bs:r2(o.bs)})).sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha))); }
   const etiquetaDeuda = o => `${o.proveedor||(o.ms[0]?(itemDe(o.ms[0].itemId)||{}).nombre:'')||'Compra'}${o.referencia?' · N° '+o.referencia:''} · ${fdate(o.fecha).slice(0,5)}`;
   function gruposCompra(){
