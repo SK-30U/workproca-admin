@@ -1697,7 +1697,8 @@ select.combo-oculto{display:none}
     ['cobro','Cobro',[['pendiente','Sin cobrar'],['parcial','Cobrados en parte'],['cobrado','Cobrados'],['cancelado','Cancelados']], d=>d.cancelado?'cancelado':etapa(d)==='cobrado'?'cobrado':pagado(d)>0?'parcial':'pendiente'],
   ];
   let ecF={cliente:'', unidad:'', ods:'', req:'', buscar:'', dim:{orden:['con','sin'], ejec:['ejecutado','enEjecucion','porEjecutar'], fact:['con','sin'], cobro:['pendiente','parcial']}, formato:'detallado'};
-  const ecPasa = d => EC_DIMS.every(([k,,,f])=>(ecF.dim[k]||[]).includes(f(d)));
+  /* Una fila sin ninguna marca no filtra (vale como "todos") */
+  const ecPasa = d => EC_DIMS.every(([k,,,f])=>{ const m=ecF.dim[k]||[]; return !m.length || m.includes(f(d)); });
   /* Filtros específicos del estado de cuenta: una orden, una requisición o una búsqueda. Con uno de ellos el trabajo sale esté en la etapa que esté. */
   const ecEspecifico = () => !!(ecF.ods || ecF.req || String(ecF.buscar||'').trim());
   const ecSel = k => true;   /* las secciones del reporte salen según lo que pase el filtro */
@@ -1797,7 +1798,7 @@ select.combo-oculto{display:none}
       ${ecEspecifico()?`<div class="tip" style="border:0;margin:8px 0 0">Con una orden, una requisición o una búsqueda, el trabajo sale esté en la etapa que esté (también si ya se cobró). <button type="button" class="lnk" data-eclimpiar>Quitar estos filtros</button></div>`:''}
       <div class="seg ecfmt" role="group" aria-label="Formato" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px">${[['detallado','Detallado'],['corto','Corto']].map(([k,l])=>`<button type="button" data-fmt="${k}" class="${ecF.formato===k?'on':''}">${l}</button>`).join('')}</div>
       <div id="ecDims"${ecEspecifico()?' hidden':''}>${EC_DIMS.map(([k,t,ops])=>`<div class="tip" style="border:0;margin:8px 0 0">${t}</div><div class="ecchips" style="margin:4px 0 0">${ops.map(([v,l])=>{ const on=(ecF.dim[k]||[]).includes(v); return `<label class="${on?'on':''}"><input type="checkbox" data-dim="${k}" data-v="${v}"${on?' checked':''}> ${l}</label>`; }).join('')}</div>`).join('')}
-        <div class="tip" style="border:0;margin:6px 0 0">Sale cada trabajo que cumpla una marca de cada fila.</div></div>
+        <div class="tip" style="border:0;margin:6px 0 0">Sale cada trabajo que cumpla una marca de cada fila; una fila sin marcas no filtra.</div></div>
       ${ecF.formato==='corto'?`<div class="tip" style="border:0;margin:8px 0 0">Qué incluir en el reporte</div><div class="ecchips" style="margin-top:4px">${CORTO_CAMPOS.map(([k,l])=>`<label class="${ecCampos[k]?'on':''}"><input type="checkbox" data-cp="${k}"${ecCampos[k]?' checked':''}> ${l}</label>`).join('')}</div>`:''}`;
   }
   function abrirEstado(){
