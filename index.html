@@ -1689,18 +1689,30 @@ select.combo-oculto{display:none}
     ['sinOrden','Trabajos ejecutados, pendientes de orden de servicio','Ejecutados sin orden', d=>etapa(d)==='sinOrden'],
     ['sinOrdenSinEj','Trabajos sin orden de servicio, por ejecutar','Sin orden, sin ejecutar', d=>etapa(d)==='porEjecutar' && !tieneOrden(d)],
     ['cobrado','Trabajos cobrados','Cobrados', d=>etapa(d)==='cobrado' || (!!d.cancelado && pagado(d)>0)]];
-  let ecF={cliente:'', unidad:'', etapas:['listo','conOrdenSinEj','sinOrden'], formato:'detallado'};
+  let ecF={cliente:'', unidad:'', ods:'', req:'', buscar:'', etapas:['listo','conOrdenSinEj','sinOrden'], formato:'detallado'};
+  /* Filtros específicos del estado de cuenta: una orden, una requisición o una búsqueda. Con uno de ellos el trabajo sale esté en la etapa que esté. */
+  const ecEspecifico = () => !!(ecF.ods || ecF.req || String(ecF.buscar||'').trim());
+  const ecSel = k => ecEspecifico() || ecF.etapas.includes(k);
+  function ecBase(){
+    const q=String(ecF.buscar||'').trim().toLowerCase();
+    return docs.filter(d=>(!ecF.cliente||(d.cliente||'')===ecF.cliente) && (!ecF.unidad||(d.unidad||'')===ecF.unidad)
+      && (!ecF.ods||String(d.ods||'').trim()===ecF.ods) && (!ecF.req||String(d.nota||'').trim()===ecF.req)
+      && (!q||[d.descripcion,d.ods,d.nota,d.unidad,d.cliente,d.numFactura].some(x=>String(x||'').toLowerCase().includes(q)))).sort(byOrden);
+  }
+  const ecTitulo = () => `${ecF.cliente?' · '+ecF.cliente:''}${ecF.unidad?' · '+ecF.unidad:''}${ecF.ods?' · Orden '+ecF.ods:''}${ecF.req?' · Req. '+ecF.req:''}`;
+  const listaOrdenes = (cli,uni) => [...new Set(docs.filter(d=>(!cli||(d.cliente||'')===cli)&&(!uni||(d.unidad||'')===uni)&&tieneOrden(d)).map(d=>String(d.ods).trim()))].sort((x,y)=>x.localeCompare(y,'es',{numeric:true}));
+  const listaReqs = (cli,uni) => [...new Set(docs.filter(d=>(!cli||(d.cliente||'')===cli)&&(!uni||(d.unidad||'')===uni)&&String(d.nota||'').trim()).map(d=>String(d.nota).trim()))].sort((x,y)=>x.localeCompare(y,'es',{numeric:true}));
   function buildShare(){
     if(ecF.formato==='corto') return buildCorto();
-    const base=docs.filter(d=>(!ecF.cliente||(d.cliente||'')===ecF.cliente) && (!ecF.unidad||(d.unidad||'')===ecF.unidad)).sort(byOrden), L=[];
+    const base=ecBase(), L=[];
     L.push('*WORKPROCA, Trabajos Profesionales C.A.*'); L.push('RIF: J-30707474-4');
-    L.push(`*Estado de cuenta${ecF.cliente?' · '+ecF.cliente:''}${ecF.unidad?' · '+ecF.unidad:''}*`); L.push(`Fecha: ${fdate(today())}`);
+    L.push(`*Estado de cuenta${ecTitulo()}*`); L.push(`Fecha: ${fdate(today())}`);
     let any=false;
     const incluidos=[];
     const totGrupo={};
     /* Un trabajo con anticipo recibido sale siempre, aunque su grupo no esté marcado */
-    EC_SECS.filter(([k,,,pred])=>ecF.etapas.includes(k) || (k!=='cobrado' && base.some(d=>pred(d)&&pagado(d)>0))).forEach(([k,t,,pred])=>{
-      const it=base.filter(d=>pred(d) && (ecF.etapas.includes(k) || pagado(d)>0)); if(!it.length) return; any=true; incluidos.push(...it);
+    EC_SECS.filter(([k,,,pred])=>ecSel(k) || (k!=='cobrado' && base.some(d=>pred(d)&&pagado(d)>0))).forEach(([k,t,,pred])=>{
+      const it=base.filter(d=>pred(d) && (ecSel(k) || pagado(d)>0)); if(!it.length) return; any=true; incluidos.push(...it);
       if(k!=='cobrado') totGrupo[k]=sum(it,saldo);
       L.push(''); L.push(`*${t}*`);
       it.forEach((d,i)=>{
@@ -1733,11 +1745,11 @@ select.combo-oculto{display:none}
   function guardarCampos(){ try{ localStorage.setItem('ecCampos', JSON.stringify(ecCampos)); }catch(_){} }
   const estatusDe = d => { const e=etapa(d); return e==='cancelado'?'Cancelado' : e==='listo'?'Ejecutado, listo para facturar' : e==='sinOrden'?'Ejecutado, sin orden de servicio' : e==='porEjecutar'?(enEjecucion(d)?'En ejecución':tieneOrden(d)?'Con orden, por ejecutar':'Por ejecutar') : 'Cobrado'; };
   function buildCorto(){
-    const base=docs.filter(d=>(!ecF.cliente||(d.cliente||'')===ecF.cliente) && (!ecF.unidad||(d.unidad||'')===ecF.unidad)).sort(byOrden);
-    const sel=k=>ecF.etapas.includes(k), pred=k=>EC_SECS.find(x=>x[0]===k)[3], C=ecCampos;
-    const L=[`*WORKPROCA · Estado de cuenta${ecF.cliente?' · '+ecF.cliente:''}${ecF.unidad?' · '+ecF.unidad:''}*`, fdate(today())];
-    /* Número: la orden de servicio; si no tiene, la requisición en su lugar */
-    const numero = d => (C.ods&&tieneOrden(d)) ? d.ods : (C.req&&d.nota) ? d.nota : '';
+    const base=ecBase();
+    const sel=ecSel, pred=k=>EC_SECS.find(x=>x[0]===k)[3], C=ecCampos;
+    const L=[`*WORKPROCA · Estado de cuenta${ecTitulo()}*`, fdate(today())];
+    /* Número: la orden de servicio y la requisición, las dos si están marcadas y existen; la requisición siempre va identificada para que no parezca una orden */
+    const numero = d => [C.ods&&tieneOrden(d)&&String(d.ods).trim(), C.req&&String(d.nota||'').trim()&&('Req. '+String(d.nota).trim())].filter(Boolean).join(' · ');
     const compartida = d => tieneOrden(d) && base.filter(x=>x.ods===d.ods).length>1;
     const partes = d => { const p=[numero(d), C.unidad&&!ecF.unidad&&d.unidad, (C.desc||compartida(d))&&d.descripcion, C.estado&&estatusDe(d)].filter(Boolean);
       return p.length ? p : [[!ecF.unidad&&d.unidad, d.descripcion].filter(Boolean).join(' · ')]; };
@@ -1753,7 +1765,7 @@ select.combo-oculto{display:none}
     const pend=grupos.flatMap(g=>g[1]), general=sum(pend,saldo);
     if(pend.length){
       if(C.subt) grupos.forEach(([t,it])=>{ L.push(''); L.push(`*${t}*`); it.forEach(d=>L.push(lineaPend(d))); L.push(`*Subtotal: ${usd(sum(it,saldo))}*`); });
-      else { L.push(''); L.push(grupos.length===1?`*${grupos[0][0]}*`:'*Trabajos pendientes*'); pend.forEach(d=>L.push(lineaPend(d))); }
+      else grupos.forEach(([t,it])=>{ L.push(''); L.push(`*${t}*`); it.forEach(d=>L.push(lineaPend(d))); });   /* cada grupo con su título aunque no se pidan subtotales: el cliente debe ver cuáles tienen orden y cuáles no */
       L.push(''); L.push(`*Total general pendiente: ${usd(general)}*`);
     }
     if(sel('cobrado')){ const it=base.filter(pred('cobrado')); if(it.length){ L.push(''); L.push('*Cobrados*'); it.forEach(d=>{ const f=(d.cobros||[]).map(c=>c.numFactura).filter(Boolean); L.push(linea(d, pagado(d), f.length?' · Factura N° '+f.join(', '):'')); }); L.push(`*Total de los trabajos cobrados: ${usd(sum(it,pagado))}*`); } }
@@ -1763,13 +1775,19 @@ select.combo-oculto{display:none}
   function renderEcFiltros(){
     const cls=listaClientes(), uns=listaUnidades(ecF.cliente);
     if(ecF.unidad && !uns.includes(ecF.unidad)) ecF.unidad='';
+    const ods=listaOrdenes(ecF.cliente,ecF.unidad), reqs=listaReqs(ecF.cliente,ecF.unidad);
+    if(ecF.ods && !ods.includes(ecF.ods)) ecF.ods=''; if(ecF.req && !reqs.includes(ecF.req)) ecF.req='';
     $('#ecFiltros').innerHTML = `
       <div class="grid">
         <label class="f">Cliente<select data-combo id="ecCli"><option value="">Todos</option>${cls.map(c=>`<option value="${esc(c)}"${c===ecF.cliente?' selected':''}>${esc(c)}</option>`).join('')}</select></label>
         <label class="f">Unidad<select data-combo id="ecUni"><option value="">Todas</option>${uns.map(u=>`<option value="${esc(u)}"${u===ecF.unidad?' selected':''}>${esc(u)}</option>`).join('')}</select></label>
+        <label class="f">Orden de servicio<select data-combo id="ecOds"><option value="">Todas</option>${ods.map(o=>`<option value="${esc(o)}"${o===ecF.ods?' selected':''}>${esc(o)}</option>`).join('')}</select></label>
+        <label class="f">Requisición<select data-combo id="ecReq"><option value="">Todas</option>${reqs.map(r=>`<option value="${esc(r)}"${r===ecF.req?' selected':''}>${esc(r)}</option>`).join('')}</select></label>
+        <label class="f full">Buscar (descripción, orden, requisición, factura)<input id="ecBuscar" type="search" value="${esc(ecF.buscar||'')}" placeholder="Ej.: ánodos, PO1067, EPR1233"></label>
       </div>
+      ${ecEspecifico()?`<div class="tip" style="border:0;margin:8px 0 0">Con una orden, una requisición o una búsqueda, el trabajo sale esté en la etapa que esté (también si ya se cobró). <button type="button" class="lnk" data-eclimpiar>Quitar estos filtros</button></div>`:''}
       <div class="seg ecfmt" role="group" aria-label="Formato" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px">${[['detallado','Detallado'],['corto','Corto']].map(([k,l])=>`<button type="button" data-fmt="${k}" class="${ecF.formato===k?'on':''}">${l}</button>`).join('')}</div>
-      <div class="ecchips">${EC_SECS.map(([k,,lbl])=>`<label class="${ecF.etapas.includes(k)?'on':''}"><input type="checkbox" data-ec="${k}"${ecF.etapas.includes(k)?' checked':''}> ${lbl}</label>`).join('')}</div>
+      <div class="ecchips"${ecEspecifico()?' hidden':''}>${EC_SECS.map(([k,,lbl])=>`<label class="${ecF.etapas.includes(k)?'on':''}"><input type="checkbox" data-ec="${k}"${ecF.etapas.includes(k)?' checked':''}> ${lbl}</label>`).join('')}</div>
       ${ecF.formato==='corto'?`<div class="tip" style="border:0;margin:8px 0 0">Qué incluir en el reporte</div><div class="ecchips" style="margin-top:4px">${CORTO_CAMPOS.map(([k,l])=>`<label class="${ecCampos[k]?'on':''}"><input type="checkbox" data-cp="${k}"${ecCampos[k]?' checked':''}> ${l}</label>`).join('')}</div>`:''}`;
   }
   function abrirEstado(){
@@ -1785,12 +1803,18 @@ select.combo-oculto{display:none}
     const im=e.target.closest('[data-imonr]'); if(im){ iMon=im.dataset.imonr; renderInvFiltros(); $('#shareText').value=buildInv(); return; }
     const cb=e.target.closest('[data-cfmt]'); if(cb){ costF.formato=cb.dataset.cfmt; renderCostFiltros(); $('#shareText').value=buildCostos(); return; }
     const cr=e.target.closest('[data-crep]'); if(cr){ costF.reparto=cr.dataset.crep; renderCostFiltros(); $('#shareText').value=buildCostos(); return; }
+    const lim=e.target.closest('[data-eclimpiar]'); if(lim){ ecF.ods=''; ecF.req=''; ecF.buscar=''; renderEcFiltros(); $('#shareText').value=buildShare(); return; }
     const b=e.target.closest('[data-fmt]'); if(!b) return; ecF.formato=b.dataset.fmt; renderEcFiltros(); $('#shareText').value=buildShare(); });
+  $('#ecFiltros').addEventListener('input', e=>{ const t=e.target; if(t.id!=='ecBuscar') return; ecF.buscar=t.value; $('#shareText').value=buildShare();
+    clearTimeout(renderEcFiltros._t); renderEcFiltros._t=setTimeout(()=>{ const pos=t.selectionStart; renderEcFiltros(); const n=$('#ecBuscar'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(_){} } },700); });
   $('#ecFiltros').addEventListener('change', e=>{
     const t=e.target;
     if(shareMode==='cost'){ if(t.id==='cfCli'){ costF.cliente=t.value; costF.trabajo=''; } if(t.id==='cfTrab') costF.trabajo=t.value; if(t.dataset.cf) costF[t.dataset.cf]=t.checked; renderCostFiltros(); $('#shareText').value=buildCostos(); return; }
-    if(t.id==='ecCli'){ ecF.cliente=t.value; ecF.unidad=''; }
-    if(t.id==='ecUni') ecF.unidad=t.value;
+    if(t.id==='ecCli'){ ecF.cliente=t.value; ecF.unidad=''; ecF.ods=''; ecF.req=''; }
+    if(t.id==='ecUni'){ ecF.unidad=t.value; ecF.ods=''; ecF.req=''; }
+    if(t.id==='ecOds') ecF.ods=t.value;
+    if(t.id==='ecReq') ecF.req=t.value;
+    if(t.id==='ecBuscar') return;   /* la búsqueda se atiende al escribir */
     if(t.dataset.ec){ const k=t.dataset.ec; ecF.etapas = t.checked ? [...new Set([...ecF.etapas,k])] : ecF.etapas.filter(x=>x!==k); }
     if(t.dataset.cp){ ecCampos[t.dataset.cp]=t.checked; guardarCampos(); }
     renderEcFiltros(); $('#shareText').value=buildShare();
