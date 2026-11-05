@@ -1688,15 +1688,24 @@ select.combo-oculto{display:none}
     ['conOrdenSinEj','Trabajos con orden de servicio, por ejecutar','Con orden, sin ejecutar', d=>etapa(d)==='porEjecutar' && tieneOrden(d)],
     ['sinOrden','Trabajos ejecutados, pendientes de orden de servicio','Ejecutados sin orden', d=>etapa(d)==='sinOrden'],
     ['sinOrdenSinEj','Trabajos sin orden de servicio, por ejecutar','Sin orden, sin ejecutar', d=>etapa(d)==='porEjecutar' && !tieneOrden(d)],
-    ['cobrado','Trabajos cobrados','Cobrados', d=>etapa(d)==='cobrado' || (!!d.cancelado && pagado(d)>0)]];
-  let ecF={cliente:'', unidad:'', ods:'', req:'', buscar:'', etapas:['listo','conOrdenSinEj','sinOrden'], formato:'detallado'};
+    ['cobrado','Trabajos cobrados','Cobrados', d=>etapa(d)==='cobrado' || !!d.cancelado]];
+  /* Filtros marcables del estado de cuenta: cuatro preguntas independientes. Un trabajo sale si cumple una marca de cada fila. */
+  const EC_DIMS=[
+    ['orden','Orden de servicio',[['con','Con orden'],['sin','Sin orden']], d=>tieneOrden(d)?'con':'sin'],
+    ['ejec','Ejecución',[['ejecutado','Ejecutados'],['enEjecucion','En ejecución'],['porEjecutar','Por ejecutar']], d=>d.ejecutado?'ejecutado':enEjecucion(d)?'enEjecucion':'porEjecutar'],
+    ['fact','Factura',[['con','Con factura'],['sin','Sin factura']], d=>(d.cobros||[]).some(c=>String(c.numFactura||'').trim())?'con':'sin'],
+    ['cobro','Cobro',[['pendiente','Sin cobrar'],['parcial','Cobrados en parte'],['cobrado','Cobrados'],['cancelado','Cancelados']], d=>d.cancelado?'cancelado':etapa(d)==='cobrado'?'cobrado':pagado(d)>0?'parcial':'pendiente'],
+  ];
+  let ecF={cliente:'', unidad:'', ods:'', req:'', buscar:'', dim:{orden:['con','sin'], ejec:['ejecutado','enEjecucion','porEjecutar'], fact:['con','sin'], cobro:['pendiente','parcial']}, formato:'detallado'};
+  const ecPasa = d => EC_DIMS.every(([k,,,f])=>(ecF.dim[k]||[]).includes(f(d)));
   /* Filtros específicos del estado de cuenta: una orden, una requisición o una búsqueda. Con uno de ellos el trabajo sale esté en la etapa que esté. */
   const ecEspecifico = () => !!(ecF.ods || ecF.req || String(ecF.buscar||'').trim());
-  const ecSel = k => ecEspecifico() || ecF.etapas.includes(k);
+  const ecSel = k => true;   /* las secciones del reporte salen según lo que pase el filtro */
   function ecBase(){
     const q=String(ecF.buscar||'').trim().toLowerCase();
     return docs.filter(d=>(!ecF.cliente||(d.cliente||'')===ecF.cliente) && (!ecF.unidad||(d.unidad||'')===ecF.unidad)
       && (!ecF.ods||String(d.ods||'').trim()===ecF.ods) && (!ecF.req||String(d.nota||'').trim()===ecF.req)
+      && (ecEspecifico() || ecPasa(d))
       && (!q||[d.descripcion,d.ods,d.nota,d.unidad,d.cliente,d.numFactura].some(x=>String(x||'').toLowerCase().includes(q)))).sort(byOrden);
   }
   const ecTitulo = () => `${ecF.cliente?' · '+ecF.cliente:''}${ecF.unidad?' · '+ecF.unidad:''}${ecF.ods?' · Orden '+ecF.ods:''}${ecF.req?' · Req. '+ecF.req:''}`;
@@ -1787,7 +1796,8 @@ select.combo-oculto{display:none}
       </div>
       ${ecEspecifico()?`<div class="tip" style="border:0;margin:8px 0 0">Con una orden, una requisición o una búsqueda, el trabajo sale esté en la etapa que esté (también si ya se cobró). <button type="button" class="lnk" data-eclimpiar>Quitar estos filtros</button></div>`:''}
       <div class="seg ecfmt" role="group" aria-label="Formato" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px">${[['detallado','Detallado'],['corto','Corto']].map(([k,l])=>`<button type="button" data-fmt="${k}" class="${ecF.formato===k?'on':''}">${l}</button>`).join('')}</div>
-      <div class="ecchips"${ecEspecifico()?' hidden':''}>${EC_SECS.map(([k,,lbl])=>`<label class="${ecF.etapas.includes(k)?'on':''}"><input type="checkbox" data-ec="${k}"${ecF.etapas.includes(k)?' checked':''}> ${lbl}</label>`).join('')}</div>
+      <div id="ecDims"${ecEspecifico()?' hidden':''}>${EC_DIMS.map(([k,t,ops])=>`<div class="tip" style="border:0;margin:8px 0 0">${t}</div><div class="ecchips" style="margin:4px 0 0">${ops.map(([v,l])=>{ const on=(ecF.dim[k]||[]).includes(v); return `<label class="${on?'on':''}"><input type="checkbox" data-dim="${k}" data-v="${v}"${on?' checked':''}> ${l}</label>`; }).join('')}</div>`).join('')}
+        <div class="tip" style="border:0;margin:6px 0 0">Sale cada trabajo que cumpla una marca de cada fila.</div></div>
       ${ecF.formato==='corto'?`<div class="tip" style="border:0;margin:8px 0 0">Qué incluir en el reporte</div><div class="ecchips" style="margin-top:4px">${CORTO_CAMPOS.map(([k,l])=>`<label class="${ecCampos[k]?'on':''}"><input type="checkbox" data-cp="${k}"${ecCampos[k]?' checked':''}> ${l}</label>`).join('')}</div>`:''}`;
   }
   function abrirEstado(){
@@ -1815,7 +1825,7 @@ select.combo-oculto{display:none}
     if(t.id==='ecOds') ecF.ods=t.value;
     if(t.id==='ecReq') ecF.req=t.value;
     if(t.id==='ecBuscar') return;   /* la búsqueda se atiende al escribir */
-    if(t.dataset.ec){ const k=t.dataset.ec; ecF.etapas = t.checked ? [...new Set([...ecF.etapas,k])] : ecF.etapas.filter(x=>x!==k); }
+    if(t.dataset.dim){ const k=t.dataset.dim, v=t.dataset.v, cur=ecF.dim[k]||[]; ecF.dim[k] = t.checked ? [...new Set([...cur,v])] : cur.filter(x=>x!==v); }
     if(t.dataset.cp){ ecCampos[t.dataset.cp]=t.checked; guardarCampos(); }
     renderEcFiltros(); $('#shareText').value=buildShare();
   });
