@@ -873,6 +873,16 @@ select.combo-oculto{display:none}
   </div>
 </section>
 
+<!-- Nómina: datos de la transferencia, para copiar todo o dato por dato -->
+<section class="sheet" id="trSheet" hidden aria-modal="true" role="dialog" aria-labelledby="trTitle">
+  <div class="wrap">
+    <div class="grab"></div>
+    <div class="sh-head"><h3 id="trTitle">Transferencia</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
+    <div id="trList"></div>
+    <div class="row-btns" style="margin-top:12px"><button type="button" class="btn pri" id="trTodo">Copiar todo</button></div>
+  </div>
+</section>
+
 <!-- Gastos: movimiento -->
 <section class="sheet" id="mvSheet" hidden aria-modal="true" role="dialog" aria-labelledby="mvTitle">
   <div class="wrap">
@@ -3050,6 +3060,19 @@ Responde solo con un objeto JSON:
   function ctaDe(t){ const n=soloDig(t&&t.ctaNumero); if(!n) return null; const mismo=t.ctaMismo!==false;
     return {numero:n, tipo:t.ctaTipo==='ahorro'?'ahorro':'corriente', titular:mismo?(t.nombre||''):(t.ctaTitular||''), cedula:mismo?soloDig(t.cedula):soloDig(t.ctaCedula), banco:n.slice(0,4)}; }
   const ctaOk = c => !!c && c.numero.length===20 && !!c.titular && String(c.cedula||'').length>=5;
+  /* Hoja con cada dato de la transferencia y su botón de copiar; el monto se copia sin puntos de miles para pegarlo en el banco */
+  let trTexto='';
+  function abrirTransferencia(nombre, c, totalBs){
+    const datos=[['Banco', `${c.banco} ${bancoNombre(c.banco)}`, c.banco], ['Número de cuenta', c.numero, c.numero], ['Tipo de cuenta', c.tipo==='ahorro'?'Ahorro':'Corriente', c.tipo==='ahorro'?'Ahorro':'Corriente'], ['Titular', c.titular, c.titular], ['Cédula', c.cedula, c.cedula], ['Monto (Bs.)', nf.format(totalBs), String(r2(totalBs).toFixed(2)).replace('.',',')]];
+    trTexto=textoTransferencia(c, totalBs);
+    $('#trTitle').textContent=`Transferencia a ${nombre}`;
+    $('#trList').innerHTML=datos.map(([l,ver,cp])=>`<div class="ln" style="display:flex;align-items:center;gap:10px"><div style="flex:1;min-width:0"><small style="color:var(--muted)">${esc(l)}</small><div class="num" style="font-weight:600;word-break:break-all">${esc(ver)}</div></div><button type="button" class="btn sec" data-trcp="${esc(cp)}" data-trlbl="${esc(l)}">Copiar</button></div>`).join('');
+    ['#sheet','#wSheet','#adSheet'].forEach(x=>{ const e=$(x); if(e) e.hidden=true; }); openSheet('#trSheet');
+  }
+  function copiarDato(txt, msg, btn){ const ok=()=>{ toast(msg); if(btn){ const t0=btn.textContent; btn.textContent='Copiado'; setTimeout(()=>{ if(btn.isConnected) btn.textContent=t0; },1500); } };
+    try{ navigator.clipboard.writeText(txt).then(ok, ()=>toast('No se pudo copiar: mantén presionado el dato para copiarlo')); }catch(_){ toast('No se pudo copiar: mantén presionado el dato para copiarlo'); } }
+  $('#trList').addEventListener('click', e=>{ const b=e.target.closest('[data-trcp]'); if(b) copiarDato(b.dataset.trcp, `${b.dataset.trlbl} copiado`, b); });
+  $('#trTodo').addEventListener('click', e=>copiarDato(trTexto, 'Datos de la transferencia copiados', e.currentTarget));
   function textoTransferencia(c, totalBs){ return `${c.numero}\n${c.cedula}\n${c.titular}\n${nf.format(totalBs)}`; }
   const pmOk = pm => String(pm.telefono||'').replace(/\D/g,'').length===11 && String(pm.cedula||'').replace(/\D/g,'').length>=5 && !!pm.banco;
   const datosBancoOk = t => !!t && pmOk(pmDe(t));
@@ -3282,7 +3305,7 @@ Responde solo con un objeto JSON:
           ${t&&esSup(t)?`<div class="sup">Sueldo de este corte (USD)<input data-sup="${esc(t.id)}" inputmode="decimal" value="${nf.format(l.sueldoFijo)}"></div>${l.proporcional?`<div class="tip" style="margin:4px 0 0">Entró el ${fdate(ingresoDe(t))}: su primera semana va en proporción a los días.</div>`:''}`:''}
           ${detalleDias(l)?`<details class="ddet"><summary>Ver detalle por día</summary>${detalleDias(l)}</details>`:''}
           <div class="acts">${(()=>{ if(!(l.totalBs>0)) return ''; const cta=ctaDe(t), okC=ctaOk(cta); if(!okB&&!okC) return '<span class="warn">Faltan datos de pago móvil o de cuenta: complétalos en “Trabajadores”.</span>'; if(!tasaOk) return '<span class="warn">Escribe la tasa para copiar el pago.</span>';
-            return (okB?`<button type="button" class="btn sec" data-bank="${esc(l.trabajadorId)}">Copiar pago móvil</button>`:'')+(okC?`<button type="button" class="btn sec" data-trans="${esc(l.trabajadorId)}">Copiar para transferencia</button>`:''); })()}<button type="button" class="btn sec" data-recibo="${esc(l.trabajadorId)}">Copiar recibo para él</button>${ls.length>1&&tasaOk?`<button type="button" class="btn pri" data-pagar1="${esc(l.trabajadorId)}">Marcar pagado solo a él</button>`:''}</div>
+            return (okB?`<button type="button" class="btn sec" data-bank="${esc(l.trabajadorId)}">Copiar pago móvil</button>`:'')+(okC?`<button type="button" class="btn sec" data-trans="${esc(l.trabajadorId)}">Datos para transferencia</button>`:''); })()}<button type="button" class="btn sec" data-recibo="${esc(l.trabajadorId)}">Copiar recibo para él</button>${ls.length>1&&tasaOk?`<button type="button" class="btn pri" data-pagar1="${esc(l.trabajadorId)}">Marcar pagado solo a él</button>`:''}</div>
         </div>`;}).join(''):`<div class="empty"><b>Nada que pagar en este período</b>Registra los días trabajados en “Registro del día”.</div>`}</div>
       ${ls.length?`<div class="row-btns"><button type="button" class="btn sec" id="cRes"${tasaOk?'':' disabled'}>Copiar resumen</button><button type="button" class="btn pri" id="cPagar"${tasaOk?'':' disabled'}>Marcar pagado</button></div>`:''}
       <div class="sech">Adelantos pendientes <button type="button" class="btn sec" id="adNew">Registrar adelanto</button></div>
@@ -3297,7 +3320,7 @@ Responde solo con un objeto JSON:
     return `<div class="sech">Cortes pagados</div>
       ${cortes.length?`<div class="hist">${cortes.slice().sort((a,b)=>String(b.hasta).localeCompare(String(a.hasta))).map((k,i)=>`<details${nDelArmed==='co:'+k.id?' open':''}><summary><span style="color:var(--ink);font-weight:600;font-size:14.5px">Corte del ${fdate(k.fecha)}${(k.lineas||[]).length===1?' · '+esc(k.lineas[0].nombre||''):''}</span><span class="num">${bs(num(k.totalBs))}</span></summary>
         <div class="d num" style="font-size:13px;color:var(--muted);margin-top:6px">Período ${fdate(k.desde)} al ${fdate(k.hasta)} · tasa ${nfT.format(num(k.tasa))} · ${usd(num(k.totalUsd))} · pagado desde ${esc(cuentaDe(k.cuenta||'binance').nombre)}</div>
-        <div class="lns">${(k.lineas||[]).map(l=>`<div class="ln"><div class="h"><b>${esc(l.nombre)}</b><span class="money num"><small>Bs.</small>${nf.format(num(l.totalBs))}</span></div><div class="d num">${esc(l.cargo||'')} · ${detalleLinea(l)} · ${usd(Math.max(0,num(l.totalUsd)))}</div>${detalleDias(l)?`<details class="ddet"><summary>Ver detalle por día</summary>${detalleDias(l)}</details>`:''}<div class="acts">${l.telefono&&l.cedula&&l.banco?`<button type="button" class="btn sec" data-hbank="${esc(k.id)}|${esc(l.trabajadorId)}">Copiar pago móvil</button>`:''}${l.ctaNumero?`<button type="button" class="btn sec" data-htrans="${esc(k.id)}|${esc(l.trabajadorId)}">Copiar para transferencia</button>`:''}<button type="button" class="btn sec" data-hrecibo="${esc(k.id)}|${esc(l.trabajadorId)}">Copiar recibo para él</button></div></div>`).join('')}</div>
+        <div class="lns">${(k.lineas||[]).map(l=>`<div class="ln"><div class="h"><b>${esc(l.nombre)}</b><span class="money num"><small>Bs.</small>${nf.format(num(l.totalBs))}</span></div><div class="d num">${esc(l.cargo||'')} · ${detalleLinea(l)} · ${usd(Math.max(0,num(l.totalUsd)))}</div>${detalleDias(l)?`<details class="ddet"><summary>Ver detalle por día</summary>${detalleDias(l)}</details>`:''}<div class="acts">${l.telefono&&l.cedula&&l.banco?`<button type="button" class="btn sec" data-hbank="${esc(k.id)}|${esc(l.trabajadorId)}">Copiar pago móvil</button>`:''}${l.ctaNumero?`<button type="button" class="btn sec" data-htrans="${esc(k.id)}|${esc(l.trabajadorId)}">Datos para transferencia</button>`:''}<button type="button" class="btn sec" data-hrecibo="${esc(k.id)}|${esc(l.trabajadorId)}">Copiar recibo para él</button></div></div>`).join('')}</div>
         <div class="row-btns"><button type="button" class="btn sec" data-hres="${esc(k.id)}">Copiar resumen</button>${anulable(k)?`<button type="button" class="btn del" data-anular="${esc(k.id)}">${nDelArmed==='co:'+k.id?'Toca otra vez para anular'+(efectosAnular(k).texto?' ('+efectosAnular(k).texto+')':''):'Anular corte'}</button>`:''}</div></details>`).join('')}</div>`:'<div class="tip">Todavía no hay cortes pagados.</div>'}`;
   }
   /* soloId: pagar solo a un trabajador; se guarda como un corte con su sola línea y los demás siguen pendientes */
@@ -3527,8 +3550,8 @@ Responde solo con un objeto JSON:
     if(t.closest('#cVerPend')||t.closest('#dIrPend')) return setModulo('res');
     if(t.closest('#cRes')){ const tasa=parseNum(corteTasa); const c=calcCorte(corteHasta); return copyPlain(resumenCorte({fecha:corteFechaPago||today(), desde:c.desde, hasta:c.hasta, tasa, lineas:conBs(c.lineas,tasa).map(l=>({...l, nombre:nombreT(l.trabajadorId), cargo:(trabs.find(x=>x.id===l.trabajadorId)||{}).cargo}))}), 'Resumen copiado. Pégalo en WhatsApp', 'Resumen del corte'); }
     const bk=t.closest('[data-bank]'); if(bk){ const tasa=parseNum(corteTasa); const l=conBs(calcCorte(corteHasta).lineas,tasa).find(x=>x.trabajadorId===bk.dataset.bank); const w=trabs.find(x=>x.id===bk.dataset.bank); if(l&&w) copyPlain(textoBanco(pmDe(w),l.totalBs), `Pago móvil de ${w.nombre} copiado. Pégalo en el banco`, 'Pago móvil'); return; }
-    const tr=t.closest('[data-trans]'); if(tr){ const tasa=parseNum(corteTasa); const l=conBs(calcCorte(corteHasta).lineas,tasa).find(x=>x.trabajadorId===tr.dataset.trans); const w=trabs.find(x=>x.id===tr.dataset.trans); if(l&&w&&ctaDe(w)) copyPlain(textoTransferencia(ctaDe(w),l.totalBs), `Transferencia de ${w.nombre} copiada. Pégala en el banco`, 'Transferencia'); return; }
-    const htr=t.closest('[data-htrans]'); if(htr){ const [kid,wid]=htr.dataset.htrans.split('|'); const k=cortes.find(x=>x.id===kid); const l=k&&(k.lineas||[]).find(x=>x.trabajadorId===wid); if(l&&l.ctaNumero) copyPlain(textoTransferencia({numero:l.ctaNumero, cedula:l.ctaCedula, titular:l.ctaTitular},num(l.totalBs)), `Transferencia de ${l.nombre} copiada`, 'Transferencia'); return; }
+    const tr=t.closest('[data-trans]'); if(tr){ const tasa=parseNum(corteTasa); const l=conBs(calcCorte(corteHasta).lineas,tasa).find(x=>x.trabajadorId===tr.dataset.trans); const w=trabs.find(x=>x.id===tr.dataset.trans); if(l&&w&&ctaDe(w)) abrirTransferencia(w.nombre, ctaDe(w), l.totalBs); return; }
+    const htr=t.closest('[data-htrans]'); if(htr){ const [kid,wid]=htr.dataset.htrans.split('|'); const k=cortes.find(x=>x.id===kid); const l=k&&(k.lineas||[]).find(x=>x.trabajadorId===wid); if(l&&l.ctaNumero) abrirTransferencia(l.nombre, {numero:l.ctaNumero, tipo:l.ctaTipo, titular:l.ctaTitular, cedula:l.ctaCedula, banco:String(l.ctaNumero).slice(0,4)}, num(l.totalBs)); return; }
     const rc=t.closest('[data-recibo]'); if(rc){ const tasa=parseNum(corteTasa)||0; const c=calcCorte(corteHasta); const l=conBs(c.lineas,tasa).find(x=>x.trabajadorId===rc.dataset.recibo); if(l) copyPlain(reciboTrabajador(l,{tasa,desde:c.desde,hasta:c.hasta}), `Recibo de ${nombreT(l.trabajadorId)} copiado. Pégalo en WhatsApp`, 'Recibo de pago'); return; }
     const hr2=t.closest('[data-hrecibo]'); if(hr2){ const [kid,wid]=hr2.dataset.hrecibo.split('|'); const k=cortes.find(x=>x.id===kid); const l=k&&(k.lineas||[]).find(x=>x.trabajadorId===wid); if(l) copyPlain(reciboTrabajador(l,k), `Recibo de ${l.nombre} copiado. Pégalo en WhatsApp`, 'Recibo de pago'); return; }
     const hb=t.closest('[data-hbank]'); if(hb){ const [kid,wid]=hb.dataset.hbank.split('|'); const k=cortes.find(x=>x.id===kid); const l=k&&(k.lineas||[]).find(x=>x.trabajadorId===wid); if(l) copyPlain(textoBanco(l,num(l.totalBs)), `Datos de ${l.nombre} copiados`, 'Pago móvil'); return; }
