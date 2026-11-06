@@ -3327,8 +3327,36 @@ Responde solo con un objeto JSON:
   /* Se puede anular un corte si ninguna de sus personas tiene un corte posterior */
   function anulable(k){ const ids=new Set((k.lineas||[]).map(l=>l.trabajadorId)), clave=x=>String(x.hasta)+'|'+String(x.creado||'');
     return !cortes.some(o=>o.id!==k.id && clave(o)>clave(k) && (o.lineas||[]).some(l=>ids.has(l.trabajadorId))); }
+  /* Resumen de la nómina de una semana (sábado a viernes): junta todos los cortes cuyo período termina en esa semana,
+     aunque se hayan pagado por separado, y lo que todavía está pendiente del corte en pantalla */
+  let semRes='';
+  function semanasConNomina(){ const s=new Set(cortes.map(k=>inicioSemana(k.hasta)).filter(Boolean)); if(corteHasta) s.add(inicioSemana(corteHasta)); return [...s].sort().reverse(); }
+  function resumenSemana(w){
+    const fin=finSemana(w), ks=cortes.filter(k=>k.hasta>=w && k.hasta<=fin).sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha))||String(a.creado||'').localeCompare(String(b.creado||'')));
+    const items=[]; ks.forEach(k=>(k.lineas||[]).forEach(l=>items.push({l, tasa:num(k.tasa), estado:`Pagado el ${fdate(k.fecha).slice(0,5)} desde ${cuentaDe(k.cuenta||'binance').nombre}`, pagado:true})));
+    const tP=parseNum(corteTasa), tOk=tP>0;
+    if(inicioSemana(corteHasta)===w){ const c=calcCorte(corteHasta, TODOS_F); conBs(c.lineas, tOk?tP:0).forEach(l=>items.push({l:{...l, nombre:nombreT(l.trabajadorId), cargo:(trabs.find(x=>x.id===l.trabajadorId)||{}).cargo||''}, tasa:tOk?tP:0, estado:'Pendiente por pagar', pagado:false})); }
+    const L=['*WORKPROCA, Trabajos Profesionales C.A.*', `*Nómina · semana del ${fdate(w).slice(0,5)} al ${fdate(fin)}*`];
+    if(!items.length){ L.push('', 'No hay nómina en esta semana.'); return L.join('\n'); }
+    const tasas=[...new Set(items.filter(x=>x.tasa>0).map(x=>x.tasa))], unaTasa=tasas.length===1;
+    if(unaTasa) L.push(`Tasa: ${nfT.format(tasas[0])} Bs por dólar`);
+    L.push('');
+    items.forEach(({l,tasa,estado})=>{ const u=Math.max(0,num(l.totalUsd)), b=num(l.totalBs);
+      L.push(`• ${l.nombre||nombreT(l.trabajadorId)}${l.cargo?' ('+l.cargo+')':''}: ${detalleLinea(l)||'sin días'}`);
+      L.push(`   Devengado: ${usd(num(l.bruto))}${Math.abs(num(l.ajuste))>0.004?` (ajustes ${num(l.ajuste)<0?'− ':'+ '}${usd(Math.abs(num(l.ajuste)))})`:''}${num(l.adelantos)?` · Adelantos: − ${usd(num(l.adelantos))}`:''} · A pagar: ${usd(u)}${b>0?` = ${bs(b)}`:''}${!unaTasa&&tasa>0?` (tasa ${nfT.format(tasa)})`:''}`);
+      L.push(`   ${estado}`); });
+    const tot=a=>[r2(sum(a,x=>Math.max(0,num(x.l.totalUsd)))), r2(sum(a,x=>num(x.l.totalBs)))], fmt=([u,b])=>`${usd(u)}${b>0?' = '+bs(b):''}`;
+    const pag=items.filter(x=>x.pagado), pen=items.filter(x=>!x.pagado);
+    L.push(''); L.push(`*Total de la semana: ${fmt(tot(items))}*`);
+    if(pen.length){ L.push(`Pagado: ${fmt(tot(pag))}`); L.push(`Pendiente: ${fmt(tot(pen))}${tOk?'':' (falta la tasa)'}`); }
+    return L.join('\n');
+  }
   function historialCortes(){
-    return `<div class="sech">Cortes pagados</div>
+    const sems=semanasConNomina(); if(!sems.includes(semRes)) semRes=sems[0]||'';
+    return `${sems.length?`<div class="sech">Resumen de la semana</div>
+      <div class="row-btns" style="align-items:center"><select class="btn sec" id="semRes" aria-label="Semana del resumen">${sems.map(w=>`<option value="${w}"${w===semRes?' selected':''}>${fdate(w).slice(0,5)} al ${fdate(finSemana(w)).slice(0,5)}</option>`).join('')}</select><button type="button" class="btn sec" id="semResCp">Copiar resumen semanal</button></div>
+      <div class="tip" style="border:0;margin:2px 0 0">Junta todo lo de esa semana: lo pagado junto, lo pagado a cada uno por separado y lo que falta por pagar.</div>`:''}
+      <div class="sech">Cortes pagados</div>
       ${cortes.length?`<div class="hist">${cortes.slice().sort((a,b)=>String(b.hasta).localeCompare(String(a.hasta))).map((k,i)=>`<details${nDelArmed==='co:'+k.id?' open':''}><summary><span style="color:var(--ink);font-weight:600;font-size:14.5px">Corte del ${fdate(k.fecha)}${(k.lineas||[]).length===1?' · '+esc(k.lineas[0].nombre||''):''}</span><span class="num">${bs(num(k.totalBs))}</span></summary>
         <div class="d num" style="font-size:13px;color:var(--muted);margin-top:6px">Período ${fdate(k.desde)} al ${fdate(k.hasta)} · tasa ${nfT.format(num(k.tasa))} · ${usd(num(k.totalUsd))} · pagado desde ${esc(cuentaDe(k.cuenta||'binance').nombre)}</div>
         <div class="lns">${(k.lineas||[]).map(l=>`<div class="ln"><div class="h"><b>${esc(l.nombre)}</b><span class="money num"><small>Bs.</small>${nf.format(num(l.totalBs))}</span></div><div class="d num">${esc(l.cargo||'')} · ${detalleLinea(l)} · ${usd(Math.max(0,num(l.totalUsd)))}</div>${detalleDias(l)?`<details class="ddet"><summary>Ver detalle por día</summary>${detalleDias(l)}</details>`:''}${l.ctaNumero?detTransfer({numero:l.ctaNumero, tipo:l.ctaTipo, titular:l.ctaTitular, cedula:l.ctaCedula, banco:String(l.ctaNumero).slice(0,4)}, num(l.totalBs), ''):''}<div class="acts">${l.telefono&&l.cedula&&l.banco?`<button type="button" class="btn sec" data-hbank="${esc(k.id)}|${esc(l.trabajadorId)}">Copiar pago móvil</button>`:''}<button type="button" class="btn sec" data-hrecibo="${esc(k.id)}|${esc(l.trabajadorId)}">Copiar recibo para él</button></div></div>`).join('')}</div>
@@ -3552,6 +3580,7 @@ Responde solo con un objeto JSON:
     if(t.closest('#dTodos')||t.closest('#dMedio')||t.closest('#dNinguno')){ const tipo=t.closest('#dTodos')?'completo':t.closest('#dMedio')?'medio':'no'; todosTocado=true; document.querySelectorAll('.wrow[data-w]:not([data-bloq])').forEach(w=>{ const id=w.dataset.w; dayDraft[id]={...(dayDraft[id]||defReg(id)), tipo}; }); dayDirty=true; renderNom(); return; }
     const sb=t.closest('.seg button'); if(sb){ const id=sb.closest('[data-w]').dataset.w; dayDraft[id]={...(dayDraft[id]||defReg(id)), tipo:sb.dataset.t}; dayDirty=true; sb.parentElement.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===sb)); renderDiaSum(); sincronizarTodos(); return; }
     if(t.closest('#cPagar')) return marcarPagado();
+    if(t.closest('#semResCp')){ const w=($('#semRes')||{}).value||semRes; return copyPlain(resumenSemana(w), 'Resumen de la semana copiado. Pégalo en WhatsApp', 'Resumen semanal'); }
     const p1=t.closest('[data-pagar1]'); if(p1) return marcarPagado(p1.dataset.pagar1, p1);
     if(t.closest('#dCopiarAnt')) return copiarDiaAnterior();
     const nd=t.closest('[data-nadie]'); if(nd){ (async()=>{ for(const d of nd.dataset.nadie.split(',')) if(!asis[d]) await nDb.collection('asistencia').doc(d).set({fecha:d, registros:{}, nadie:true, actualizado:new Date().toISOString()}); toast('Anotado: nadie trabajó'); renderNom(); })(); return; }
@@ -3591,6 +3620,7 @@ Responde solo con un objeto JSON:
     if(t.matches('[data-sup]')){ supMontos[t.dataset.sup]=parseNum(t.value)||0; clearTimeout(renderCorte._s); renderCorte._s=setTimeout(()=>{ renderNom(); },900); }
   });
   $('#nMain').addEventListener('change', e=>{
+    if(e.target.id==='semRes'){ semRes=e.target.value; return; }
     const t=e.target;
     if(t.id==='dFecha' && t.value) return cambiarDia(t.value);
     if(t.id==='cCuenta'){ corteCuenta=t.value; try{ localStorage.setItem('corteCuenta',corteCuenta); }catch(_){} return renderNom(); }
