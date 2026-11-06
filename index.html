@@ -2386,11 +2386,14 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
     const cargos=[...cfgN.cargos.map(c=>c.nombre), SUP];
     return `Eres el asistente de nómina de WORKPROCA (taller naval en Maracaibo, Venezuela). Del material que te paso (fotos de cédulas, capturas de datos de pago móvil, currículos, listas, mensajes o archivos), extrae los datos de cada trabajador.
 
-Cada trabajador tiene dos grupos de datos que NO se deben mezclar:
+Cada trabajador tiene tres grupos de datos que NO se deben mezclar:
 1) Datos personales: nombre y apellido; cédula (solo números, sin V ni puntos); teléfono personal o de contacto; cargo (uno de estos exactamente: ${cargos.join(', ')}; vacío si no se dice); tarifa diaria en dólares solo si se dice expresamente (si no, 0).
 2) Pago móvil: teléfono, banco y cédula a donde se le paga. Puede ser de otra persona (por ejemplo, su esposa): en ese caso "mismo_trabajador" es false y pones el nombre y la cédula del titular.
+3) Cuenta bancaria para transferencia: número de cuenta de 20 dígitos, tipo (corriente o ahorro), titular y cédula del titular. Puede ser de otra persona.
 
 Reglas:
+- Un número de cuenta de 20 dígitos va SIEMPRE en "cuenta_bancaria" y NUNCA cambia el pago móvil. Si el material solo trae datos de cuenta (número, titular, cédula, banco), "pago_movil" va con todos sus campos vacíos: el pago móvil que ya tiene el trabajador no se toca. El titular y la cédula de una cuenta no son los del pago móvil.
+- Si dicen que una cuenta o unos datos son "para" un trabajador (por ejemplo, "esta cuenta es para Amdry"), es de ese trabajador aunque el titular sea otra persona: pon su id en "id_existente" y el titular en "cuenta_bancaria".
 - El teléfono de pago móvil solo se llena si el material dice que es de pago móvil, o si viene junto con un banco como datos de pago. Un teléfono de contacto (de un currículo, de una firma, de un mensaje) va en "telefono_personal" y NUNCA se copia al pago móvil por suposición. Si no hay teléfono de pago móvil, déjalo vacío y anótalo en "faltantes".
 - Teléfonos en formato venezolano de 11 dígitos que empieza por 0 (de +58 414... pasa a 0414...).
 - Banco: el código de 4 dígitos según esta lista: ${BANCOS.map(([c,n])=>c+' '+n).join('; ')}.
@@ -2408,7 +2411,7 @@ Material a leer:
 ${texto?'Texto:\n<<<\n'+texto+'\n>>>\n':''}${textosArch.join('\n\n')}${nImgs?`\n(Además van ${nImgs} imagen(es) adjunta(s): léelas con cuidado, en especial los números.)`:''}
 
 Responde solo con un objeto JSON:
-{"resumen":"una frase","trabajadores":[{"id_existente":"","nombre":"","cedula":"","telefono_personal":"","cargo":"","tarifa":0,"pago_movil":{"mismo_trabajador":true,"titular":"","cedula":"","telefono":"","banco":""},"faltantes":["teléfono de pago móvil"],"motivo":"de dónde sacaste los datos"}],"dudas":[]}`;
+{"resumen":"una frase","trabajadores":[{"id_existente":"","nombre":"","cedula":"","telefono_personal":"","cargo":"","tarifa":0,"pago_movil":{"mismo_trabajador":true,"titular":"","cedula":"","telefono":"","banco":""},"cuenta_bancaria":{"numero":"","tipo":"corriente","mismo_trabajador":true,"titular":"","cedula":""},"faltantes":["teléfono de pago móvil"],"motivo":"de dónde sacaste los datos"}],"dudas":[]}`;
   }
   const soloDig = v => String(v||'').replace(/\D/g,'');
   function normTel(v){ let d=soloDig(v); if(d.startsWith('58') && d.length===12) d='0'+d.slice(2); if(d.length===10 && d.startsWith('4')) d='0'+d; return d; }
@@ -2420,11 +2423,18 @@ Responde solo con un objeto JSON:
       const exist = (x.id_existente && trabs.find(t=>t.id===x.id_existente)) || (soloDig(x.cedula) && trabs.find(t=>soloDig(t.cedula)===soloDig(x.cedula))) || null;
       const epm = exist ? pmDe(exist) : {};
       const pm = x.pago_movil || {};
-      const mismo = pm.mismo_trabajador!==false;
-      return { exist, nombre:String(x.nombre||'').trim() || (exist?exist.nombre:''), cedula:soloDig(x.cedula)||(exist?exist.cedula||'':''),
+      /* Sin datos nuevos de pago móvil, se queda exactamente el que ya tiene */
+      const pmNuevo = !!(soloDig(pm.telefono) || normBanco(pm.banco) || soloDig(pm.cedula) || String(pm.titular||'').trim());
+      const mismo = pmNuevo ? pm.mismo_trabajador!==false : (exist ? epm.mismo!==false : true);
+      const cb = x.cuenta_bancaria || {}, ecta = exist ? ctaDe(exist) : null, ctaN = soloDig(cb.numero);
+      const cedT = soloDig(x.cedula)||soloDig(exist&&exist.cedula), cbCed=soloDig(cb.cedula);
+      const ctaMismo = ctaN ? (cb.mismo_trabajador!==false && (!cbCed || cbCed===cedT)) : (ecta ? exist.ctaMismo!==false : true);
+      return { exist, pmNuevo, nombre:String(x.nombre||'').trim() || (exist?exist.nombre:''), cedula:soloDig(x.cedula)||(exist?exist.cedula||'':''),
+        ctaNumero: ctaN || (ecta?ecta.numero:''), ctaTipo: ctaN ? (/ahorr/i.test(cb.tipo)?'ahorro':'corriente') : (ecta?ecta.tipo:'corriente'), ctaMismo,
+        ctaTitular: ctaN ? (ctaMismo?'':String(cb.titular||'').trim()) : (ecta&&exist.ctaMismo===false?ecta.titular:''), ctaCedula: ctaN ? (ctaMismo?'':soloDig(cb.cedula)) : (ecta&&exist.ctaMismo===false?ecta.cedula:''),
         telefono:normTel(x.telefono_personal)||(exist&&exist.pmTelefono!==undefined?exist.telefono||'':''),
         cargo: cargos.find(c=>norm(c)===norm(x.cargo)) || (exist?exist.cargo:''), tarifa:num(x.tarifa)>0?r2(num(x.tarifa)):0,
-        mismo, pmTitular: mismo?'':String(pm.titular||'').trim(), pmCedula: mismo?'':soloDig(pm.cedula),
+        mismo, pmTitular: mismo?'':(pmNuevo?String(pm.titular||'').trim():epm.titular||''), pmCedula: mismo?'':(pmNuevo?soloDig(pm.cedula):soloDig(epm.cedula)),
         pmTelefono: normTel(pm.telefono)||epm.telefono||'', pmBanco: normBanco(pm.banco)||epm.banco||'', motivo:String(x.motivo||'') };
     });
     const dudas=Array.isArray(res.dudas)?res.dudas.filter(Boolean):[];
@@ -2448,6 +2458,15 @@ Responde solo con un objeto JSON:
               </span>
               ${campo(i,'pmTelefono','Teléfono de pago móvil',x.pmTelefono,{extra:'inputmode="numeric"'})}
               <div class="fl${x.pmBanco?'':' falta'}" style="grid-column:1/-1">Banco<b class="flt"${x.pmBanco?' hidden':''}> · falta</b><div class="bp"><input class="bp-in" data-ti="${i}" data-k="pmBanco" data-code="${esc(x.pmBanco)}" value="${esc(etiquetaBanco(x.pmBanco))}" placeholder="Busca por nombre o código" autocomplete="off"><div class="bp-list" hidden></div></div></div>
+              ${x.exist&&!x.pmNuevo?'<small style="grid-column:1/-1">El pago móvil queda como estaba: lo que enviaste no trae datos de pago móvil.</small>':''}
+              <div class="sub">Cuenta bancaria (transferencia)</div>
+              ${campo(i,'ctaNumero','Número de cuenta (20 dígitos)',x.ctaNumero,{req:false,full:true,extra:'inputmode="numeric"'})}
+              <label>Tipo<select data-ti="${i}" data-k="ctaTipo"><option value="corriente"${x.ctaTipo!=='ahorro'?' selected':''}>Corriente</option><option value="ahorro"${x.ctaTipo==='ahorro'?' selected':''}>Ahorro</option></select></label>
+              <label style="grid-column:1/-1;flex-direction:row;align-items:center;gap:8px;font-size:13px"><input type="checkbox" data-ti="${i}" data-k="ctaMismo"${x.ctaMismo?' checked':''} style="width:18px;height:18px;accent-color:var(--accent)"> La cuenta es del mismo trabajador</label>
+              <span data-ctaotro="${i}" style="display:${x.ctaMismo?'none':'contents'}">
+                ${campo(i,'ctaTitular','Titular de la cuenta',x.ctaTitular,{req:false,full:true})}
+                ${campo(i,'ctaCedula','Cédula del titular',x.ctaCedula,{req:false,extra:'inputmode="numeric"'})}
+              </span>
             </div>
             ${x.tarifa?`<small class="num">Tarifa propia leída: ${usd(x.tarifa)} por día</small>`:''}
             ${x.motivo?`<small>${esc(x.motivo)}</small>`:''}
@@ -2476,11 +2495,18 @@ Responde solo con un objeto JSON:
       else if(tel && !/^0\d{10}$/.test(tel)) err='El teléfono personal debe tener 11 dígitos.';
       else if(pmTel && !/^0\d{10}$/.test(pmTel)) err='El teléfono de pago móvil debe tener 11 dígitos, por ejemplo 04146470072.';
       else if(!x.exist && ced && trabs.some(t=>soloDig(t.cedula)===ced)) err='Ya hay un trabajador con esa cédula.';
+      const ctaNum=soloDig(v('ctaNumero')), ctaMismo=el('ctaMismo').checked, ctaTit=ctaMismo?nombre:v('ctaTitular').replace(/\s+/g,' '), ctaCed=ctaMismo?ced:soloDig(v('ctaCedula'));
+      if(!err && ctaNum && ctaNum.length!==20) err=`El número de cuenta debe tener 20 dígitos (tiene ${ctaNum.length}).`;
+      else if(!err && ctaNum && !BANCOS.some(b=>b[0]===ctaNum.slice(0,4))) err='Los 4 primeros dígitos de la cuenta no son de ningún banco conocido.';
+      else if(!err && ctaNum && !ctaMismo && (!ctaTit || ctaCed.length<5)) err='Escribe el titular y la cédula de la cuenta.';
       if(err){ errEl.textContent=err; conErr++; continue; }
       errEl.textContent='';
       const base=x.exist?{...x.exist}:{creado:new Date().toISOString(), activo:true, tarifa:0, sueldoSemanal:0};
       delete base.id; delete base.banco;
-      const body={...base, nombre, cedula:ced, telefono:tel, cargo, pmMismo:mismo, pmTitular:pmTit, pmCedula:pmCed, pmTelefono:pmTel, pmBanco, actualizado:new Date().toISOString()};
+      const body={...base, nombre, cedula:ced, telefono:tel, cargo, pmMismo:mismo, pmTitular:pmTit, pmCedula:pmCed, pmTelefono:pmTel, pmBanco, ctaNumero:ctaNum, ctaTipo:v('ctaTipo')||'corriente', ctaMismo, ctaTitular:ctaNum&&!ctaMismo?ctaTit:'', ctaCedula:ctaNum&&!ctaMismo?ctaCed:'', actualizado:new Date().toISOString()};
+      /* Queda en el historial de cambios lo que el asistente cambió del pago (para poder volver atrás) */
+      if(x.exist){ const a=pmDe(x.exist), b=pmDe(body), fpm=p=>`${p.titular||''} · C.I. ${p.cedula||''} · ${p.telefono||''} · ${p.banco?bancoNombre(p.banco):''}`; if(fpm(a)!==fpm(b)) registrarCambio('trabajadores', x.exist.id, `${nombre}: pago móvil (asistente)`, fpm(a), fpm(b));
+        const ca=ctaDe(x.exist), cb2=ctaDe(body), fct=c=>c?`${c.numero} · ${c.titular} · C.I. ${c.cedula}`:''; if(fct(ca)!==fct(cb2)) registrarCambio('trabajadores', x.exist.id, `${nombre}: cuenta bancaria (asistente)`, fct(ca), fct(cb2)); }
       if(x.tarifa && cargo!==SUP) body.tarifa=x.tarifa;
       if(!pmOk({telefono:pmTel, cedula:pmCed, banco:pmBanco})) incompletos++;
       try{ await (x.exist?nDb.collection('trabajadores').doc(x.exist.id):nDb.collection('trabajadores').doc()).set(body); ok++; chk.checked=false; chk.closest('.act').style.opacity='.5'; }
@@ -2495,6 +2521,7 @@ Responde solo con un objeto JSON:
     const t=e.target;
     if(t.matches('select[data-k]')) marcarFalta(t, !t.value);
     if(t.matches('input[data-k="mismo"]')){ const sp=document.querySelector(`[data-pmotro="${t.dataset.ti}"]`); if(sp) sp.style.display=t.checked?'none':'contents'; }
+    if(t.matches('input[data-k="ctaMismo"]')){ const sp=document.querySelector(`[data-ctaotro="${t.dataset.ti}"]`); if(sp) sp.style.display=t.checked?'none':'contents'; }
   });
   $('#aiRes').addEventListener('input', e=>{ const t=e.target; if(t.matches('input[data-k]:not(.bp-in):not([type=checkbox])')) marcarFalta(t, !t.value.trim()); });
 
