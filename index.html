@@ -1422,7 +1422,7 @@ select.combo-oculto{display:none}
      Una fila sin marcas no filtra. */
   const todasMarcas = () => Object.fromEntries(EC_DIMS.map(([k,,ops])=>[k, ops.map(o=>o[0])]));
   let cobAv=null;
-  const avIni = () => { if(!cobAv) cobAv={unidad:'', ods:'', req:'', dim:todasMarcas()}; return cobAv; };
+  const avIni = () => { if(!cobAv) cobAv={unidad:'', ods:'', req:'', dim:todasMarcas()}; llenarVacias(cobAv.dim); return cobAv; };
   const avActivos = () => { avIni(); return [cobAv.unidad, cobAv.ods, cobAv.req].filter(Boolean).length + EC_DIMS.filter(([k,,ops])=>(cobAv.dim[k]||[]).length<ops.length).length; };
   const pasaAv = d => { avIni(); return (!cobAv.unidad||(d.unidad||'')===cobAv.unidad) && (!cobAv.ods||String(d.ods||'').trim()===cobAv.ods) && (!cobAv.req||String(d.nota||'').trim()===cobAv.req)
     && EC_DIMS.every(([k,,,f])=>(cobAv.dim[k]||[]).includes(f(d))); };
@@ -1432,7 +1432,7 @@ select.combo-oculto{display:none}
     const sel=(id,lbl,todos,vals,v)=>`<label class="f">${lbl}<select id="${id}"><option value="">${todos}</option>${vals.map(x=>`<option value="${esc(x)}"${x===v?' selected':''}>${esc(x)}</option>`).join('')}</select></label>`;
     $('#fAvzBody').innerHTML = `<div class="grid" style="margin-top:8px">${sel('avUni','Unidad','Todas',uns,cobAv.unidad)}${sel('avOds','Orden de servicio','Todas',ods,cobAv.ods)}${sel('avReq','Requisición','Todas',reqs,cobAv.req)}</div>
       ${EC_DIMS.map(([k,t,ops])=>`<div class="tip" style="border:0;margin:8px 0 0">${t}</div><div class="ecchips" style="margin:4px 0 0">${ops.map(([v,l])=>{ const on=(cobAv.dim[k]||[]).includes(v); return `<label class="${on?'on':''}"><input type="checkbox" data-avd="${k}" data-v="${v}"${on?' checked':''}> ${l}</label>`; }).join('')}</div>`).join('')}
-      <div class="tip" style="border:0;margin:6px 0 0">Solo sale lo marcado: cada trabajo tiene que estar marcado en las cuatro filas.${filaVacia(cobAv.dim)?` <b style="color:var(--danger)">En «${esc(filaVacia(cobAv.dim))}» no hay nada marcado: no sale ningún trabajo.</b>`:''}${avActivos()?' <button type="button" class="lnk" id="avLimpiar">Quitar estos filtros</button>':''}</div>`;
+      <div class="tip" style="border:0;margin:6px 0 0">Solo sale lo marcado. En cada fila queda siempre al menos una marca.${avActivos()?' <button type="button" class="lnk" id="avLimpiar">Quitar estos filtros</button>':''}</div>`;
     const n=avActivos(); $('#fAvzSum').textContent = n ? `Filtros avanzados (${n} ${n===1?'activo':'activos'})` : 'Filtros avanzados';
   }
   function visibles(){
@@ -1737,6 +1737,7 @@ select.combo-oculto{display:none}
   ];
   let ecF={cliente:'', unidad:'', ods:'', req:'', buscar:'', dim:{orden:['con','sin'], ejec:['ejecutado','enEjecucion','porEjecutar'], fact:['con','sin'], cobro:['pendiente','parcial']}, formato:'detallado'};
   /* Sale solo lo marcado: un trabajo sale si su estado está marcado en cada fila */
+  const llenarVacias = dim => { EC_DIMS.forEach(([k,,ops])=>{ if(!(dim[k]||[]).length) dim[k]=ops.map(o=>o[0]); }); return dim; };
   const ecPasa = d => EC_DIMS.every(([k,,,f])=>(ecF.dim[k]||[]).includes(f(d)));
   const filaVacia = dim => (EC_DIMS.find(([k])=>!(dim[k]||[]).length)||[])[1]||'';
   /* Filtros específicos del estado de cuenta: una orden, una requisición o una búsqueda. Con uno de ellos el trabajo sale esté en la etapa que esté. */
@@ -1753,6 +1754,7 @@ select.combo-oculto{display:none}
   const listaOrdenes = (cli,uni) => [...new Set(docs.filter(d=>(!cli||(d.cliente||'')===cli)&&(!uni||(d.unidad||'')===uni)&&tieneOrden(d)).map(d=>String(d.ods).trim()))].sort((x,y)=>x.localeCompare(y,'es',{numeric:true}));
   const listaReqs = (cli,uni) => [...new Set(docs.filter(d=>(!cli||(d.cliente||'')===cli)&&(!uni||(d.unidad||'')===uni)&&String(d.nota||'').trim()).map(d=>String(d.nota).trim()))].sort((x,y)=>x.localeCompare(y,'es',{numeric:true}));
   function buildShare(){
+    llenarVacias(ecF.dim);
     if(!ecEspecifico() && filaVacia(ecF.dim)) return `*WORKPROCA · Estado de cuenta${ecTitulo()}*\n${fdate(today())}\n\nNo sale ningún trabajo: en «${filaVacia(ecF.dim)}» no hay nada marcado. Marca lo que quieres incluir.`;
     if(ecF.formato==='corto') return buildCorto();
     const base=ecBase(), L=[];
@@ -1823,7 +1825,7 @@ select.combo-oculto{display:none}
     if(L.length===2){ L.push(''); L.push('No hay trabajos con estos filtros.'); }
     return L.join('\n');
   }
-  function renderEcFiltros(){
+  function renderEcFiltros(){ llenarVacias(ecF.dim);
     const cls=listaClientes(), uns=listaUnidades(ecF.cliente);
     if(ecF.unidad && !uns.includes(ecF.unidad)) ecF.unidad='';
     const ods=listaOrdenes(ecF.cliente,ecF.unidad), reqs=listaReqs(ecF.cliente,ecF.unidad);
@@ -1839,7 +1841,7 @@ select.combo-oculto{display:none}
       ${ecEspecifico()?`<div class="tip" style="border:0;margin:8px 0 0">Con una orden, una requisición o una búsqueda, el trabajo sale esté en la etapa que esté (también si ya se cobró). <button type="button" class="lnk" data-eclimpiar>Quitar estos filtros</button></div>`:''}
       <div class="seg ecfmt" role="group" aria-label="Formato" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px">${[['detallado','Detallado'],['corto','Corto']].map(([k,l])=>`<button type="button" data-fmt="${k}" class="${ecF.formato===k?'on':''}">${l}</button>`).join('')}</div>
       <div id="ecDims"${ecEspecifico()?' hidden':''}>${EC_DIMS.map(([k,t,ops])=>`<div class="tip" style="border:0;margin:8px 0 0">${t}</div><div class="ecchips" style="margin:4px 0 0">${ops.map(([v,l])=>{ const on=(ecF.dim[k]||[]).includes(v); return `<label class="${on?'on':''}"><input type="checkbox" data-dim="${k}" data-v="${v}"${on?' checked':''}> ${l}</label>`; }).join('')}</div>`).join('')}
-        <div class="tip" style="border:0;margin:6px 0 0">Solo sale lo marcado: cada trabajo tiene que estar marcado en las cuatro filas. Lo que desmarques no sale en el reporte.</div></div>
+        <div class="tip" style="border:0;margin:6px 0 0">Solo sale lo marcado. En cada fila queda siempre al menos una marca.</div></div>
       ${ecF.formato==='corto'?`<div class="tip" style="border:0;margin:8px 0 0">Qué incluir en el reporte</div><div class="ecchips" style="margin-top:4px">${CORTO_CAMPOS.map(([k,l])=>`<label class="${ecCampos[k]?'on':''}"><input type="checkbox" data-cp="${k}"${ecCampos[k]?' checked':''}> ${l}</label>`).join('')}</div>`:''}`;
   }
   function abrirEstado(){
@@ -1867,7 +1869,8 @@ select.combo-oculto{display:none}
     if(t.id==='ecOds') ecF.ods=t.value;
     if(t.id==='ecReq') ecF.req=t.value;
     if(t.id==='ecBuscar') return;   /* la búsqueda se atiende al escribir */
-    if(t.dataset.dim){ const k=t.dataset.dim, v=t.dataset.v, cur=ecF.dim[k]||[]; ecF.dim[k] = t.checked ? [...new Set([...cur,v])] : cur.filter(x=>x!==v); }
+    if(t.dataset.dim){ const k=t.dataset.dim, v=t.dataset.v, cur=ecF.dim[k]||[], nx=t.checked ? [...new Set([...cur,v])] : cur.filter(x=>x!==v);
+      if(!nx.length){ t.checked=true; toast(`En «${(EC_DIMS.find(x=>x[0]===k)||[])[1]}» tiene que quedar al menos una marcada`); return; } ecF.dim[k]=nx; }
     if(t.dataset.cp){ ecCampos[t.dataset.cp]=t.checked; guardarCampos(); }
     renderEcFiltros(); $('#shareText').value=buildShare();
   });
@@ -2065,7 +2068,8 @@ select.combo-oculto{display:none}
   $('#fAvz').addEventListener('toggle', ()=>{ if($('#fAvz').open) renderAvz(); });
   $('#fAvzBody').addEventListener('change', e=>{ const t=e.target;
     if(t.id==='avUni'){ cobAv.unidad=t.value; cobAv.ods=''; cobAv.req=''; } if(t.id==='avOds') cobAv.ods=t.value; if(t.id==='avReq') cobAv.req=t.value;
-    if(t.dataset.avd){ const k=t.dataset.avd, cur=cobAv.dim[k]||[]; cobAv.dim[k]=t.checked?[...new Set([...cur,t.dataset.v])]:cur.filter(x=>x!==t.dataset.v); }
+    if(t.dataset.avd){ const k=t.dataset.avd, cur=cobAv.dim[k]||[], nx=t.checked?[...new Set([...cur,t.dataset.v])]:cur.filter(x=>x!==t.dataset.v);
+      if(!nx.length){ t.checked=true; toast(`En «${(EC_DIMS.find(x=>x[0]===k)||[])[1]}» tiene que quedar al menos una marcada`); return; } cobAv.dim[k]=nx; }
     renderAvz(); renderList(); });
   $('#fAvzBody').addEventListener('click', e=>{ if(e.target.closest('#avLimpiar')){ cobAv={unidad:'', ods:'', req:'', dim:todasMarcas()}; renderAvz(); renderList(); } });
   $('#list').addEventListener('click', e=>{
