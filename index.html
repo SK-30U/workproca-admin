@@ -2158,7 +2158,8 @@ select.combo-oculto{display:none}
     $('#aiChips').innerHTML=aiFiles.map((f,i)=>`<span><em>${esc(f.name)}</em><button type="button" data-rmf="${i}" aria-label="Quitar ${esc(f.name)}">✕</button></span>`).join('');
   }
   function resumenTrabajos(){
-    return docs.slice().sort(byOrden).map(d=>({id:d.id, cliente:d.cliente||'', unidad:d.unidad||'', descripcion:d.descripcion||'', orden_servicio:d.ods||'', referencia:d.nota||'', monto_usd:num(d.monto), ejecutado:!!d.ejecutado, fecha_ejecucion:d.fechaEjecucion||'', pagado_usd:r2(pagado(d)), saldo_usd:saldo(d), etapa:ETAPAS[etapa(d)].lbl, facturas:(d.cobros||[]).map(c=>c.numFactura).filter(Boolean)}));
+    return docs.slice().sort(byOrden).map(d=>({id:d.id, cliente:d.cliente||'', unidad:d.unidad||'', descripcion:d.descripcion||'', orden_servicio:d.ods||'', referencia:d.nota||'', monto_usd:num(d.monto), ejecutado:!!d.ejecutado, fecha_ejecucion:d.fechaEjecucion||'', pagado_usd:r2(pagado(d)), saldo_usd:saldo(d), etapa:ETAPAS[etapa(d)].lbl, facturas:(d.cobros||[]).map(c=>c.numFactura).filter(Boolean),
+      abonos_sin_factura:(d.cobros||[]).map((c,i)=>({indice:i, fecha:c.fecha||'', monto_usd:num(c.monto), cuenta:c.cuenta||'banco', numFactura:c.numFactura||''})).filter(c=>!c.numFactura).map(({numFactura,...c})=>c)}));
   }
   const REGLAS_COMUNES = `- Estilo de las "dudas": máximo 2, una frase corta cada una y siempre con tu propuesta ("Lo puse como X; si es Y, cámbialo"). NUNCA expliques lo que NO hiciste ni por qué descartaste un registro existente: si no tiene que ver, no lo menciones. No comentes validez, vencimiento ni condiciones de los documentos. No uses códigos internos (ids): nombra las cosas por su nombre o descripción.`;
   function promptAI(texto, textosArch, nImgs){
@@ -2173,6 +2174,9 @@ Reglas del negocio:
 - La factura se emite en bolívares a la tasa acordada con el cliente el día del pago, y el cliente paga ese mismo día. Por eso una factura es también el pago: se registra con número de factura, fecha, tasa (bolívares por dólar) y monto en dólares. "cuenta" es "banco" por defecto (bolívares, lleva tasa); "binance" si el pago fue en USDT o por Binance; "efectivo" si fue en dólares en efectivo. Binance y efectivo no llevan tasa.
 - Si un cliente aparece con su nombre largo y está registrado con siglas (o al revés), úsalo tal como está registrado, sin convertirlo en duda.
 - Si un documento solo trae el monto en bolívares y la tasa, el monto en dólares es bolívares ÷ tasa, redondeado a 2 decimales.
+- UNA FACTURA NO SIEMPRE ES DINERO NUEVO. Antes de proponer "registrar_pago" por una factura, revisa si ese dinero ya entró: (a) abonos del trabajo que no tienen número de factura ("abonos_sin_factura") → usa "facturar_abonos" para ponerles el número; (b) pagos de clientes por repartir (lista de abajo) → usa "repartir_pago" para asignarlos a los trabajos con el número de factura. Solo si no hay dinero ya recibido que corresponda, la factura es un pago nuevo ("registrar_pago"). Si Fran dice que la factura concilia, cubre o justifica pagos ya hechos, NUNCA uses "registrar_pago" por ese dinero.
+- El IVA no es ingreso de los trabajos: el monto en dólares de una factura es la BASE IMPONIBLE (sin IVA) ÷ tasa. Nunca sumes el IVA al monto pagado ni al monto del trabajo. Si parece que el cliente pagó el IVA aparte, dilo en "dudas".
+- Una factura con varios ítems puede cubrir uno o varios trabajos: reparte según los ítems que correspondan a cada trabajo. Si la base de la factura no coincide con lo que ya se recibió (por céntimos de redondeo o por más), dilo en "dudas" con la diferencia en dólares.
 - Asocia cada cosa al trabajo existente que corresponda (por descripción, unidad o embarcación, orden de servicio o referencia). Crea un trabajo nuevo solo si claramente no existe.
 - No inventes montos, fechas, números ni tasas.
 - La descripción de un trabajo es un nombre corto para identificarlo en una lista: máximo 8 palabras, sin enumerar ítems ni cantidades. Un presupuesto con varios ítems es UN trabajo con el nombre del objeto del presupuesto, por ejemplo "Instalación de manillas y bocas de visita" (nunca la lista de los 15 ítems). El detalle largo, si hace falta, va en "motivo".
@@ -2191,6 +2195,9 @@ ${JSON.stringify(Object.fromEntries(listaClientes().map(c=>[c, listaUnidades(c)]
 Registro actual (JSON):
 ${JSON.stringify(resumenTrabajos())}
 
+Pagos de clientes por repartir (dinero que ya entró a la caja y todavía no está asignado a ningún trabajo):
+${JSON.stringify(pagosPorRepartir().map(m=>({pago_id:m.id, fecha:m.fecha, concepto:m.concepto||'', cuenta:m.cuenta, monto_usd:rpUsd(m), ...(cuentaDe(m.cuenta).moneda==='VES'?{monto_bs:num(m.monto), tasa:num(m.tasa)}:{})})))}
+
 Material a leer:
 ${texto?`Mensaje o nota escrita:\n"""\n${texto}\n"""\n`:''}${textosArch.join('\n\n')}${nImgs?`\n(Además van ${nImgs} imagen(es) adjunta(s): léelas con cuidado.)`:''}
 
@@ -2200,6 +2207,8 @@ Cada acción es uno de estos objetos, siempre con "motivo" (frase corta que cite
 {"tipo":"asignar_orden","id":"<id existente>","orden_servicio":"PO1234","motivo":"..."}
 {"tipo":"marcar_ejecutado","id":"<id existente>","fecha":"AAAA-MM-DD o vacío","motivo":"..."}
 {"tipo":"registrar_pago","id":"<id existente>","monto_usd":123.45,"numero_factura":"...","fecha":"AAAA-MM-DD","cuenta":"banco (bolívares, lleva tasa) | binance | efectivo","tasa":45.67,"referencia":"...","motivo":"..."}
+{"tipo":"facturar_abonos","id":"<id existente>","numero_factura":"...","fecha_factura":"AAAA-MM-DD","indices":[0,1],"motivo":"..."}  (pone el número de factura a abonos que ya están en el trabajo; "indices" son los de "abonos_sin_factura")
+{"tipo":"repartir_pago","pago_id":"<pago_id de la lista de pagos por repartir>","numero_factura":"...","fecha_factura":"AAAA-MM-DD","asignaciones":[{"id":"<id existente>","monto_usd":123.45}],"motivo":"..."}  (asigna ese dinero ya recibido a uno o varios trabajos, con la factura)
 {"tipo":"actualizar","id":"<id existente>","campos":{"descripcion":"...","unidad":"...","cliente":"...","monto_usd":0,"referencia":"..."},"motivo":"..."}  (solo los campos que cambian)
 {"tipo":"nuevo_trabajo","datos":{"cliente":"...","unidad":"...","descripcion":"...","orden_servicio":"","referencia":"","monto_usd":0,"fecha":"","ejecutado":false,"fecha_ejecucion":""},"motivo":"..."}
 Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen".`;
@@ -2212,6 +2221,10 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
       case 'marcar_ejecutado': return nm?{tag:'Ejecución', txt:`Marcar ${nm} como ejecutado${a.fecha?' el '+fdate(a.fecha):''}`}:null;
       case 'registrar_pago': { if(!nm) return null; const m=num(a.monto_usd), t=num(a.tasa);
         return {tag:'Factura y pago', txt:`${nm}: factura${a.numero_factura?' N° <b>'+esc(a.numero_factura)+'</b>':''}${a.fecha?' del '+fdate(a.fecha):''} por <b>${usd(m)}</b>${a.cuenta==='binance'?' por Binance':a.cuenta==='efectivo'?' en efectivo':t>0?` a tasa ${nfT.format(t)} = <b>${bs(r2(m*t))}</b>`:' <span style="color:var(--so)">(falta la tasa)</span>'}`}; }
+      case 'facturar_abonos': { if(!nm) return null; const d=docs.find(x=>x.id===a.id), ix=(Array.isArray(a.indices)?a.indices:[]).filter(i=>d&&d.cobros&&d.cobros[i]&&!d.cobros[i].numFactura); if(!ix.length) return null; const tot=r2(sum(ix,i=>num(d.cobros[i].monto)));
+        return {tag:'Factura de lo ya cobrado', txt:`${nm}: ponerle la factura N° <b>${esc(a.numero_factura||'')}</b> a ${ix.length===1?'un abono ya recibido':ix.length+' abonos ya recibidos'} por <b>${usd(tot)}</b> (${ix.map(i=>fdate(d.cobros[i].fecha||'').slice(0,5)+' '+usd(num(d.cobros[i].monto))).join(', ')}). No entra dinero nuevo.`}; }
+      case 'repartir_pago': { const m=movs.find(x=>x.id===a.pago_id && x.tipo==='ingreso' && x.categoria===PAGO_REP); if(!m) return null; const as=(Array.isArray(a.asignaciones)?a.asignaciones:[]).filter(x=>docs.some(d=>d.id===x.id)&&num(x.monto_usd)>0); if(!as.length) return null; const s=r2(sum(as,x=>num(x.monto_usd))), tot=rpUsd(m);
+        return {tag:'Repartir pago ya recibido', txt:`Del pago «${esc(m.concepto||'Pago de cliente')}» del ${fdate(m.fecha)} (${usd(tot)}, ya en ${esc(cuentaDe(m.cuenta).nombre)}): ${as.map(x=>`${docName(x.id)} <b>${usd(num(x.monto_usd))}</b>`).join(', ')}${a.numero_factura?` con la factura N° <b>${esc(a.numero_factura)}</b>`:''}. ${tot-s>0.004?`Quedan ${usd(r2(tot-s))} por repartir.`:'Queda repartido completo.'} No entra dinero nuevo.`}; }
       case 'actualizar': { if(!nm) return null; const c=a.campos||{}; const ls=Object.entries(c).map(([k,v])=>`${esc({descripcion:'descripción',unidad:'unidad',cliente:'cliente',monto_usd:'monto',referencia:'referencia'}[k]||k)}: <b>${k==='monto_usd'?usd(num(v)):esc(v)}</b>`);
         return ls.length?{tag:'Corrección', txt:`Corregir ${nm} → ${ls.join(', ')}`}:null; }
       case 'nuevo_trabajo': { const d=a.datos||{}; if(!d.descripcion) return null;
@@ -2234,6 +2247,9 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
     else if(a.tipo==='registrar_pago') h=`<label style="grid-column:1/-1">Modalidad de pago<select data-ei="${i}" data-k="cuenta">${MODO_OPTS(a.cuenta||(num(a.tasa)>0?'banco':'banco'))}</select></label>`
       + f('numero_factura','Número de factura',a.numero_factura,{im:'numeric'}) + f('fecha','Fecha de pago',a.fecha||today(),{type:'date'})
       + f('monto_usd','Monto (USD)',nM(a.monto_usd),{im:'decimal'}) + f('tasa','Tasa (Bs. por USD)',nT(a.tasa),{im:'decimal'});
+    else if(a.tipo==='facturar_abonos') h=f('numero_factura','Número de factura',a.numero_factura,{im:'numeric'}) + f('fecha_factura','Fecha de la factura',a.fecha_factura||today(),{type:'date'});
+    else if(a.tipo==='repartir_pago') h=f('numero_factura','Número de factura',a.numero_factura,{im:'numeric'}) + f('fecha_factura','Fecha de la factura',a.fecha_factura||today(),{type:'date'})
+      + (a.asignaciones||[]).filter(x=>docs.some(d=>d.id===x.id)).map((x,j)=>{ const d=docs.find(y=>y.id===x.id); return f('as_'+j, `${d.descripcion} (debe ${usd(saldo(d))})`, nM(x.monto_usd), {im:'decimal', full:true}); }).join('');
     else if(a.tipo==='actualizar'){ const L={descripcion:'Descripción',unidad:'Unidad',cliente:'Cliente',monto_usd:'Monto (USD)',referencia:'Requisición'};
       h=Object.entries(a.campos||{}).map(([k,v])=>f('c_'+k, L[k]||k, k==='monto_usd'?nM(v):v, {full:k==='descripcion', im:k==='monto_usd'?'decimal':''})).join(''); }
     else if(a.tipo==='nuevo_trabajo'){ const d=a.datos||{}, raw=String(d.cliente||'').trim(), cl=clienteExacto(raw)||raw, cls=listaClientes();
@@ -2253,6 +2269,8 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
     if(a.tipo==='asignar_orden'){ if(v('orden_servicio')!=null) b.orden_servicio=v('orden_servicio'); }
     else if(a.tipo==='marcar_ejecutado'){ if(v('fecha')!=null) b.fecha=v('fecha'); }
     else if(a.tipo==='registrar_pago'){ ['numero_factura','fecha','cuenta'].forEach(k=>{ if(v(k)!=null) b[k]=v(k); }); if(n('monto_usd')!=null) b.monto_usd=n('monto_usd'); if(n('tasa')!=null) b.tasa=n('tasa'); }
+    else if(a.tipo==='facturar_abonos'||a.tipo==='repartir_pago'){ ['numero_factura','fecha_factura'].forEach(k=>{ if(v(k)!=null) b[k]=v(k); });
+      if(a.tipo==='repartir_pago') b.asignaciones=(a.asignaciones||[]).filter(x=>docs.some(d=>d.id===x.id)).map((x,j)=>({...x, monto_usd: n('as_'+j)!=null ? n('as_'+j) : num(x.monto_usd)})); }
     else if(a.tipo==='actualizar'){ Object.keys(b.campos||{}).forEach(k=>{ if(v('c_'+k)!=null) b.campos[k]= k==='monto_usd'?n('c_'+k):v('c_'+k); }); }
     else if(a.tipo==='nuevo_trabajo'){ const d=b.datos=b.datos||{}; ['descripcion','cliente','unidad','orden_servicio','referencia','fecha_ejecucion'].forEach(k=>{ if(v(k)!=null) d[k]=v(k); }); if(n('monto_usd')!=null) d.monto_usd=n('monto_usd'); const e=el('ejecutado'); if(e) d.ejecutado=e.checked; if(!d.ejecutado) d.fecha_ejecucion=''; }
     return b;
@@ -2326,7 +2344,17 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
     const antes={};
     const copia = id => { if(!copias[id]){ const d=docs.find(x=>x.id===id); if(!d) return null; const c=JSON.parse(JSON.stringify(d)); delete c.id; copias[id]=c; antes[id]=JSON.stringify(c); } return copias[id]; };
     let maxOrden=docs.reduce((m,d)=>Math.max(m,num(d.orden)),0);
+    const repartos=[];
     for(const a of elegidas){
+      if(a.tipo==='repartir_pago'){
+        const m=movs.find(x=>x.id===a.pago_id && x.tipo==='ingreso' && x.categoria===PAGO_REP); if(!m){ fallas.push('un pago por repartir que ya no existe'); continue; }
+        const as=(a.asignaciones||[]).map(x=>({d:docs.find(d=>d.id===x.id), u:r2(num(x.monto_usd))})).filter(x=>x.d&&x.u>0);
+        if(!as.length){ fallas.push('un reparto sin montos'); continue; }
+        if(cuentaDe(m.cuenta).moneda==='VES' && !(num(m.tasa)>0)){ fallas.push(`el reparto de «${m.concepto||'pago'}» (el pago no tiene tasa)`); continue; }
+        const malo=as.find(x=>x.u>saldo(x.d)+0.005); if(malo){ fallas.push(`el reparto a «${malo.d.descripcion}» (solo debe ${usd(saldo(malo.d))})`); continue; }
+        if(r2(sum(as,x=>x.u))>rpUsd(m)+0.005){ fallas.push(`el reparto de «${m.concepto||'pago'}» (pasa de lo que se recibió: ${usd(rpUsd(m))})`); continue; }
+        repartos.push({m, as, nf:String(a.numero_factura||'').trim(), ff:a.fecha_factura||''}); continue;
+      }
       if(a.tipo==='nuevo_trabajo'){
         const d=a.datos||{};
         const cliIn=String(d.cliente||'').trim(), cliOk=clienteExacto(cliIn, [...listaClientes(), ...nuevos.map(n=>n.cliente)])||cliIn;
@@ -2338,6 +2366,8 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
       const w=copia(a.id); if(!w){ fallas.push('un trabajo que ya no existe'); continue; }
       if(a.tipo==='asignar_orden') w.ods=String(a.orden_servicio||'').trim();
       else if(a.tipo==='marcar_ejecutado'){ w.ejecutado=true; w.fechaEjecucion=a.fecha||w.fechaEjecucion||today(); }
+      else if(a.tipo==='facturar_abonos'){ const nfac=String(a.numero_factura||'').trim(); if(!nfac){ fallas.push(`la factura de «${w.descripcion}» (sin número)`); continue; }
+        (Array.isArray(a.indices)?a.indices:[]).forEach(i=>{ const c=(w.cobros||[])[i]; if(c && !c.numFactura){ c.numFactura=nfac; if(a.fecha_factura) c.fechaFactura=a.fecha_factura; } }); }
       else if(a.tipo==='actualizar'){ const c=a.campos||{}; if(c.descripcion) w.descripcion=String(c.descripcion); if(c.unidad) w.unidad=mapUnidad(c.unidad, w.cliente||''); if(c.cliente){ const raw=String(c.cliente).trim(); w.cliente=clienteExacto(raw)||raw; } if(c.referencia!=null) w.nota=String(c.referencia); if(num(c.monto_usd)>0) w.monto=r2(num(c.monto_usd)); }
       else if(a.tipo==='registrar_pago'){
         const m=r2(num(a.monto_usd)); if(m<=0){ fallas.push(`el pago de «${w.descripcion}» (sin monto)`); continue; }
@@ -2353,6 +2383,8 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
     try{
       for(const [id,body] of Object.entries(copias)){ const sinCambio={...body}; delete sinCambio.actualizado; const a0=JSON.parse(antes[id]||'{}'); delete a0.actualizado; if(JSON.stringify(sinCambio)===JSON.stringify(a0)) continue; const old=docs.find(x=>x.id===id); await coll.doc(id).set(body); ok++; if(old) diffCampos('facturas', id, `${old.descripcion||'trabajo'} (asistente)`, old, body, [['monto','monto',v=>nf.format(num(v))],['ods','orden de servicio'],['cliente','cliente'],['unidad','unidad'],['ejecutado','ejecutado',v=>v?'sí':'no'],['cancelado','cancelado',v=>v?'sí':'no']]); }
       for(const body of nuevos){ if(!body.descripcion||body.monto<=0){ fallas.push('un trabajo nuevo sin descripción o monto'); continue; } await coll.doc().set(body); ok++; }
+      const base=Object.fromEntries(Object.entries(copias).map(([id,b])=>[id, b.cobros||[]]));
+      for(const r of repartos){ const x=await repartirPago(r.m, r.as, r.nf, r.ff, base); if(x&&x.error) fallas.push(x.error); else ok+=r.as.length; }
       if(!fallas.length){ $('#aiRes').innerHTML=''; $('#aiApplyRow').hidden=true; $('#aiReplyBox').hidden=true; aiLast=null; aiActs=[]; $('#aiText').value=''; aiFiles=[]; renderChips(); }
       const nN=nuevos.filter(b=>b.descripcion&&b.monto>0).length, nA=ok-nN;
       $('#aiStat').textContent = `Guardado: ${[nN?`${nN} ${nN===1?'trabajo nuevo':'trabajos nuevos'}`:'', nA>0?`${nA} ${nA===1?'trabajo actualizado':'trabajos actualizados'}`:''].filter(Boolean).join(' y ')||'nada'}.` + (fallas.length?` No se aplicó: ${fallas.join('; ')}.`:'');
@@ -4225,16 +4257,23 @@ Responde solo con un objeto JSON:
     const malo=as.find(x=>x.u>saldo(x.d)+0.005); if(malo) return err(`«${malo.d.descripcion}» solo debe ${m$(saldo(malo.d))}.`);
     const s=r2(sum(as,x=>x.u)); if(s>tot+0.005) return err(`Repartiste ${m$(s)} y el pago es de ${m$(tot)}.`);
     const b=$('#rpSave'); if(b.dataset.busy) return; b.dataset.busy='1'; b.disabled=true; b.textContent='Guardando…';
-    try{ const ah=new Date().toISOString(), q=r2(tot-s), todo=q<0.005;
-      /* En bolívares, cada abono lleva sus bolívares exactos y el último se lleva el resto, para que la caja cuadre al céntimo */
-      let bsUsados=0; as.forEach((x,i)=>{ if(enBs){ x.bs = (todo && i===as.length-1) ? r2(num(m.monto)-bsUsados) : r2(x.u*t); bsUsados=r2(bsUsados+x.bs); } });
-      for(const x of as){ await conLimite(coll.doc(x.d.id).update({cobros:[...(x.d.cobros||[]), {monto:x.u, tasa:enBs?t:0, ...(enBs?{montoBs:x.bs}:{}), cuenta:m.cuenta, numFactura:'', fecha:m.fecha, ref:m.referencia||'', dePago:m.id}], actualizado:ah})); }
-      try{ if(todo) await conLimite(gDb.collection('movimientos').doc(m.id).delete());
-        else await conLimite(gDb.collection('movimientos').doc(m.id).update({monto: enBs ? r2(num(m.monto)-bsUsados) : q, montoOriginal: num(m.montoOriginal)||num(m.monto), repartido:[...(m.repartido||[]), ...as.map(x=>({trabajoId:x.d.id, usd:x.u, fecha:ah}))], actualizado:ah})); }
-      catch(e2){ return err('Los abonos quedaron en las órdenes, pero el pago suelto no se pudo rebajar. Ábrelo en Gastos y ajústalo: '+errMsg(e2)); }
-      registrarCambio('movimientos', m.id, `Pago repartido: ${m.concepto||''}`, m$(tot), as.map(x=>`${x.d.descripcion}: ${m$(x.u)}`).join(' · '));
-      closeSheets(); toast(todo?`Pago repartido en ${as.length} ${as.length===1?'orden':'órdenes'}`:`Repartido ${m$(s)}; quedan ${m$(q)} por repartir`); }
+    try{ const r=await repartirPago(m, as, ''); if(r.error) return err(r.error);
+      closeSheets(); toast(r.todo?`Pago repartido en ${as.length} ${as.length===1?'orden':'órdenes'}`:`Repartido ${m$(r.s)}; quedan ${m$(r.q)} por repartir`); }
     catch(e){ err(errMsg(e)); } finally{ delete b.dataset.busy; b.disabled=false; b.textContent='Guardar reparto'; } });
+  /* Reparte un pago suelto en abonos a los trabajos (as: [{d, u}]); numFactura opcional cuando el reparto viene con su factura */
+  async function repartirPago(m, as, numFactura, fechaFactura, base){   /* base: {idTrabajo: cobros recién guardados} para no pisar cambios aún no leídos */
+    const tot=rpUsd(m), enBs=cuentaDe(m.cuenta).moneda==='VES', t=num(m.tasa), s=r2(sum(as,x=>x.u));
+    const ah=new Date().toISOString(), q=r2(tot-s), todo=q<0.005;
+    /* En bolívares, cada abono lleva sus bolívares exactos y el último se lleva el resto, para que la caja cuadre al céntimo */
+    let bsUsados=0; as.forEach((x,i)=>{ if(enBs){ x.bs = (todo && i===as.length-1) ? r2(num(m.monto)-bsUsados) : r2(x.u*t); bsUsados=r2(bsUsados+x.bs); } });
+    for(const x of as){ const prev=(base&&base[x.d.id]) || (docs.find(y=>y.id===x.d.id)||x.d).cobros || []; const nuevo={monto:x.u, tasa:enBs?t:0, ...(enBs?{montoBs:x.bs}:{}), cuenta:m.cuenta, numFactura:String(numFactura||''), ...(fechaFactura?{fechaFactura}:{}), fecha:m.fecha, ref:m.referencia||'', dePago:m.id};
+      const cs=[...prev, nuevo]; if(base) base[x.d.id]=cs; await conLimite(coll.doc(x.d.id).update({cobros:cs, actualizado:ah})); }
+    try{ if(todo) await conLimite(gDb.collection('movimientos').doc(m.id).delete());
+      else await conLimite(gDb.collection('movimientos').doc(m.id).update({monto: enBs ? r2(num(m.monto)-bsUsados) : q, montoOriginal: num(m.montoOriginal)||num(m.monto), repartido:[...(m.repartido||[]), ...as.map(x=>({trabajoId:x.d.id, usd:x.u, fecha:ah}))], actualizado:ah})); }
+    catch(e2){ return {error:'Los abonos quedaron en las órdenes, pero el pago suelto no se pudo rebajar. Ábrelo en Gastos y ajústalo: '+errMsg(e2)}; }
+    registrarCambio('movimientos', m.id, `Pago repartido${numFactura?' con la factura N° '+numFactura:''}: ${m.concepto||''}`, m$(tot), as.map(x=>`${x.d.descripcion}: ${m$(x.u)}`).join(' · '));
+    return {todo, s, q};
+  }
   document.addEventListener('click', e=>{ const b=e.target.closest('[data-repartir]'); if(b) openRepartir(b.dataset.repartir); });
   $('#mvRepartir').addEventListener('click', ()=>{ const id=mvEditId; closeSheets(); setTimeout(()=>openRepartir(id), 60); });
   let mvVia='directo';
