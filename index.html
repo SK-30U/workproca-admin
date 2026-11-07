@@ -1815,7 +1815,7 @@ select.combo-oculto{display:none}
       else grupos.forEach(([t,it])=>{ L.push(''); L.push(`*${t}*`); it.forEach(d=>L.push(lineaPend(d))); });   /* cada grupo con su título aunque no se pidan subtotales: el cliente debe ver cuáles tienen orden y cuáles no */
       L.push(''); L.push(`*Total general pendiente: ${usd(general)}*`);
     }
-    if(sel('cobrado')){ const it=base.filter(pred('cobrado')); if(it.length){ L.push(''); L.push('*Cobrados*'); it.forEach(d=>{ const f=(d.cobros||[]).map(c=>c.numFactura).filter(Boolean); L.push(linea(d, pagado(d), f.length?' · Factura N° '+f.join(', '):'')); }); L.push(`*Total de los trabajos cobrados: ${usd(sum(it,pagado))}*`); } }
+    if(sel('cobrado')){ const it=base.filter(pred('cobrado')); if(it.length){ L.push(''); L.push('*Cobrados*'); it.forEach(d=>{ const f=[...new Set((d.cobros||[]).map(c=>String(c.numFactura||'').trim()).filter(Boolean))]; L.push(linea(d, pagado(d), f.length?' · Factura N° '+f.join(', '):'')); }); L.push(`*Total de los trabajos cobrados: ${usd(sum(it,pagado))}*`); } }
     if(L.length===2){ L.push(''); L.push('No hay trabajos con estos filtros.'); }
     return L.join('\n');
   }
