@@ -2176,6 +2176,7 @@ Reglas del negocio:
 - Si un documento solo trae el monto en bolívares y la tasa, el monto en dólares es bolívares ÷ tasa, redondeado a 2 decimales.
 - UNA FACTURA NO SIEMPRE ES DINERO NUEVO. Antes de proponer "registrar_pago" por una factura, revisa si ese dinero ya entró: (a) abonos del trabajo que no tienen número de factura ("abonos_sin_factura") → usa "facturar_abonos" para ponerles el número; (b) pagos de clientes por repartir (lista de abajo) → usa "repartir_pago" para asignarlos a los trabajos con el número de factura. Solo si no hay dinero ya recibido que corresponda, la factura es un pago nuevo ("registrar_pago"). Si Fran dice que la factura concilia, cubre o justifica pagos ya hechos, NUNCA uses "registrar_pago" por ese dinero.
 - El IVA no es ingreso de los trabajos: el monto en dólares de una factura es la BASE IMPONIBLE (sin IVA) ÷ tasa. Nunca sumes el IVA al monto pagado ni al monto del trabajo. Si parece que el cliente pagó el IVA aparte, dilo en "dudas".
+- Un abono nunca puede pasar de lo que debe el trabajo ("saldo_usd"). Si Fran dice que un pago entero es de un trabajo y el saldo no alcanza, el monto del trabajo está mal registrado: propón también "actualizar" con el monto correcto (el que diga Fran o la base de la factura) y reparte el pago completo.
 - Una factura con varios ítems puede cubrir uno o varios trabajos: reparte según los ítems que correspondan a cada trabajo. Si la base de la factura no coincide con lo que ya se recibió (por céntimos de redondeo o por más), dilo en "dudas" con la diferencia en dólares.
 - Asocia cada cosa al trabajo existente que corresponda (por descripción, unidad o embarcación, orden de servicio o referencia). Crea un trabajo nuevo solo si claramente no existe.
 - No inventes montos, fechas, números ni tasas.
@@ -2351,7 +2352,6 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
         const as=(a.asignaciones||[]).map(x=>({d:docs.find(d=>d.id===x.id), u:r2(num(x.monto_usd))})).filter(x=>x.d&&x.u>0);
         if(!as.length){ fallas.push('un reparto sin montos'); continue; }
         if(cuentaDe(m.cuenta).moneda==='VES' && !(num(m.tasa)>0)){ fallas.push(`el reparto de «${m.concepto||'pago'}» (el pago no tiene tasa)`); continue; }
-        const malo=as.find(x=>x.u>saldo(x.d)+0.005); if(malo){ fallas.push(`el reparto a «${malo.d.descripcion}» (solo debe ${usd(saldo(malo.d))})`); continue; }
         if(r2(sum(as,x=>x.u))>rpUsd(m)+0.005){ fallas.push(`el reparto de «${m.concepto||'pago'}» (pasa de lo que se recibió: ${usd(rpUsd(m))})`); continue; }
         repartos.push({m, as, nf:String(a.numero_factura||'').trim(), ff:a.fecha_factura||''}); continue;
       }
@@ -2378,6 +2378,10 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
       }
       w.actualizado=new Date().toISOString();
     }
+    /* Lo que debe cada trabajo, con las correcciones de esta misma propuesta (por ejemplo, el monto corregido según la factura) */
+    const debe = d => { const c=copias[d.id]; return c ? Math.max(0, r2(num(c.monto)-pagado({...c, id:d.id}))) : saldo(d); };
+    for(let i=repartos.length-1;i>=0;i--){ const r=repartos[i], usado={}; const malo=r.as.find(x=>{ usado[x.d.id]=r2((usado[x.d.id]||0)+x.u); return usado[x.d.id]>debe(x.d)+0.005; });
+      if(malo){ fallas.push(`el reparto a «${malo.d.descripcion}» (solo debe ${usd(debe(malo.d))}; si el trabajo vale más, corrige su monto)`); repartos.splice(i,1); } }
     const btn=$('#aiApply'); btn.disabled=true; btn.textContent='Guardando…';
     let ok=0;
     try{
