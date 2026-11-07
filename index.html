@@ -1420,17 +1420,19 @@ select.combo-oculto{display:none}
 
   /* Filtros avanzados de la lista (los mismos del estado de cuenta): unidad, orden, requisición y cuatro filas marcables.
      Una fila sin marcas no filtra. */
-  let cobAv={unidad:'', ods:'', req:'', dim:{orden:[], ejec:[], fact:[], cobro:[]}};
-  const avActivos = () => [cobAv.unidad, cobAv.ods, cobAv.req].filter(Boolean).length + Object.values(cobAv.dim).filter(a=>a.length).length;
-  const pasaAv = d => (!cobAv.unidad||(d.unidad||'')===cobAv.unidad) && (!cobAv.ods||String(d.ods||'').trim()===cobAv.ods) && (!cobAv.req||String(d.nota||'').trim()===cobAv.req)
-    && EC_DIMS.every(([k,,,f])=>{ const m=cobAv.dim[k]||[]; return !m.length || m.includes(f(d)); });
-  function renderAvz(){
+  const todasMarcas = () => Object.fromEntries(EC_DIMS.map(([k,,ops])=>[k, ops.map(o=>o[0])]));
+  let cobAv=null;
+  const avIni = () => { if(!cobAv) cobAv={unidad:'', ods:'', req:'', dim:todasMarcas()}; return cobAv; };
+  const avActivos = () => { avIni(); return [cobAv.unidad, cobAv.ods, cobAv.req].filter(Boolean).length + EC_DIMS.filter(([k,,ops])=>(cobAv.dim[k]||[]).length<ops.length).length; };
+  const pasaAv = d => { avIni(); return (!cobAv.unidad||(d.unidad||'')===cobAv.unidad) && (!cobAv.ods||String(d.ods||'').trim()===cobAv.ods) && (!cobAv.req||String(d.nota||'').trim()===cobAv.req)
+    && EC_DIMS.every(([k,,,f])=>(cobAv.dim[k]||[]).includes(f(d))); };
+  function renderAvz(){ avIni();
     const uns=listaUnidades(cliente), ods=listaOrdenes(cliente, cobAv.unidad), reqs=listaReqs(cliente, cobAv.unidad);
     if(cobAv.unidad && !uns.includes(cobAv.unidad)) cobAv.unidad=''; if(cobAv.ods && !ods.includes(cobAv.ods)) cobAv.ods=''; if(cobAv.req && !reqs.includes(cobAv.req)) cobAv.req='';
     const sel=(id,lbl,todos,vals,v)=>`<label class="f">${lbl}<select id="${id}"><option value="">${todos}</option>${vals.map(x=>`<option value="${esc(x)}"${x===v?' selected':''}>${esc(x)}</option>`).join('')}</select></label>`;
     $('#fAvzBody').innerHTML = `<div class="grid" style="margin-top:8px">${sel('avUni','Unidad','Todas',uns,cobAv.unidad)}${sel('avOds','Orden de servicio','Todas',ods,cobAv.ods)}${sel('avReq','Requisición','Todas',reqs,cobAv.req)}</div>
       ${EC_DIMS.map(([k,t,ops])=>`<div class="tip" style="border:0;margin:8px 0 0">${t}</div><div class="ecchips" style="margin:4px 0 0">${ops.map(([v,l])=>{ const on=(cobAv.dim[k]||[]).includes(v); return `<label class="${on?'on':''}"><input type="checkbox" data-avd="${k}" data-v="${v}"${on?' checked':''}> ${l}</label>`; }).join('')}</div>`).join('')}
-      <div class="tip" style="border:0;margin:6px 0 0">Sale cada trabajo que cumpla una marca de cada fila; una fila sin marcas no filtra.${avActivos()?' <button type="button" class="lnk" id="avLimpiar">Quitar estos filtros</button>':''}</div>`;
+      <div class="tip" style="border:0;margin:6px 0 0">Solo sale lo marcado: cada trabajo tiene que estar marcado en las cuatro filas.${filaVacia(cobAv.dim)?` <b style="color:var(--danger)">En «${esc(filaVacia(cobAv.dim))}» no hay nada marcado: no sale ningún trabajo.</b>`:''}${avActivos()?' <button type="button" class="lnk" id="avLimpiar">Quitar estos filtros</button>':''}</div>`;
     const n=avActivos(); $('#fAvzSum').textContent = n ? `Filtros avanzados (${n} ${n===1?'activo':'activos'})` : 'Filtros avanzados';
   }
   function visibles(){
@@ -1734,8 +1736,9 @@ select.combo-oculto{display:none}
     ['cobro','Cobro',[['pendiente','Sin cobrar'],['parcial','Cobrados en parte'],['cobrado','Cobrados'],['cancelado','Cancelados']], d=>d.cancelado?'cancelado':etapa(d)==='cobrado'?'cobrado':pagado(d)>0?'parcial':'pendiente'],
   ];
   let ecF={cliente:'', unidad:'', ods:'', req:'', buscar:'', dim:{orden:['con','sin'], ejec:['ejecutado','enEjecucion','porEjecutar'], fact:['con','sin'], cobro:['pendiente','parcial']}, formato:'detallado'};
-  /* Una fila sin ninguna marca no filtra (vale como "todos") */
-  const ecPasa = d => EC_DIMS.every(([k,,,f])=>{ const m=ecF.dim[k]||[]; return !m.length || m.includes(f(d)); });
+  /* Sale solo lo marcado: un trabajo sale si su estado está marcado en cada fila */
+  const ecPasa = d => EC_DIMS.every(([k,,,f])=>(ecF.dim[k]||[]).includes(f(d)));
+  const filaVacia = dim => (EC_DIMS.find(([k])=>!(dim[k]||[]).length)||[])[1]||'';
   /* Filtros específicos del estado de cuenta: una orden, una requisición o una búsqueda. Con uno de ellos el trabajo sale esté en la etapa que esté. */
   const ecEspecifico = () => !!(ecF.ods || ecF.req || String(ecF.buscar||'').trim());
   const ecSel = k => true;   /* las secciones del reporte salen según lo que pase el filtro */
@@ -1750,6 +1753,7 @@ select.combo-oculto{display:none}
   const listaOrdenes = (cli,uni) => [...new Set(docs.filter(d=>(!cli||(d.cliente||'')===cli)&&(!uni||(d.unidad||'')===uni)&&tieneOrden(d)).map(d=>String(d.ods).trim()))].sort((x,y)=>x.localeCompare(y,'es',{numeric:true}));
   const listaReqs = (cli,uni) => [...new Set(docs.filter(d=>(!cli||(d.cliente||'')===cli)&&(!uni||(d.unidad||'')===uni)&&String(d.nota||'').trim()).map(d=>String(d.nota).trim()))].sort((x,y)=>x.localeCompare(y,'es',{numeric:true}));
   function buildShare(){
+    if(!ecEspecifico() && filaVacia(ecF.dim)) return `*WORKPROCA · Estado de cuenta${ecTitulo()}*\n${fdate(today())}\n\nNo sale ningún trabajo: en «${filaVacia(ecF.dim)}» no hay nada marcado. Marca lo que quieres incluir.`;
     if(ecF.formato==='corto') return buildCorto();
     const base=ecBase(), L=[];
     L.push('*WORKPROCA, Trabajos Profesionales C.A.*'); L.push('RIF: J-30707474-4');
@@ -1835,7 +1839,7 @@ select.combo-oculto{display:none}
       ${ecEspecifico()?`<div class="tip" style="border:0;margin:8px 0 0">Con una orden, una requisición o una búsqueda, el trabajo sale esté en la etapa que esté (también si ya se cobró). <button type="button" class="lnk" data-eclimpiar>Quitar estos filtros</button></div>`:''}
       <div class="seg ecfmt" role="group" aria-label="Formato" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px">${[['detallado','Detallado'],['corto','Corto']].map(([k,l])=>`<button type="button" data-fmt="${k}" class="${ecF.formato===k?'on':''}">${l}</button>`).join('')}</div>
       <div id="ecDims"${ecEspecifico()?' hidden':''}>${EC_DIMS.map(([k,t,ops])=>`<div class="tip" style="border:0;margin:8px 0 0">${t}</div><div class="ecchips" style="margin:4px 0 0">${ops.map(([v,l])=>{ const on=(ecF.dim[k]||[]).includes(v); return `<label class="${on?'on':''}"><input type="checkbox" data-dim="${k}" data-v="${v}"${on?' checked':''}> ${l}</label>`; }).join('')}</div>`).join('')}
-        <div class="tip" style="border:0;margin:6px 0 0">Sale cada trabajo que cumpla una marca de cada fila; una fila sin marcas no filtra.</div></div>
+        <div class="tip" style="border:0;margin:6px 0 0">Solo sale lo marcado: cada trabajo tiene que estar marcado en las cuatro filas. Lo que desmarques no sale en el reporte.</div></div>
       ${ecF.formato==='corto'?`<div class="tip" style="border:0;margin:8px 0 0">Qué incluir en el reporte</div><div class="ecchips" style="margin-top:4px">${CORTO_CAMPOS.map(([k,l])=>`<label class="${ecCampos[k]?'on':''}"><input type="checkbox" data-cp="${k}"${ecCampos[k]?' checked':''}> ${l}</label>`).join('')}</div>`:''}`;
   }
   function abrirEstado(){
@@ -2063,7 +2067,7 @@ select.combo-oculto{display:none}
     if(t.id==='avUni'){ cobAv.unidad=t.value; cobAv.ods=''; cobAv.req=''; } if(t.id==='avOds') cobAv.ods=t.value; if(t.id==='avReq') cobAv.req=t.value;
     if(t.dataset.avd){ const k=t.dataset.avd, cur=cobAv.dim[k]||[]; cobAv.dim[k]=t.checked?[...new Set([...cur,t.dataset.v])]:cur.filter(x=>x!==t.dataset.v); }
     renderAvz(); renderList(); });
-  $('#fAvzBody').addEventListener('click', e=>{ if(e.target.closest('#avLimpiar')){ cobAv={unidad:'', ods:'', req:'', dim:{orden:[], ejec:[], fact:[], cobro:[]}}; renderAvz(); renderList(); } });
+  $('#fAvzBody').addEventListener('click', e=>{ if(e.target.closest('#avLimpiar')){ cobAv={unidad:'', ods:'', req:'', dim:todasMarcas()}; renderAvz(); renderList(); } });
   $('#list').addEventListener('click', e=>{
     const c=e.target.closest('.card'); if(!c) return;
     if(selMode){ const id=c.dataset.id; sel.has(id)?sel.delete(id):sel.add(id); renderList(); renderSelbar(); }
