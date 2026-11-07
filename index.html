@@ -586,6 +586,7 @@ select.combo-oculto{display:none}
       <button class="ghost" id="btnSel" type="button">Seleccionar</button>
       <input id="q" type="search" placeholder="Buscar trabajo, unidad, orden, requisición o factura" aria-label="Buscar">
     </div>
+    <details class="ddet" id="fAvz" style="margin-top:6px"><summary id="fAvzSum">Filtros avanzados</summary><div id="fAvzBody"></div></details>
   </div>
 </div>
 
@@ -1417,9 +1418,24 @@ select.combo-oculto{display:none}
     </button>`;
   }
 
+  /* Filtros avanzados de la lista (los mismos del estado de cuenta): unidad, orden, requisición y cuatro filas marcables.
+     Una fila sin marcas no filtra. */
+  let cobAv={unidad:'', ods:'', req:'', dim:{orden:[], ejec:[], fact:[], cobro:[]}};
+  const avActivos = () => [cobAv.unidad, cobAv.ods, cobAv.req].filter(Boolean).length + Object.values(cobAv.dim).filter(a=>a.length).length;
+  const pasaAv = d => (!cobAv.unidad||(d.unidad||'')===cobAv.unidad) && (!cobAv.ods||String(d.ods||'').trim()===cobAv.ods) && (!cobAv.req||String(d.nota||'').trim()===cobAv.req)
+    && EC_DIMS.every(([k,,,f])=>{ const m=cobAv.dim[k]||[]; return !m.length || m.includes(f(d)); });
+  function renderAvz(){
+    const uns=listaUnidades(cliente), ods=listaOrdenes(cliente, cobAv.unidad), reqs=listaReqs(cliente, cobAv.unidad);
+    if(cobAv.unidad && !uns.includes(cobAv.unidad)) cobAv.unidad=''; if(cobAv.ods && !ods.includes(cobAv.ods)) cobAv.ods=''; if(cobAv.req && !reqs.includes(cobAv.req)) cobAv.req='';
+    const sel=(id,lbl,todos,vals,v)=>`<label class="f">${lbl}<select id="${id}"><option value="">${todos}</option>${vals.map(x=>`<option value="${esc(x)}"${x===v?' selected':''}>${esc(x)}</option>`).join('')}</select></label>`;
+    $('#fAvzBody').innerHTML = `<div class="grid" style="margin-top:8px">${sel('avUni','Unidad','Todas',uns,cobAv.unidad)}${sel('avOds','Orden de servicio','Todas',ods,cobAv.ods)}${sel('avReq','Requisición','Todas',reqs,cobAv.req)}</div>
+      ${EC_DIMS.map(([k,t,ops])=>`<div class="tip" style="border:0;margin:8px 0 0">${t}</div><div class="ecchips" style="margin:4px 0 0">${ops.map(([v,l])=>{ const on=(cobAv.dim[k]||[]).includes(v); return `<label class="${on?'on':''}"><input type="checkbox" data-avd="${k}" data-v="${v}"${on?' checked':''}> ${l}</label>`; }).join('')}</div>`).join('')}
+      <div class="tip" style="border:0;margin:6px 0 0">Sale cada trabajo que cumpla una marca de cada fila; una fila sin marcas no filtra.${avActivos()?' <button type="button" class="lnk" id="avLimpiar">Quitar estos filtros</button>':''}</div>`;
+    const n=avActivos(); $('#fAvzSum').textContent = n ? `Filtros avanzados (${n} ${n===1?'activo':'activos'})` : 'Filtros avanzados';
+  }
   function visibles(){
     const q=norm(query);
-    return byClient().filter(d => !q || norm([d.descripcion,d.unidad,d.ods,d.nota,d.cliente,...(d.cobros||[]).map(c=>c.numFactura)].join(' ')).includes(q));
+    return byClient().filter(d => (!q || norm([d.descripcion,d.unidad,d.ods,d.nota,d.cliente,...(d.cobros||[]).map(c=>c.numFactura)].join(' ')).includes(q)) && pasaAv(d));
   }
 
   function renderList(){
@@ -1434,7 +1450,7 @@ select.combo-oculto{display:none}
     const pagos = filtro==='cobrado' ? pagosRecibidos(list) : '';
     const html = resumenBusqueda(list) + pagos + groups.map(g=>{
       const {sec,pred}=secDe(g), items=list.filter(pred).sort((a,b)=>(enEjecucion(b)-enEjecucion(a)) || byOrden(a,b));
-      if(!items.length) return (filtro==='todas'||g==='peSinOrden') ? '' : `<div class="empty"><b>Nada en “${sec}”</b>${query||cliente?'Prueba quitando el filtro o la búsqueda.':'Cuando un trabajo llegue a esta etapa aparecerá aquí.'}</div>`;
+      if(!items.length) return (filtro==='todas'||g==='peSinOrden') ? '' : `<div class="empty"><b>Nada en “${sec}”</b>${query||cliente||avActivos()?'Prueba quitando el filtro o la búsqueda.':'Cuando un trabajo llegue a esta etapa aparecerá aquí.'}</div>`;
       const sub = g==='cobrado' ? sum(items,pagado) : sum(items,saldo);
       return `<section class="sec"><h2>${sec} <span class="num">${items.length} · ${usd(sub)}</span></h2><div class="list">${items.map(card).join('')}</div></section>`;
     }).join('');
@@ -2040,8 +2056,14 @@ select.combo-oculto{display:none}
   $('#tabs').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; filtro=b.dataset.f; render(); });
   $('#hero').addEventListener('click', e=>{ if(e.target.closest('#heroTog')){ const ab=$('#hero').classList.contains('plegado'); try{ localStorage.setItem('heroAbierto', ab?'1':'0'); }catch(_){} return renderStats(); }
     const b=e.target.closest('.row[data-f]'); if(!b) return; filtro=b.dataset.f; render(); const l=$('#list'); if(l) l.scrollIntoView({behavior:'smooth', block:'start'}); });
-  $('#fCliente').addEventListener('change', e=>{ cliente=e.target.value; render(); });
+  $('#fCliente').addEventListener('change', e=>{ cliente=e.target.value; if($('#fAvz').open) renderAvz(); render(); });
   $('#q').addEventListener('input', e=>{ query=e.target.value.trim(); renderList(); });
+  $('#fAvz').addEventListener('toggle', ()=>{ if($('#fAvz').open) renderAvz(); });
+  $('#fAvzBody').addEventListener('change', e=>{ const t=e.target;
+    if(t.id==='avUni'){ cobAv.unidad=t.value; cobAv.ods=''; cobAv.req=''; } if(t.id==='avOds') cobAv.ods=t.value; if(t.id==='avReq') cobAv.req=t.value;
+    if(t.dataset.avd){ const k=t.dataset.avd, cur=cobAv.dim[k]||[]; cobAv.dim[k]=t.checked?[...new Set([...cur,t.dataset.v])]:cur.filter(x=>x!==t.dataset.v); }
+    renderAvz(); renderList(); });
+  $('#fAvzBody').addEventListener('click', e=>{ if(e.target.closest('#avLimpiar')){ cobAv={unidad:'', ods:'', req:'', dim:{orden:[], ejec:[], fact:[], cobro:[]}}; renderAvz(); renderList(); } });
   $('#list').addEventListener('click', e=>{
     const c=e.target.closest('.card'); if(!c) return;
     if(selMode){ const id=c.dataset.id; sel.has(id)?sel.delete(id):sel.add(id); renderList(); renderSelbar(); }
