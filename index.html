@@ -1418,7 +1418,7 @@ select.combo-oculto{display:none}
     </button>`;
   }
 
-  /* Filtros avanzados de la lista (los mismos del estado de cuenta): unidad, orden, requisición y cuatro filas marcables.
+  /* Filtros avanzados de la lista (los mismos del estado de cuenta): unidad, orden, requisición y cinco filas marcables.
      Una fila sin marcas no filtra. */
   const todasMarcas = () => Object.fromEntries(EC_DIMS.map(([k,,ops])=>[k, ops.map(o=>o[0])]));
   let cobAv=null;
@@ -1732,10 +1732,11 @@ select.combo-oculto{display:none}
   const EC_DIMS=[
     ['orden','Orden de servicio',[['con','Con orden'],['sin','Sin orden']], d=>tieneOrden(d)?'con':'sin'],
     ['ejec','Ejecución',[['ejecutado','Ejecutados'],['enEjecucion','En ejecución'],['porEjecutar','Por ejecutar']], d=>d.ejecutado?'ejecutado':enEjecucion(d)?'enEjecucion':'porEjecutar'],
+    ['req','Requisición',[['con','Con requisición'],['sin','Sin requisición']], d=>String(d.nota||'').trim()?'con':'sin'],
     ['fact','Factura',[['con','Con factura'],['sin','Sin factura']], d=>(d.cobros||[]).some(c=>String(c.numFactura||'').trim())?'con':'sin'],
     ['cobro','Cobro',[['pendiente','Sin cobrar'],['parcial','Cobrados en parte'],['cobrado','Cobrados'],['cancelado','Cancelados']], d=>d.cancelado?'cancelado':etapa(d)==='cobrado'?'cobrado':pagado(d)>0?'parcial':'pendiente'],
   ];
-  let ecF={cliente:'', unidad:'', ods:'', req:'', buscar:'', dim:{orden:['con','sin'], ejec:['ejecutado','enEjecucion','porEjecutar'], fact:['con','sin'], cobro:['pendiente','parcial']}, formato:'detallado'};
+  let ecF={cliente:'', unidad:'', ods:'', req:'', buscar:'', dim:{orden:['con','sin'], req:['con','sin'], ejec:['ejecutado','enEjecucion','porEjecutar'], fact:['con','sin'], cobro:['pendiente','parcial']}, formato:'detallado'};
   /* Sale solo lo marcado: un trabajo sale si su estado está marcado en cada fila */
   const llenarVacias = dim => { EC_DIMS.forEach(([k,,ops])=>{ if(!(dim[k]||[]).length) dim[k]=ops.map(o=>o[0]); }); return dim; };
   const ecPasa = d => EC_DIMS.every(([k,,,f])=>(ecF.dim[k]||[]).includes(f(d)));
