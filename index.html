@@ -1564,10 +1564,12 @@ select.combo-oculto{display:none}
     const txt=($('#avTxt')||{}).value||'', adicChk=!!($('#avAdic')||{}).checked;
     const base=avActs.filter(a=>!a.adicional), adic=avActs.filter(a=>a.adicional);
     const num0={}; base.forEach((a,i)=>num0[a.id]=i+1); adic.forEach((a,i)=>num0[a.id]=i+1);
+    const wTot=sum(base,pesoAct), conPesos=base.some(a=>Math.abs(pesoAct(a)-1)>0.001);
     const fila=a=>{ const p=pctAct(a), st=estAct(a), ed=avCarga===a.id;
       return `<div class="ln avrow" data-avrow="${esc(a.id)}">
         <div class="h"><span class="avn"><b>${num0[a.id]}.</b> <span data-avnomtxt>${esc(a.nombre)}</span></span><b class="num avpct">${avPct(p)}</b></div>
         ${avBar(p)}
+        ${conPesos&&!a.adicional&&wTot>0?`<div class="tip num" style="border:0;margin:4px 0 0">Peso ${nf1.format(pesoAct(a))} días-hombre · ${nf1.format(pesoAct(a)/wTot*100)} % del total</div>`:''}
         ${st==='det'?`<div class="avdet">Detenida${a.detenidaDesde?' desde el '+fdate(a.detenidaDesde).slice(0,5):''}${txtFreno(a)?' · '+esc(txtFreno(a)):''}</div>`:''}
         ${canWrite&&!ed?`<div class="acts" style="margin-top:8px"><button type="button" class="btn sec" data-avcarga="${esc(a.id)}">Cargar avance</button></div>`:''}
         ${canWrite&&ed?`<div class="avedit"><div class="grid">
@@ -1579,7 +1581,7 @@ select.combo-oculto{display:none}
           </div><div class="row-btns" style="margin-top:8px"><button type="button" class="btn pri" data-avok="${esc(a.id)}">Guardar avance</button><button type="button" class="btn sec" data-avcancel>Cancelar</button></div></div>`:''}
         ${canWrite?`<details class="ddet"${avEdit===a.id?' open':''} data-avdet="${esc(a.id)}"><summary>Editar</summary><div class="grid" style="margin-top:8px">
           <label class="f full">Nombre<input data-avnom="${esc(a.id)}" value="${esc(a.nombre)}" autocomplete="off"></label>
-          <label class="f">Peso en el total<input data-avpeso="${esc(a.id)}" inputmode="decimal" value="${nf1.format(pesoAct(a))}"></label>
+          <label class="f">Peso en el total (días-hombre)<input data-avpeso="${esc(a.id)}" inputmode="decimal" value="${nf1.format(pesoAct(a))}"></label>
           <label class="chk full"><input type="checkbox" data-avadic="${esc(a.id)}"${a.adicional?' checked':''}> Es un trabajo adicional (no entra en el total)</label></div>
           <div class="row-btns" style="margin-top:8px"><button type="button" class="btn del" data-avdel="${esc(a.id)}">${avDelArmed===a.id?'Toca otra vez para eliminar':'Eliminar actividad'}</button></div></details>`:''}
       </div>`; };
@@ -1587,7 +1589,7 @@ select.combo-oculto{display:none}
     $('#avTitle').textContent='Avance';
     $('#avBody').innerHTML = `<div style="font-weight:600;font-size:16px">${esc(d.descripcion||'')}</div><div class="tip" style="border:0;margin:2px 0 0">${avMeta(d)}</div>
       <div class="avtot"><span style="font-weight:600;color:var(--muted)">Avance total</span><b class="num" id="avTot">${avPct(avanceActs(avActs))}</b></div>${avBar(avanceActs(avActs),'avTotBar')}
-      <div class="row-btns" style="margin-top:12px"><button type="button" class="btn pri" id="avRep"${avActs.length?'':' disabled'}>Generar reporte</button>${canWrite&&sampleFn?'<button type="button" class="btn sec" id="avAI">Cargar con asistente</button>':''}</div>
+      <div class="row-btns" style="margin-top:12px;align-items:stretch"><button type="button" class="btn pri" id="avRep"${avActs.length?'':' disabled'}>Generar reporte</button>${canWrite&&sampleFn?'<button type="button" class="btn sec" id="avAI">Cargar con asistente</button>':''}</div>
       ${base.length?`<div class="sech" style="font-size:16px">Actividades de la ODS · ${base.length}</div>${grupos(base)}`:''}
       ${adic.length?`<div class="sech" style="font-size:16px">Trabajos adicionales · ${adic.length}</div><div class="tip" style="border:0;margin:0">Se reportan aparte y no entran en el avance total.</div>${grupos(adic)}`:''}
       ${!avActs.length?'<div class="empty" style="margin-top:14px"><b>Esta orden no tiene actividades</b>Escríbelas o pega la lista aquí abajo.</div>':''}
@@ -1595,7 +1597,7 @@ select.combo-oculto{display:none}
         <label class="f full">Una por línea (puedes pegar la lista completa de la ODS)<textarea id="avTxt" rows="3" placeholder="Reemplazar tres bocas de visita&#10;Alinear dos motores propulsores">${esc(txt)}</textarea></label>
         <label class="chk" style="margin-top:8px"><input type="checkbox" id="avAdic"${adicChk?' checked':''}> Son trabajos adicionales</label>
         <div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" id="avAdd">Agregar</button></div>
-        <div class="tip" style="border:0;margin:8px 0 0">Todas las actividades pesan igual en el total, salvo que les cambies el peso en «Editar».</div>`:''}
+        <div class="tip" style="border:0;margin:8px 0 0">${conPesos?`Las actividades de la ODS suman ${nf1.format(wTot)} días-hombre. El peso de cada una se cambia en «Editar» o con el asistente.`:'Todas las actividades pesan igual en el total, salvo que les cambies el peso (días-hombre) en «Editar» o con el asistente.'}</div>`:''}
       <div class="err" id="avErr"></div>`;
   }
   /* Guarda las actividades en el trabajo, una escritura a la vez, y anota el avance total del día (sirve después para ver el ritmo) */
@@ -1622,7 +1624,7 @@ select.combo-oculto{display:none}
     if(t.dataset.avq!==undefined){ const i=row&&row.querySelector('[data-avp]'); if(i) i.value=t.dataset.avq; row.querySelectorAll('.ecchips label').forEach(l=>l.classList.toggle('on', l.contains(t))); return; }
     if(t.hasAttribute('data-avdetc')){ row.querySelectorAll('[data-avdetf]').forEach(x=>x.hidden=!t.checked); return; }
     if(t.dataset.avnom){ const a=avActs.find(x=>x.id===t.dataset.avnom), n=t.value.trim().replace(/\s+/g,' ').slice(0,160); if(!a) return; if(!n){ t.value=a.nombre; return; } a.nombre=n; if(row) row.querySelector('[data-avnomtxt]').textContent=n; guardarAv(); return; }
-    if(t.dataset.avpeso){ const a=avActs.find(x=>x.id===t.dataset.avpeso); if(!a) return; const v=parseNum(t.value); a.peso=v>0?Math.round(v*10)/10:1; t.value=nf1.format(a.peso); pintarTotAv(); guardarAv(); return; }
+    if(t.dataset.avpeso){ const a=avActs.find(x=>x.id===t.dataset.avpeso); if(!a) return; const v=parseNum(t.value); a.peso=v>0?Math.round(v*10)/10:1; avEdit=a.id; renderAvSheet(); guardarAv(); return; }
     if(t.dataset.avadic){ const a=avActs.find(x=>x.id===t.dataset.avadic); if(!a) return; a.adicional=t.checked; avEdit=a.id; renderAvSheet(); guardarAv(); return; }
   });
   $('#avBody').addEventListener('toggle', e=>{ const d=e.target; if(d.dataset&&d.dataset.avdet){ if(d.open) avEdit=d.dataset.avdet; else if(avEdit===d.dataset.avdet) avEdit=''; } }, true);
@@ -2579,7 +2581,7 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
     return `Eres el asistente de avance de trabajos de WORKPROCA (taller naval en Maracaibo, Venezuela). Te paso material sobre UNA orden: «${d.descripcion||''}»${d.unidad?', embarcación '+d.unidad:''}${d.ods?', orden de servicio '+d.ods:''}. El material puede ser el presupuesto o la orden de servicio (para cargar sus actividades) o un mensaje, nota o reporte con lo que se ha hecho (para actualizar porcentajes de avance).
 
 Actividades ya cargadas en esta orden (JSON):
-${JSON.stringify(avActs.map(a=>({id:a.id, nombre:a.nombre, pct:pctAct(a), adicional:!!a.adicional, ...(a.detenida?{detenida:true}:{})})))}
+${JSON.stringify(avActs.map(a=>({id:a.id, nombre:a.nombre, pct:pctAct(a), peso:pesoAct(a), adicional:!!a.adicional, ...(a.detenida?{detenida:true}:{})})))}
 
 Reglas:
 - Una actividad por cada ítem del presupuesto o de la orden. Nombre corto y claro, como está en el documento, sin numeración, sin precios y sin punto final. No juntes ni dividas ítems.
@@ -2587,7 +2589,9 @@ Reglas:
 - "pct" es el avance de 0 a 100. "Listo", "terminado", "ejecutado", "se hizo", "culminado" es 100. "Por la mitad" es 50. Una actividad nueva sin avance mencionado va en 0.
 - "adicional": true cuando el material dice que es un trabajo adicional, extra o fuera del presupuesto, o cuando ya hay actividades del presupuesto cargadas y el trabajo mencionado no corresponde a ninguna de ellas ni a un ítem del presupuesto.
 - Si el material dice que una actividad está detenida, parada o frenada, pon "detenida": true, en "freno" una de estas opciones exactas: ${FRENOS.join('; ')}, y en "porque" el detalle en pocas palabras. Si dice que se reanudó, "detenida": false. Si no dice nada de eso, no pongas esos campos.
-- No inventes actividades ni porcentajes. Lo que no aparezca en el material no se toca.
+- "peso" es cuánto pesa la actividad en el avance total, en días-hombre (personas × días: «2 personas por 1,5 días» o «2x1,5» son 3). Ponlo solo cuando el material da el peso, los días-hombre o la ponderación de esa actividad; si no lo da, deja "peso" en null. Si el material solo cambia pesos, devuelve cada actividad con su "id", su "peso" nuevo y "pct" en null.
+- "pct" en null significa «el material no dice nada del avance de esta actividad»: nunca pongas 0 por no saber.
+- No inventes actividades, porcentajes ni pesos. Lo que no aparezca en el material no se toca.
 ${REGLAS_COMUNES}
 - Fecha de hoy: ${today()}.
 
@@ -2595,24 +2599,27 @@ Material a leer:
 ${texto?'Texto:\n<<<\n'+texto+'\n>>>\n':''}${textosArch.join('\n\n')}${nImgs?`\n(Además van ${nImgs} imagen(es) adjunta(s): léelas con cuidado.)`:''}
 
 Responde solo con un objeto JSON:
-{"resumen":"una frase","actividades":[{"id":"<id de una actividad ya cargada, o vacío si es nueva>","nombre":"...","pct":0,"adicional":false,"detenida":false,"freno":"","porque":"","motivo":"frase corta, solo si hace falta"}],"dudas":[]}`;
+{"resumen":"una frase","actividades":[{"id":"<id de una actividad ya cargada, o vacío si es nueva>","nombre":"...","pct":0,"peso":null,"adicional":false,"detenida":false,"freno":"","porque":"","motivo":"frase corta, solo si hace falta"}],"dudas":[]}`;
   }
   let aiAv=[];
   function renderAIAv(res){
     aiAv=(Array.isArray(res.actividades)?res.actividades:[]).map(x=>{ const nom=String(x.nombre||'').trim().replace(/\s+/g,' ').replace(/[.;,:]+$/,'').slice(0,160);
       const ex=(x.id&&avActs.find(a=>a.id===x.id)) || (nom&&avActs.find(a=>norm(a.nombre)===norm(nom))) || null;
-      return {ex, nombre:nom||(ex?ex.nombre:''), pct:Math.round(Math.max(0,Math.min(100,num(x.pct)))*10)/10, adicional:ex?!!ex.adicional:!!x.adicional, motivo:String(x.motivo||''),
+      const sinPct=x.pct===null||x.pct===undefined||x.pct==='', pw=num(x.peso);
+      return {ex, nombre:nom||(ex?ex.nombre:''), pct:(sinPct&&ex)?pctAct(ex):Math.round(Math.max(0,Math.min(100,num(x.pct)))*10)/10, peso:pw>0?Math.round(pw*10)/10:null, adicional:ex?!!ex.adicional:!!x.adicional, motivo:String(x.motivo||''),
         det: typeof x.detenida==='boolean' ? x.detenida : null, freno:FRENOS.includes(x.freno)?x.freno:(x.detenida?'Otro':''), porque:String(x.porque||'').trim().slice(0,200)}; })
-      .filter(x=>x.nombre && !(x.ex && Math.abs(pctAct(x.ex)-x.pct)<0.05 && (x.det===null || x.det===!!x.ex.detenida)));
+      .map(x=>({...x, cPct:!x.ex||Math.abs(pctAct(x.ex)-x.pct)>=0.05, cPeso:x.peso!==null&&(!x.ex||Math.abs(pesoAct(x.ex)-x.peso)>=0.05)}))
+      .filter(x=>x.nombre && !(x.ex && !x.cPct && !x.cPeso && (x.det===null || x.det===!!x.ex.detenida)));
     const dudas=Array.isArray(res.dudas)?res.dudas.filter(Boolean):[];
-    const nN=aiAv.filter(x=>!x.ex&&!x.adicional).length, nA=aiAv.filter(x=>!x.ex&&x.adicional).length, nU=aiAv.filter(x=>x.ex).length;
-    const cuenta=[nN&&`${nN} ${nN===1?'actividad nueva':'actividades nuevas'}`, nA&&`${nA} ${nA===1?'adicional nuevo':'adicionales nuevos'}`, nU&&`${nU} ${nU===1?'avance actualizado':'avances actualizados'}`].filter(Boolean).join(' · ');
+    const nN=aiAv.filter(x=>!x.ex&&!x.adicional).length, nA=aiAv.filter(x=>!x.ex&&x.adicional).length, nU=aiAv.filter(x=>x.ex&&(x.cPct||!x.cPeso)).length, nP=aiAv.filter(x=>x.ex&&x.cPeso).length;
+    const cuenta=[nN&&`${nN} ${nN===1?'actividad nueva':'actividades nuevas'}`, nA&&`${nA} ${nA===1?'adicional nuevo':'adicionales nuevos'}`, nU&&`${nU} ${nU===1?'avance actualizado':'avances actualizados'}`, nP&&`${nP} ${nP===1?'peso actualizado':'pesos actualizados'}`].filter(Boolean).join(' · ');
     $('#aiRes').innerHTML = (res.resumen?`<div class="sum">${esc(res.resumen)}${cuenta?'<br><b>'+cuenta+'</b>':''}</div>`:'')
       + aiAv.map((x,i)=>`<div class="act tr"><input type="checkbox" data-vchk="${i}" checked aria-label="Incluir ${esc(x.nombre)}">
-          <div style="min-width:0;flex:1"><span class="tag">${x.ex?'Actualizar avance':x.adicional?'Trabajo adicional nuevo':'Actividad nueva'}</span>
-            ${x.ex?`<div>${esc(x.ex.nombre)} <small class="num">(está en ${avPct(pctAct(x.ex))})</small></div>`:''}
+          <div style="min-width:0;flex:1"><span class="tag">${x.ex?(x.cPeso&&!x.cPct?'Actualizar peso':x.cPeso?'Actualizar avance y peso':'Actualizar avance'):x.adicional?'Trabajo adicional nuevo':'Actividad nueva'}</span>
+            ${x.ex?`<div>${esc(x.ex.nombre)} <small class="num">(está en ${avPct(pctAct(x.ex))}${x.cPeso?', peso '+nf1.format(pesoAct(x.ex)):''})</small></div>`:''}
             <div class="g">${x.ex?'':`<label style="grid-column:1/-1">Nombre<input data-vi="${i}" data-k="nombre" value="${esc(x.nombre)}" autocomplete="off"></label>`}
               <label>Avance (%)<input data-vi="${i}" data-k="pct" inputmode="decimal" value="${nf1.format(x.pct)}"></label>
+              ${x.peso!==null?`<label>Peso (días-hombre)<input data-vi="${i}" data-k="peso" inputmode="decimal" value="${nf1.format(x.peso)}"></label>`:''}
               ${x.ex?'':`<label style="flex-direction:row;align-items:center;gap:8px;align-self:end;padding-bottom:8px"><input type="checkbox" data-vi="${i}" data-k="adicional"${x.adicional?' checked':''} style="width:18px;height:18px;accent-color:var(--accent)"> Es adicional</label>`}</div>
             ${x.det===true?`<div class="avdet">Queda detenida · ${esc(txtFreno(x)||'sin motivo')}</div>`:x.det===false&&x.ex&&x.ex.detenida?'<div><b>Se reanuda</b> (deja de estar detenida)</div>':''}
             ${x.motivo?`<small>${esc(x.motivo)}</small>`:''}</div></div>`).join('')
@@ -2625,13 +2632,14 @@ Responde solo con un objeto JSON:
     aiAv.forEach((x,i)=>{ const chk=document.querySelector(`[data-vchk="${i}"]`); if(!chk||!chk.checked) return; const el=k=>document.querySelector(`[data-vi="${i}"][data-k="${k}"]`);
       const pv=parseNum((el('pct')||{}).value), p=Math.round(Math.max(0,Math.min(100,isNaN(pv)?0:pv))*10)/10;
       const ponDet=a=>{ if(p>=100 || x.det===false){ a.detenida=false; a.freno=''; a.porque=''; a.detenidaDesde=''; } else if(x.det===true){ if(!a.detenida||!a.detenidaDesde) a.detenidaDesde=today(); a.detenida=true; a.freno=x.freno; a.porque=x.porque; } };
-      if(x.ex){ const a=avActs.find(y=>y.id===x.ex.id); if(a){ a.pct=p; ponDet(a); act++; } return; }
+      const wv=parseNum((el('peso')||{}).value), w=wv>0?Math.round(wv*10)/10:null;
+      if(x.ex){ const a=avActs.find(y=>y.id===x.ex.id); if(a){ a.pct=p; if(w) a.peso=w; ponDet(a); act++; } return; }
       const n=String((el('nombre')||{}).value||'').trim().replace(/\s+/g,' ').slice(0,160); if(!n) return;
-      const nueva={id:'a'+Date.now().toString(36)+i.toString(36)+Math.random().toString(36).slice(2,5), nombre:n, pct:p, peso:1, adicional:!!(el('adicional')&&el('adicional').checked)}; ponDet(nueva); avActs.push(nueva); nuevas++; });
+      const nueva={id:'a'+Date.now().toString(36)+i.toString(36)+Math.random().toString(36).slice(2,5), nombre:n, pct:p, peso:w||1, adicional:!!(el('adicional')&&el('adicional').checked)}; ponDet(nueva); avActs.push(nueva); nuevas++; });
     if(!nuevas&&!act){ $('#aiStat').textContent='No marcaste nada.'; return; }
     guardarAv(); $('#aiRes').innerHTML=''; $('#aiApplyRow').hidden=true; $('#aiReplyBox').hidden=true; aiLast=null; aiAv=[]; $('#aiText').value=''; aiFiles=[]; renderChips();
     $('#aiSheet').hidden=true; $('#aiSheet').dataset.dirty=''; renderAvSheet(); $('#avSheet').hidden=false; $('#avSheet').dataset.dirty='';
-    toast([nuevas&&`${nuevas} ${nuevas===1?'actividad agregada':'actividades agregadas'}`, act&&`${act} ${act===1?'avance actualizado':'avances actualizados'}`].filter(Boolean).join(' · '));
+    toast([nuevas&&`${nuevas} ${nuevas===1?'actividad agregada':'actividades agregadas'}`, act&&`${act} ${act===1?'actividad actualizada':'actividades actualizadas'}`].filter(Boolean).join(' · '));
   }
   /* ---------- asistente para trabajadores ---------- */
   function abrirAI(modo){
