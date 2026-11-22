@@ -1569,7 +1569,7 @@ select.combo-oculto{display:none}
       return `<div class="ln avrow" data-avrow="${esc(a.id)}">
         <div class="h"><span class="avn"><b>${num0[a.id]}.</b> <span data-avnomtxt>${esc(a.nombre)}</span></span><b class="num avpct">${avPct(p)}</b></div>
         ${avBar(p)}
-        ${conPesos&&!a.adicional&&wTot>0?`<div class="tip num" style="border:0;margin:4px 0 0">Peso ${nf1.format(pesoAct(a))} días-hombre · ${nf1.format(pesoAct(a)/wTot*100)} % del total</div>`:''}
+        ${conPesos&&!a.adicional&&wTot>0?`<div class="tip num" style="border:0;margin:4px 0 0">Peso ${nf1.format(pesoAct(a))} (horas de cuadrilla) · ${nf1.format(pesoAct(a)/wTot*100)} % del total</div>`:''}
         ${st==='det'?`<div class="avdet">Detenida${a.detenidaDesde?' desde el '+fdate(a.detenidaDesde).slice(0,5):''}${txtFreno(a)?' · '+esc(txtFreno(a)):''}</div>`:''}
         ${canWrite&&!ed?`<div class="acts" style="margin-top:8px"><button type="button" class="btn sec" data-avcarga="${esc(a.id)}">Cargar avance</button></div>`:''}
         ${canWrite&&ed?`<div class="avedit"><div class="grid">
@@ -1581,7 +1581,7 @@ select.combo-oculto{display:none}
           </div><div class="row-btns" style="margin-top:8px"><button type="button" class="btn pri" data-avok="${esc(a.id)}">Guardar avance</button><button type="button" class="btn sec" data-avcancel>Cancelar</button></div></div>`:''}
         ${canWrite?`<details class="ddet"${avEdit===a.id?' open':''} data-avdet="${esc(a.id)}"><summary>Editar</summary><div class="grid" style="margin-top:8px">
           <label class="f full">Nombre<input data-avnom="${esc(a.id)}" value="${esc(a.nombre)}" autocomplete="off"></label>
-          <label class="f">Peso en el total (días-hombre)<input data-avpeso="${esc(a.id)}" inputmode="decimal" value="${nf1.format(pesoAct(a))}"></label>
+          <label class="f">Peso en el total (horas de cuadrilla)<input data-avpeso="${esc(a.id)}" inputmode="decimal" value="${nf1.format(pesoAct(a))}"></label>
           <label class="chk full"><input type="checkbox" data-avadic="${esc(a.id)}"${a.adicional?' checked':''}> Es un trabajo adicional (no entra en el total)</label></div>
           <div class="row-btns" style="margin-top:8px"><button type="button" class="btn del" data-avdel="${esc(a.id)}">${avDelArmed===a.id?'Toca otra vez para eliminar':'Eliminar actividad'}</button></div></details>`:''}
       </div>`; };
@@ -1597,7 +1597,7 @@ select.combo-oculto{display:none}
         <label class="f full">Una por línea (puedes pegar la lista completa de la ODS)<textarea id="avTxt" rows="3" placeholder="Reemplazar tres bocas de visita&#10;Alinear dos motores propulsores">${esc(txt)}</textarea></label>
         <label class="chk" style="margin-top:8px"><input type="checkbox" id="avAdic"${adicChk?' checked':''}> Son trabajos adicionales</label>
         <div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" id="avAdd">Agregar</button></div>
-        <div class="tip" style="border:0;margin:8px 0 0">${conPesos?`Las actividades de la ODS suman ${nf1.format(wTot)} días-hombre. El peso de cada una se cambia en «Editar» o con el asistente.`:'Todas las actividades pesan igual en el total, salvo que les cambies el peso (días-hombre) en «Editar» o con el asistente.'}</div>`:''}
+        <div class="tip" style="border:0;margin:8px 0 0">${conPesos?`Las actividades de la ODS suman ${nf1.format(wTot)} horas de cuadrilla. El peso de cada una se cambia en «Editar» o con el asistente.`:'Todas las actividades pesan igual en el total, salvo que les cambies el peso (horas de cuadrilla) en «Editar» o con el asistente.'}</div>`:''}
       <div class="err" id="avErr"></div>`;
   }
   /* Guarda las actividades en el trabajo, una escritura a la vez, y anota el avance total del día (sirve después para ver el ritmo) */
@@ -2589,7 +2589,7 @@ Reglas:
 - "pct" es el avance de 0 a 100. "Listo", "terminado", "ejecutado", "se hizo", "culminado" es 100. "Por la mitad" es 50. Una actividad nueva sin avance mencionado va en 0.
 - "adicional": true cuando el material dice que es un trabajo adicional, extra o fuera del presupuesto, o cuando ya hay actividades del presupuesto cargadas y el trabajo mencionado no corresponde a ninguna de ellas ni a un ítem del presupuesto.
 - Si el material dice que una actividad está detenida, parada o frenada, pon "detenida": true, en "freno" una de estas opciones exactas: ${FRENOS.join('; ')}, y en "porque" el detalle en pocas palabras. Si dice que se reanudó, "detenida": false. Si no dice nada de eso, no pongas esos campos.
-- "peso" es cuánto pesa la actividad en el avance total, en días-hombre (personas × días: «2 personas por 1,5 días» o «2x1,5» son 3). Ponlo solo cuando el material da el peso, los días-hombre o la ponderación de esa actividad; si no lo da, deja "peso" en null. Si el material solo cambia pesos, devuelve cada actividad con su "id", su "peso" nuevo y "pct" en null.
+- "peso" es cuánto pesa la actividad en el avance total, en horas de cuadrilla (lo que tarda una cuadrilla en hacerla: «2 horas una cuadrilla» es 2, «medio día» es 4, «1 día» es 8, «dos cuadrillas un día» es 16). Ponlo solo cuando el material da el peso, el tiempo de cuadrilla o la ponderación de esa actividad; si no lo da, deja "peso" en null. Si el material solo cambia pesos, devuelve cada actividad con su "id", su "peso" nuevo y "pct" en null.
 - "pct" en null significa «el material no dice nada del avance de esta actividad»: nunca pongas 0 por no saber.
 - No inventes actividades, porcentajes ni pesos. Lo que no aparezca en el material no se toca.
 ${REGLAS_COMUNES}
@@ -2619,7 +2619,7 @@ Responde solo con un objeto JSON:
             ${x.ex?`<div>${esc(x.ex.nombre)} <small class="num">(está en ${avPct(pctAct(x.ex))}${x.cPeso?', peso '+nf1.format(pesoAct(x.ex)):''})</small></div>`:''}
             <div class="g">${x.ex?'':`<label style="grid-column:1/-1">Nombre<input data-vi="${i}" data-k="nombre" value="${esc(x.nombre)}" autocomplete="off"></label>`}
               <label>Avance (%)<input data-vi="${i}" data-k="pct" inputmode="decimal" value="${nf1.format(x.pct)}"></label>
-              ${x.peso!==null?`<label>Peso (días-hombre)<input data-vi="${i}" data-k="peso" inputmode="decimal" value="${nf1.format(x.peso)}"></label>`:''}
+              ${x.peso!==null?`<label>Peso (horas de cuadrilla)<input data-vi="${i}" data-k="peso" inputmode="decimal" value="${nf1.format(x.peso)}"></label>`:''}
               ${x.ex?'':`<label style="flex-direction:row;align-items:center;gap:8px;align-self:end;padding-bottom:8px"><input type="checkbox" data-vi="${i}" data-k="adicional"${x.adicional?' checked':''} style="width:18px;height:18px;accent-color:var(--accent)"> Es adicional</label>`}</div>
             ${x.det===true?`<div class="avdet">Queda detenida · ${esc(txtFreno(x)||'sin motivo')}</div>`:x.det===false&&x.ex&&x.ex.detenida?'<div><b>Se reanuda</b> (deja de estar detenida)</div>':''}
             ${x.motivo?`<small>${esc(x.motivo)}</small>`:''}</div></div>`).join('')
