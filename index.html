@@ -1523,7 +1523,7 @@ select.combo-oculto{display:none}
 
   /* ---------- avance por orden: actividades con su porcentaje, total de la orden y reporte ----------
      Las actividades viven dentro del trabajo (campo `actividades`): {id, nombre, pct, peso, adicional}.
-     El total es el promedio de las actividades del presupuesto, ponderado por su peso (1 si no se cambia).
+     El total es el promedio de las actividades de la ODS, ponderado por su peso (1 si no se cambia).
      Los trabajos adicionales se reportan aparte y no entran en el total. */
   let avId=null, avActs=[], avDelArmed='', avEdit='', avCola=Promise.resolve();
   const nf1 = new Intl.NumberFormat('es-VE',{maximumFractionDigits:1});
@@ -1567,11 +1567,11 @@ select.combo-oculto{display:none}
     $('#avBody').innerHTML = `<div style="font-weight:600;font-size:16px">${esc(d.descripcion||'')}</div><div class="tip" style="border:0;margin:2px 0 0">${avMeta(d)}</div>
       <div class="avtot"><span style="font-weight:600;color:var(--muted)">Avance total</span><b class="num" id="avTot">${avPct(avanceActs(avActs))}</b></div>${avBar(avanceActs(avActs),'avTotBar')}
       ${canWrite&&sampleFn?`<div class="row-btns" style="margin-top:12px"><button type="button" class="btn sec" id="avAI">Cargar con asistente</button></div>`:''}
-      ${base.length?`<div class="sech" style="font-size:16px">Actividades del presupuesto · ${base.length}</div><div class="lns" style="margin-top:6px">${base.map(fila).join('')}</div>`:''}
+      ${base.length?`<div class="sech" style="font-size:16px">Actividades de la ODS · ${base.length}</div><div class="lns" style="margin-top:6px">${base.map(fila).join('')}</div>`:''}
       ${adic.length?`<div class="sech" style="font-size:16px">Trabajos adicionales · ${adic.length}</div><div class="tip" style="border:0;margin:0">Se reportan aparte y no entran en el avance total.</div><div class="lns" style="margin-top:6px">${adic.map(fila).join('')}</div>`:''}
       ${!avActs.length?'<div class="empty" style="margin-top:14px"><b>Esta orden no tiene actividades</b>Escríbelas o pega la lista aquí abajo.</div>':''}
       ${canWrite?`<div class="sech" style="font-size:16px">Agregar actividades</div>
-        <label class="f full">Una por línea (puedes pegar la lista completa del presupuesto)<textarea id="avTxt" rows="3" placeholder="Reemplazar tres bocas de visita&#10;Alinear dos motores propulsores">${esc(txt)}</textarea></label>
+        <label class="f full">Una por línea (puedes pegar la lista completa de la ODS)<textarea id="avTxt" rows="3" placeholder="Reemplazar tres bocas de visita&#10;Alinear dos motores propulsores">${esc(txt)}</textarea></label>
         <label class="chk" style="margin-top:8px"><input type="checkbox" id="avAdic"${adicChk?' checked':''}> Son trabajos adicionales</label>
         <div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" id="avAdd">Agregar</button></div>
         <div class="tip" style="border:0;margin:8px 0 0">Todas las actividades pesan igual en el total, salvo que les cambies el peso en «Editar».</div>`:''}
@@ -1590,7 +1590,7 @@ select.combo-oculto{display:none}
     if(String(d.nota||'').trim()) L.push(`Requisición: ${String(d.nota).trim()}`);
     L.push(`Fecha: ${fdate(today())}`);
     if(base.length){ L.push('', '*Actividades*'); base.forEach((a,i)=>L.push(`${i+1}. ${a.nombre}: ${avPct(pctAct(a))}`)); L.push('', `*Avance total: ${avPct(avanceActs(acts))}*`); }
-    if(adic.length){ L.push('', '*Trabajos adicionales (no incluidos en el presupuesto)*'); adic.forEach((a,i)=>L.push(`${i+1}. ${a.nombre}: ${avPct(pctAct(a))}`)); }
+    if(adic.length){ L.push('', '*Trabajos adicionales (no incluidos en la ODS)*'); adic.forEach((a,i)=>L.push(`${i+1}. ${a.nombre}: ${avPct(pctAct(a))}`)); }
     return L.join('\n');
   }
   $('#avMain').addEventListener('click', e=>{ const b=e.target.closest('[data-avopen]'); if(b) openAvance(b.dataset.avopen); });
@@ -2626,7 +2626,7 @@ Responde solo con un objeto JSON:
     } else if(modo==='av'){
       const dAv=docs.find(x=>x.id===avId)||{};
       $('#aiTitle').textContent='Avance con asistente';
-      $('#aiDesc').textContent=`Orden: ${dAv.descripcion||''}${dAv.unidad?' · '+dAv.unidad:''}. Sube el presupuesto o la orden (foto o PDF) para cargar sus actividades, o pega el mensaje con lo que se hizo para actualizar los porcentajes. Revisas todo antes de guardar.`;
+      $('#aiDesc').textContent=`Orden: ${dAv.descripcion||''}${dAv.unidad?' · '+dAv.unidad:''}. Sube la ODS (foto o PDF) para cargar sus actividades, o pega el mensaje con lo que se hizo para actualizar los porcentajes. Revisas todo antes de guardar.`;
       $('#aiText').placeholder='Por ejemplo: “Hoy se terminó la base de la planta eléctrica y los escapes van por la mitad. Adicional: se desmontó la grúa bandera”';
       $('#aiApply').textContent='Guardar lo marcado';
     } else {
