@@ -311,6 +311,7 @@ main{padding-bottom:130px}
 .avrow .h{align-items:center}.avrow .avn{flex:1;min-width:0;font-size:14.5px;line-height:1.35}
 .avin{display:flex;align-items:center;gap:5px;flex:none}.avin input{width:62px;text-align:right;border:1px solid var(--line);background:var(--sunk);border-radius:10px;padding:9px 8px;font-size:16px;font-weight:600;color:var(--ink)}
 .avin .btn{padding:9px 9px;font-size:13px}
+.avleg{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:2px}.avleg i{display:inline-block;width:18px;height:0;border-top:2.6px solid var(--accent);vertical-align:middle;margin-right:5px}.avleg i.lp{border-top:2px dashed var(--muted)}.avst{font-size:13.5px;margin-top:6px}.avst.bad b{color:var(--danger)}#avCurvaBox svg{display:block;width:100%;height:auto;margin-top:8px}
 .avpct{font-size:17px;flex:none}.avgrp{font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:14px}
 .avdet{margin-top:8px;font-size:13px;font-weight:600;color:var(--danger)}.avedit{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 .avtot{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:6px}.avtot b{font-family:var(--f-disp);font-size:30px}
@@ -796,7 +797,7 @@ select.combo-oculto{display:none}
     <p id="shareDesc" style="margin:2px 0 10px;color:var(--muted);font-size:13.5px">Trabajos ejecutados pendientes de cobro del cliente seleccionado, con formato de WhatsApp.</p>
     <div id="ecFiltros" hidden></div>
     <textarea class="share" id="shareText" readonly></textarea>
-    <div class="row-btns"><button type="button" class="btn pri" id="btnCopy">Copiar texto</button></div>
+    <div class="row-btns"><button type="button" class="btn pri" id="btnCopy">Copiar texto</button><button type="button" class="btn sec" id="btnCurva" hidden>Compartir curva (imagen)</button></div>
   </div>
 </section>
 
@@ -1526,14 +1527,14 @@ select.combo-oculto{display:none}
   /* ---------- avance por orden: actividades con su porcentaje, total de la orden y reporte ----------
      Las actividades viven dentro del trabajo (campo `actividades`): {id, nombre, pct, peso, adicional}.
      El total es el promedio de las actividades de la ODS, ponderado por su peso (1 si no se cambia).
-     Los trabajos adicionales se reportan aparte y no entran en el total. */
+     Los trabajos adicionales se listan aparte pero también suman al total, con su peso (son parte de la misma ODS). */
   let avId=null, avActs=[], avDelArmed='', avEdit='', avCola=Promise.resolve();
   const nf1 = new Intl.NumberFormat('es-VE',{maximumFractionDigits:1});
   const avPct = n => `${nf1.format(Math.round(n*10)/10)} %`;
   const actsDe = d => Array.isArray(d&&d.actividades) ? d.actividades : [];
   const pesoAct = a => num(a.peso)>0 ? num(a.peso) : 1;
   const pctAct = a => Math.max(0, Math.min(100, num(a.pct)));
-  function avanceActs(xs){ const b=xs.filter(a=>!a.adicional), w=sum(b,pesoAct); return b.length&&w>0 ? sum(b,a=>pctAct(a)*pesoAct(a))/w : 0; }
+  function avanceActs(xs){ const w=sum(xs,pesoAct); return xs.length&&w>0 ? sum(xs,a=>pctAct(a)*pesoAct(a))/w : 0; }
   const avBar = (p, id) => `<div class="avbar"${id?` id="${id}"`:''}><i style="width:${Math.max(0,Math.min(100,p))}%"></i></div>`;
   const avMeta = d => [d.cliente, d.unidad, tieneOrden(d)?'Orden '+d.ods:'Sin orden de servicio', String(d.nota||'').trim()&&('Requisición '+d.nota)].filter(Boolean).map(esc).join(' · ');
   function renderAv(){
@@ -1549,8 +1550,8 @@ select.combo-oculto{display:none}
         :`<div class="empty"><b>Todavía no hay órdenes con avance</b>${canWrite?'Elige un trabajo arriba y cárgale sus actividades.':''}</div>`}
       <div style="height:20px"></div>`;
   }
-  function openAvance(id){ const d=docs.find(x=>x.id===id); if(!d) return; avId=id; avActs=JSON.parse(JSON.stringify(actsDe(d))); avDelArmed=''; avEdit=''; avCarga=''; renderAvSheet(); openSheet('#avSheet'); }
-  function pintarTotAv(){ const t=avanceActs(avActs), a=$('#avTot'), b=$('#avTotBar'); if(a) a.textContent=avPct(t); if(b) b.firstElementChild.style.width=t+'%'; }
+  function openAvance(id){ const d=docs.find(x=>x.id===id); if(!d) return; avId=id; avActs=JSON.parse(JSON.stringify(actsDe(d))); avDelArmed=''; avEdit=''; avCarga=''; avF={ini:d.avInicio||'', fin:d.avCompromiso||'', sab:!!d.avSabado}; renderAvSheet(); openSheet('#avSheet'); }
+  function pintarTotAv(){ const t=avanceActs(avActs), a=$('#avTot'), b=$('#avTotBar'); if(a) a.textContent=avPct(t); if(b) b.firstElementChild.style.width=t+'%'; pintarCurva(); }
   /* Estado de una actividad: terminada, detenida, en ejecución o por iniciar */
   const FRENOS=['Falta de material','Falta de equipo o herramienta','Falta de personal','Espera por el cliente','Espera por otra actividad','Clima','Otro'];
   const estAct = a => pctAct(a)>=100 ? 'fin' : a.detenida ? 'det' : pctAct(a)>0 ? 'eje' : 'ini';
@@ -1564,12 +1565,12 @@ select.combo-oculto{display:none}
     const txt=($('#avTxt')||{}).value||'', adicChk=!!($('#avAdic')||{}).checked;
     const base=avActs.filter(a=>!a.adicional), adic=avActs.filter(a=>a.adicional);
     const num0={}; base.forEach((a,i)=>num0[a.id]=i+1); adic.forEach((a,i)=>num0[a.id]=i+1);
-    const wTot=sum(base,pesoAct), conPesos=base.some(a=>Math.abs(pesoAct(a)-1)>0.001);
+    const wTot=sum(avActs,pesoAct), conPesos=avActs.some(a=>Math.abs(pesoAct(a)-1)>0.001);
     const fila=a=>{ const p=pctAct(a), st=estAct(a), ed=avCarga===a.id;
       return `<div class="ln avrow" data-avrow="${esc(a.id)}">
         <div class="h"><span class="avn"><b>${num0[a.id]}.</b> <span data-avnomtxt>${esc(a.nombre)}</span></span><b class="num avpct">${avPct(p)}</b></div>
         ${avBar(p)}
-        ${conPesos&&!a.adicional&&wTot>0?`<div class="tip num" style="border:0;margin:4px 0 0">Peso ${nf1.format(pesoAct(a))} (horas de cuadrilla) · ${nf1.format(pesoAct(a)/wTot*100)} % del total</div>`:''}
+        ${conPesos&&wTot>0?`<div class="tip num" style="border:0;margin:4px 0 0">Peso ${nf1.format(pesoAct(a))} (horas de cuadrilla) · ${nf1.format(pesoAct(a)/wTot*100)} % del total</div>`:''}
         ${st==='det'?`<div class="avdet">Detenida${a.detenidaDesde?' desde el '+fdate(a.detenidaDesde).slice(0,5):''}${txtFreno(a)?' · '+esc(txtFreno(a)):''}</div>`:''}
         ${canWrite&&!ed?`<div class="acts" style="margin-top:8px"><button type="button" class="btn sec" data-avcarga="${esc(a.id)}">Cargar avance</button></div>`:''}
         ${canWrite&&ed?`<div class="avedit"><div class="grid">
@@ -1582,7 +1583,7 @@ select.combo-oculto{display:none}
         ${canWrite?`<details class="ddet"${avEdit===a.id?' open':''} data-avdet="${esc(a.id)}"><summary>Editar</summary><div class="grid" style="margin-top:8px">
           <label class="f full">Nombre<input data-avnom="${esc(a.id)}" value="${esc(a.nombre)}" autocomplete="off"></label>
           <label class="f">Peso en el total (horas de cuadrilla)<input data-avpeso="${esc(a.id)}" inputmode="decimal" value="${nf1.format(pesoAct(a))}"></label>
-          <label class="chk full"><input type="checkbox" data-avadic="${esc(a.id)}"${a.adicional?' checked':''}> Es un trabajo adicional (no entra en el total)</label></div>
+          <label class="chk full"><input type="checkbox" data-avadic="${esc(a.id)}"${a.adicional?' checked':''}> Es un trabajo adicional (fuera de la ODS original)</label></div>
           <div class="row-btns" style="margin-top:8px"><button type="button" class="btn del" data-avdel="${esc(a.id)}">${avDelArmed===a.id?'Toca otra vez para eliminar':'Eliminar actividad'}</button></div></details>`:''}
       </div>`; };
     const grupos=xs=>AV_GRUPOS.map(([k,t])=>{ const g=porAvance(xs.filter(a=>estAct(a)===k)); return g.length?`<div class="avgrp">${t} · ${g.length}</div><div class="lns" style="margin-top:6px">${g.map(fila).join('')}</div>`:''; }).join('');
@@ -1590,20 +1591,27 @@ select.combo-oculto{display:none}
     $('#avBody').innerHTML = `<div style="font-weight:600;font-size:16px">${esc(d.descripcion||'')}</div><div class="tip" style="border:0;margin:2px 0 0">${avMeta(d)}</div>
       <div class="avtot"><span style="font-weight:600;color:var(--muted)">Avance total</span><b class="num" id="avTot">${avPct(avanceActs(avActs))}</b></div>${avBar(avanceActs(avActs),'avTotBar')}
       <div class="row-btns" style="margin-top:12px;align-items:stretch"><button type="button" class="btn pri" id="avRep"${avActs.length?'':' disabled'}>Generar reporte</button>${canWrite&&sampleFn?'<button type="button" class="btn sec" id="avAI">Cargar con asistente</button>':''}</div>
+      ${avActs.length?`<div class="sech" style="font-size:16px">Curva de avance</div>
+        <div class="grid"><label class="f">Fecha de inicio<input type="date" id="avIni" value="${esc(avF.ini)}"${canWrite?'':' disabled'}></label>
+          <label class="f">Fecha de compromiso<input type="date" id="avFin" value="${esc(avF.fin)}"${canWrite?'':' disabled'}></label>
+          <label class="chk full"><input type="checkbox" id="avSab"${avF.sab?' checked':''}${canWrite?'':' disabled'}> Se trabaja el sábado</label></div>
+        <div id="avCurvaBox"></div>
+        <div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" id="avCurvaBtn">Compartir curva (imagen)</button></div>`:''}
       ${base.length?`<div class="sech" style="font-size:16px">Actividades de la ODS · ${base.length}</div>${grupos(base)}`:''}
-      ${adic.length?`<div class="sech" style="font-size:16px">Trabajos adicionales · ${adic.length}</div><div class="tip" style="border:0;margin:0">Se reportan aparte y no entran en el avance total.</div>${grupos(adic)}`:''}
+      ${adic.length?`<div class="sech" style="font-size:16px">Trabajos adicionales · ${adic.length}</div><div class="tip" style="border:0;margin:0">Se listan aparte y también suman al avance total.</div>${grupos(adic)}`:''}
       ${!avActs.length?'<div class="empty" style="margin-top:14px"><b>Esta orden no tiene actividades</b>Escríbelas o pega la lista aquí abajo.</div>':''}
       ${canWrite?`<div class="sech" style="font-size:16px">Agregar actividades</div>
         <label class="f full">Una por línea (puedes pegar la lista completa de la ODS)<textarea id="avTxt" rows="3" placeholder="Reemplazar tres bocas de visita&#10;Alinear dos motores propulsores">${esc(txt)}</textarea></label>
         <label class="chk" style="margin-top:8px"><input type="checkbox" id="avAdic"${adicChk?' checked':''}> Son trabajos adicionales</label>
         <div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" id="avAdd">Agregar</button></div>
-        <div class="tip" style="border:0;margin:8px 0 0">${conPesos?`Las actividades de la ODS suman ${nf1.format(wTot)} horas de cuadrilla. El peso de cada una se cambia en «Editar» o con el asistente.`:'Todas las actividades pesan igual en el total, salvo que les cambies el peso (horas de cuadrilla) en «Editar» o con el asistente.'}</div>`:''}
+        <div class="tip" style="border:0;margin:8px 0 0">${conPesos?`Las actividades${adic.length?', con los adicionales,':''} suman ${nf1.format(wTot)} horas de cuadrilla. El peso de cada una se cambia en «Editar» o con el asistente.`:'Todas las actividades pesan igual en el total, salvo que les cambies el peso (horas de cuadrilla) en «Editar» o con el asistente.'}</div>`:''}
       <div class="err" id="avErr"></div>`;
+    pintarCurva();
   }
   /* Guarda las actividades en el trabajo, una escritura a la vez, y anota el avance total del día (sirve después para ver el ritmo) */
   function guardarAv(){ if(!coll||!canWrite||!avId) return; const id=avId, acts=JSON.parse(JSON.stringify(avActs));
-    avCola=avCola.then(()=>{ const d=docs.find(x=>x.id===id)||{}; const hist={...(d.avanceHist||{}), [today()]:Math.round(avanceActs(acts)*10)/10};
-      return conLimite(coll.doc(id).update({actividades:acts, avanceHist:hist, actualizado:new Date().toISOString()})); })
+    avCola=avCola.then(()=>{ const d=docs.find(x=>x.id===id)||{}; const hist={...(d.avanceHist||{}), [today()]:Math.round(avanceActs(acts)*10)/10}, snap={...(d.avanceSnap||{}), [today()]:Object.fromEntries(acts.map(a=>[a.id, pctAct(a)]))};
+      return conLimite(coll.doc(id).update({actividades:acts, avanceHist:hist, avanceSnap:snap, actualizado:new Date().toISOString()})); })
       .then(()=>{ const sh=$('#avSheet'); if(sh && avId===id) sh.dataset.dirty=''; }, e=>{ const x=$('#avErr'); if(x) x.textContent='No se guardó el último cambio: '+errMsg(e); else toast(errMsg(e)); }); }
   function buildAvance(d, acts){
     const base=acts.filter(a=>!a.adicional), adic=acts.filter(a=>a.adicional), L=['*WORKPROCA, Trabajos Profesionales C.A.*', `*Reporte de avance · ${d.descripcion||''}*`];
@@ -1614,13 +1622,92 @@ select.combo-oculto{display:none}
     const linea=(a,n)=>`${n}. ${a.nombre}: ${avPct(pctAct(a))}${estAct(a)==='det'?` · Detenida${txtFreno(a)?': '+txtFreno(a):''}`:''}`;
     const bloque=xs=>{ const n0={}; xs.forEach((a,i)=>n0[a.id]=i+1);
       [['fin','Terminadas'],['eje','En ejecución'],['det','Detenidas'],['ini','Por iniciar']].forEach(([k,t])=>{ const g=porAvance(xs.filter(a=>estAct(a)===k)); if(!g.length) return; L.push(`_${t}_`); g.forEach(a=>L.push(linea(a,n0[a.id]))); }); };
-    if(base.length){ L.push('', '*Actividades de la ODS*'); bloque(base); L.push('', `*Avance total: ${avPct(avanceActs(acts))}*`); }
+    if(base.length){ L.push('', '*Actividades de la ODS*'); bloque(base); }
     if(adic.length){ L.push('', '*Trabajos adicionales (no incluidos en la ODS)*'); bloque(adic); }
+    if(acts.length) L.push('', `*Avance total${base.length&&adic.length?' (ODS más adicionales)':''}: ${avPct(avanceActs(acts))}*`);
+    if(acts.length && d.id===avId){ const c=avCurva(d, acts); if(c.fin && c.pHoy!==null) L.push(`Programado a la fecha: ${avPct(c.pHoy)}`, `Fecha de compromiso: ${fdate(c.fin)}`); }
     return L.join('\n');
   }
+  /* ---------- curva de avance: programado (recta por días hábiles entre inicio y compromiso) contra real (lo guardado cada día) ---------- */
+  let avF={ini:'',fin:'',sab:false}, avCurvaOn=false, avCurvaFile=null, avCurvaKey='';
+  const avD = s => { const [y,m,d]=String(s).split('-').map(Number); return new Date(y,(m||1)-1,d||1); };
+  const avIso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const avMas = (s,n) => { const d=avD(s); d.setDate(d.getDate()+n); return avIso(d); };
+  const avDif = (a,b) => Math.round((avD(b)-avD(a))/864e5);
+  const avHabil = (s,sab) => { const w=avD(s).getDay(); return w!==0 && (sab || w!==6); };
+  const avHabiles = (a,b,sab) => { let n=0; for(let f=a,i=0; f<=b && i<1500; f=avMas(f,1), i++) if(avHabil(f,sab)) n++; return n; };   // contando los dos extremos
+  const avDiaNom = s => ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'][avD(s).getDay()];
+  function avCurva(d, acts){
+    const hoy=today(), hist=d.avanceHist||{}, snap=d.avanceSnap||{}, sab=!!avF.sab, w=sum(acts,pesoAct), real={};
+    Object.keys(hist).forEach(f=>{ if(f<=hoy) real[f]=num(hist[f]); });
+    Object.keys(snap).forEach(f=>{ if(f<=hoy && w>0) real[f]=sum(acts,a=>Math.max(0,Math.min(100,num((snap[f]||{})[a.id])))*pesoAct(a))/w; });   // con los pesos de hoy
+    if(acts.length) real[hoy]=avanceActs(acts);
+    const fechas=Object.keys(real).sort(), ini=avF.ini || fechas[0] || hoy, fin=avF.fin&&avF.fin>=ini?avF.fin:'';
+    const pts=fechas.filter(f=>f>=ini).map(f=>({f, p:real[f]})), N=fin?avHabiles(ini,fin,sab):0;
+    const prog = f => !N ? null : f<ini ? 0 : Math.min(100, avHabiles(ini, f<fin?f:fin, sab)/N*100);
+    const rHoy=acts.length?avanceActs(acts):0, E=hoy>=ini?avHabiles(ini,hoy,sab):0; let est='';
+    if(rHoy>=99.95) est=hoy;
+    else if(rHoy>0 && E>0){ let falta=Math.ceil((100-rHoy)/(rHoy/E)-1e-9), f=hoy, i=0; while(falta>0 && i<1500){ f=avMas(f,1); i++; if(avHabil(f,sab)) falta--; } est=f; }
+    return {ini, fin, pts, prog, rHoy, pHoy:N?prog(hoy):null, est, hoy, sab};
+  }
+  /* El dibujo: dentro de la app toma los colores del tema; para compartir va con fondo blanco, título y datos de la orden */
+  function avCurvaSVG(c, d, exp){
+    const K = exp ? {bg:'#FFFFFF',ink:'#15222B',muted:'#5A6A75',line:'#D3DADF',real:'#0D5C63',prog:'#B26A00'} : {bg:'none',ink:'var(--ink)',muted:'var(--muted)',line:'var(--line)',real:'var(--accent)',prog:'var(--muted)'};
+    const W=340, top=exp?86:16, ph=150, H=top+ph+(exp?44:22), L=36, R=14, pw=W-L-R, r1=v=>Math.round(v*10)/10;
+    const ult=c.pts.length?c.pts[c.pts.length-1].f:c.ini, finX=[c.fin, c.hoy, ult].filter(Boolean).sort().pop(), nd=Math.max(1, avDif(c.ini, finX)+1);
+    const X=v=>r1(L+pw*Math.max(0,Math.min(nd,v))/nd), Y=p=>r1(top+ph*(1-Math.max(0,Math.min(100,p))/100)), xf=f=>X(avDif(c.ini,f)+1);
+    let g='';
+    [0,25,50,75,100].forEach(p=>{ g+=`<line x1="${L}" x2="${W-R}" y1="${Y(p)}" y2="${Y(p)}" stroke="${K.line}" stroke-width="1"/><text x="${L-5}" y="${Y(p)+3.5}" text-anchor="end" font-size="9.5" fill="${K.muted}">${p} %</text>`; });
+    if(c.fin){ let pp=`${X(0)},${Y(0)}`; for(let f=c.ini,i=0; f<=c.fin && i<1500; f=avMas(f,1), i++) pp+=` ${xf(f)},${Y(c.prog(f))}`;
+      g+=`<polyline points="${pp}" fill="none" stroke="${K.prog}" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round"/>`; }
+    if(c.hoy>=c.ini){ const x=xf(c.hoy); g+=`<line x1="${x}" x2="${x}" y1="${top}" y2="${top+ph}" stroke="${K.muted}" stroke-width="1" stroke-dasharray="2 3"/><text x="${x}" y="${top-5}" text-anchor="${x>W-R-14?'end':'middle'}" font-size="9.5" fill="${K.muted}">Hoy</text>`; }
+    if(c.pts.length){ g+=`<polyline points="${[`${X(0)},${Y(0)}`].concat(c.pts.map(q=>`${xf(q.f)},${Y(q.p)}`)).join(' ')}" fill="none" stroke="${K.real}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>`;
+      c.pts.forEach(q=>{ g+=`<circle cx="${xf(q.f)}" cy="${Y(q.p)}" r="3" fill="${K.real}"/>`; });
+      const q=c.pts[c.pts.length-1], x=xf(q.f), y=Y(q.p), izq=x>W-R-46; g+=`<text x="${izq?x-7:x+7}" y="${Math.max(top+11,y-7)}" text-anchor="${izq?'end':'start'}" font-size="11.5" font-weight="700" fill="${K.real}">${avPct(q.p)}</text>`; }
+    g+=`<text x="${L}" y="${top+ph+14}" font-size="9.5" fill="${K.muted}">Inicio ${fdate(c.ini).slice(0,5)}</text>`;
+    g+=`<text x="${W-R}" y="${top+ph+14}" text-anchor="end" font-size="9.5" fill="${K.muted}">${c.fin&&c.fin===finX?'Compromiso ':''}${fdate(finX).slice(0,5)}</text>`;
+    if(c.fin && c.fin<finX) g+=`<line x1="${xf(c.fin)}" x2="${xf(c.fin)}" y1="${top+ph}" y2="${top+ph+4}" stroke="${K.prog}" stroke-width="1.5"/><text x="${xf(c.fin)}" y="${top+ph+14}" text-anchor="middle" font-size="9.5" fill="${K.muted}">Compromiso ${fdate(c.fin).slice(0,5)}</text>`;
+    let cab='';
+    if(exp){ const corta=(t,n)=>{ t=String(t||''); return t.length>n?t.slice(0,n-1)+'…':t; }, meta=[d.cliente, d.unidad, tieneOrden(d)?'Orden '+d.ods:''].filter(Boolean).join(' · ');
+      cab=`<rect width="${W}" height="${H}" fill="${K.bg}"/><text x="14" y="22" font-size="13" font-weight="700" fill="${K.ink}">WORKPROCA · Curva de avance</text>
+        <text x="14" y="38" font-size="11" fill="${K.ink}">${esc(corta(d.descripcion,56))}</text><text x="14" y="52" font-size="10" fill="${K.muted}">${esc(corta(meta,62))}</text>
+        <line x1="14" x2="34" y1="66" y2="66" stroke="${K.real}" stroke-width="2.6"/><text x="39" y="69.5" font-size="10" fill="${K.ink}">Real</text>
+        ${c.fin?`<line x1="76" x2="96" y1="66" y2="66" stroke="${K.prog}" stroke-width="2" stroke-dasharray="5 4"/><text x="101" y="69.5" font-size="10" fill="${K.ink}">Programado</text>`:''}
+        <text x="14" y="${top+ph+34}" font-size="10.5" fill="${K.ink}">Fecha: ${fdate(c.hoy)} · Real: ${avPct(c.rHoy)}${c.pHoy!==null?' · Programado a la fecha: '+avPct(c.pHoy):''}</text>`; }
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"${exp?` width="${W}" height="${H}"`:''} font-family="-apple-system,Helvetica,Arial,sans-serif" role="img" aria-label="Curva de avance: real ${avPct(c.rHoy)}${c.pHoy!==null?', programado '+avPct(c.pHoy):''}">${cab}${g}</svg>`;
+  }
+  async function avCurvaPNG(svg){ const m=svg.match(/width="(\d+)" height="(\d+)"/), W=+m[1], H=+m[2], img=new Image();
+    await new Promise((ok,no)=>{ img.onload=ok; img.onerror=()=>no(new Error('No se pudo dibujar la curva')); img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg); });
+    const k=3, cv=document.createElement('canvas'); cv.width=W*k; cv.height=H*k; cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+    return await new Promise((ok,no)=>cv.toBlob(b=>b?ok(b):no(new Error('No se pudo generar la imagen')),'image/png')); }
+  const avCurvaNombre = d => `curva-avance-${String((tieneOrden(d)&&d.ods)||d.unidad||'orden').replace(/[^\w\-]+/g,'-')}-${today()}.png`;
+  /* La imagen se deja lista apenas se dibuja la curva: así «Compartir» abre la hoja del teléfono en el mismo toque */
+  async function prepararCurva(c, d){ const svg=avCurvaSVG(c,d,true); if(svg===avCurvaKey) return avCurvaFile; avCurvaKey=svg; avCurvaFile=null;
+    try{ const b=await avCurvaPNG(svg); if(avCurvaKey===svg) avCurvaFile={blob:b, nombre:avCurvaNombre(d)}; }catch(_){ if(avCurvaKey===svg) avCurvaKey=''; }
+    return avCurvaFile; }
+  function pintarCurva(){ const box=$('#avCurvaBox'), d=docs.find(x=>x.id===avId); if(!box||!d||!avActs.length) return;
+    const c=avCurva(d, avActs), dif=c.pHoy===null?null:Math.round((c.rHoy-c.pHoy)*10)/10;
+    box.innerHTML = avCurvaSVG(c,d,false)
+      + `<div class="avleg"><span><i></i>Real</span>${c.fin?'<span><i class="lp"></i>Programado</span>':''}</div>`
+      + (c.fin&&dif!==null ? `<div class="avst">Programado al cierre de hoy: <b class="num">${avPct(c.pHoy)}</b> · Real: <b class="num">${avPct(c.rHoy)}</b></div><div class="avst${dif<-0.05?' bad':''}">${Math.abs(dif)<0.05?'Vas al día con lo programado.':`Vas <b class="num">${nf1.format(Math.abs(dif))} puntos</b> ${dif<0?'por debajo':'por encima'} de lo programado.`}</div>`
+          : `<div class="tip" style="border:0;margin:6px 0 0">${avF.fin&&!c.fin?'La fecha de compromiso es anterior al inicio.':'Pon la fecha de compromiso para ver la línea programada.'}</div>`)
+      + (c.est && c.rHoy<99.95 ? `<div class="avst">Al ritmo actual terminas el <b>${avDiaNom(c.est)} ${fdate(c.est)}</b>${c.fin?(c.est>c.fin?`, ${avHabiles(avMas(c.fin,1),c.est,c.sab)} ${avHabiles(avMas(c.fin,1),c.est,c.sab)===1?'día hábil':'días hábiles'} después del compromiso.`:', dentro del compromiso.'):'.'}</div>`:'');
+    prepararCurva(c, d);
+  }
+  async function compartirCurva(){ const d=docs.find(x=>x.id===avId); if(!d||!avActs.length){ toast('Todavía no hay avance que dibujar'); return; }
+    let f=avCurvaFile; if(!f){ try{ f=await prepararCurva(avCurva(d,avActs), d); }catch(_){} } if(!f){ toast('No se pudo generar la imagen de la curva'); return; }
+    try{ const file=typeof File==='function'?new File([f.blob], f.nombre, {type:'image/png'}):null;
+      if(file && navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file]}); return; } }
+    catch(e){ if(e&&e.name==='AbortError') return; }
+    if(await guardarArchivo(f.nombre, f.blob)) toast('Curva guardada como imagen'); }
+  function guardarAvF(){ if(!coll||!canWrite||!avId) return; const id=avId, f={...avF};
+    avCola=avCola.then(()=>conLimite(coll.doc(id).update({avInicio:f.ini, avCompromiso:f.fin, avSabado:!!f.sab, actualizado:new Date().toISOString()})))
+      .then(null, e=>{ const x=$('#avErr'); if(x) x.textContent='No se guardaron las fechas: '+errMsg(e); else toast(errMsg(e)); }); }
+  document.addEventListener('click', e=>{ if(e.target.closest('#btnCurva')||e.target.closest('#avCurvaBtn')) compartirCurva(); });
   $('#avMain').addEventListener('click', e=>{ const b=e.target.closest('[data-avopen]'); if(b) openAvance(b.dataset.avopen); });
   $('#avMain').addEventListener('change', e=>{ if(e.target.id==='avNueva' && e.target.value) openAvance(e.target.value); });
   $('#avBody').addEventListener('change', e=>{ const t=e.target, row=t.closest('[data-avrow]');
+    if(t.id==='avIni'||t.id==='avFin'||t.id==='avSab'){ avF={ini:$('#avIni').value||'', fin:$('#avFin').value||'', sab:$('#avSab').checked}; $('#avErr').textContent=''; pintarCurva(); guardarAvF(); return; }
     if(t.dataset.avq!==undefined){ const i=row&&row.querySelector('[data-avp]'); if(i) i.value=t.dataset.avq; row.querySelectorAll('.ecchips label').forEach(l=>l.classList.toggle('on', l.contains(t))); return; }
     if(t.hasAttribute('data-avdetc')){ row.querySelectorAll('[data-avdetf]').forEach(x=>x.hidden=!t.checked); return; }
     if(t.dataset.avnom){ const a=avActs.find(x=>x.id===t.dataset.avnom), n=t.value.trim().replace(/\s+/g,' ').slice(0,160); if(!a) return; if(!n){ t.value=a.nombre; return; } a.nombre=n; if(row) row.querySelector('[data-avnomtxt]').textContent=n; guardarAv(); return; }
@@ -1644,14 +1731,14 @@ select.combo-oculto{display:none}
       $('#avTxt').value=''; renderAvSheet(); guardarAv(); toast(`${ls.length} ${ls.length===1?'actividad agregada':'actividades agregadas'}`); return; }
     if(t.closest('#avAI')){ $('#avSheet').hidden=true; abrirAI('av'); return; }
     if(t.closest('#avRep')){ const d=docs.find(x=>x.id===avId); if(!d) return; const txt=buildAvance(d, avActs);
-      shareMode='av'; $('#ecFiltros').hidden=true; $('#ecFiltros').innerHTML=''; $('#shareTitle').textContent='Reporte de avance'; $('#shareDesc').textContent='Porcentaje de cada actividad y avance total de la orden, con formato de WhatsApp.';
+      shareMode='av'; avCurvaOn=true; $('#ecFiltros').hidden=true; $('#ecFiltros').innerHTML=''; $('#shareTitle').textContent='Reporte de avance'; $('#shareDesc').textContent='Porcentaje de cada actividad y avance total de la orden, con formato de WhatsApp.';
       $('#shareText').value=txt; $('#avSheet').hidden=true; openSheet('#shareSheet'); return; }
   });
 
   function render(){ renderTabs(); renderStats(); renderList(); renderSelbar(); if(typeof renderGas==='function' && modulo==='gas') renderGas(); if(typeof renderRes==='function' && modulo==='res') renderRes(); if(modulo==='av') renderAv(); }
 
   /* ---------- hojas ---------- */
-  function openSheet(id){ $('#scrim').hidden=false; $(id).hidden=false; $(id).dataset.dirty=''; cierreArmado=0; $('#toast').hidden=true; document.body.style.overflow='hidden'; }
+  function openSheet(id){ if(id==='#shareSheet'){ const b=$('#btnCurva'); if(b) b.hidden=!avCurvaOn; avCurvaOn=false; } $('#scrim').hidden=false; $(id).hidden=false; $(id).dataset.dirty=''; cierreArmado=0; $('#toast').hidden=true; document.body.style.overflow='hidden'; }
   /* Lo escrito en una hoja no se pierde por un toque fuera: la primera vez avisa, la segunda descarta */
   let cierreArmado=0;
   document.addEventListener('input', e=>{ const sh=e.target.closest&&e.target.closest('section.sheet'); if(sh && sh.id!=='shareSheet' && !e.target.classList.contains('combo-in')) sh.dataset.dirty='1'; }, true);
@@ -1783,7 +1870,7 @@ select.combo-oculto{display:none}
         /* un abono que vino de un pago repartido conserva su enlace, su fecha de factura y sus bolívares exactos (si no le cambiaron monto ni tasa) */
         c.dePago?{dePago:c.dePago}:{}, c.fechaFactura?{fechaFactura:c.fechaFactura}:{}, (num(c.montoBs)>0 && Math.abs(num(c.montoBs)-num(c.monto)*num(c.tasa))<=5)?{montoBs:num(c.montoBs)}:{})),
       creado:draft.creado||new Date().toISOString(), actualizado:new Date().toISOString() };
-    { const old0=editingId?docs.find(x=>x.id===editingId):null; if(old0) ['actividades','avanceHist'].forEach(k=>{ if(old0[k]!==undefined) body[k]=old0[k]; }); }   /* el avance de la orden se lleva en su módulo: editar el trabajo no lo borra */
+    { const old0=editingId?docs.find(x=>x.id===editingId):null; if(old0) ['actividades','avanceHist','avanceSnap','avInicio','avCompromiso','avSabado'].forEach(k=>{ if(old0[k]!==undefined) body[k]=old0[k]; }); }   /* el avance de la orden se lleva en su módulo: editar el trabajo no lo borra */
     const btn=$('#btnSave'); btn.disabled=true; btn.textContent='Guardando…';
     if(editingId){ const old=docs.find(x=>x.id===editingId); if(old){ diffCampos('facturas', editingId, old.descripcion||'trabajo', old, body, [['monto','monto',v=>nf.format(num(v))],['cliente','cliente'],['unidad','unidad'],['ods','orden de servicio'],['cancelado','cancelado',v=>v?'sí':'no'],['ejecutado','ejecutado',v=>v?'sí':'no']]);
       const resumenC=ls=>(ls||[]).map(c=>`${nf.format(num(c.monto))}${num(c.tasa)>0?' a '+nfT.format(num(c.tasa)):''} (${c.fecha||''})`).join('; '); if(resumenC(old.cobros)!==resumenC(body.cobros)) registrarCambio('facturas', editingId, `${old.descripcion||'trabajo'}: pagos`, resumenC(old.cobros), resumenC(body.cobros)); } }
