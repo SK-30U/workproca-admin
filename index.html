@@ -1566,6 +1566,7 @@ select.combo-oculto{display:none}
     $('#avTitle').textContent='Avance';
     $('#avBody').innerHTML = `<div style="font-weight:600;font-size:16px">${esc(d.descripcion||'')}</div><div class="tip" style="border:0;margin:2px 0 0">${avMeta(d)}</div>
       <div class="avtot"><span style="font-weight:600;color:var(--muted)">Avance total</span><b class="num" id="avTot">${avPct(avanceActs(avActs))}</b></div>${avBar(avanceActs(avActs),'avTotBar')}
+      ${canWrite&&sampleFn?`<div class="row-btns" style="margin-top:12px"><button type="button" class="btn sec" id="avAI">Cargar con asistente</button></div>`:''}
       ${base.length?`<div class="sech" style="font-size:16px">Actividades del presupuesto · ${base.length}</div><div class="lns" style="margin-top:6px">${base.map(fila).join('')}</div>`:''}
       ${adic.length?`<div class="sech" style="font-size:16px">Trabajos adicionales · ${adic.length}</div><div class="tip" style="border:0;margin:0">Se reportan aparte y no entran en el avance total.</div><div class="lns" style="margin-top:6px">${adic.map(fila).join('')}</div>`:''}
       ${!avActs.length?'<div class="empty" style="margin-top:14px"><b>Esta orden no tiene actividades</b>Escríbelas o pega la lista aquí abajo.</div>':''}
@@ -1609,6 +1610,7 @@ select.combo-oculto{display:none}
       if(!ls.length){ $('#avErr').textContent='Escribe al menos una actividad.'; return; }
       ls.forEach((n,i)=>avActs.push({id:'a'+Date.now().toString(36)+i.toString(36)+Math.random().toString(36).slice(2,5), nombre:n, pct:0, peso:1, adicional:ad}));
       $('#avTxt').value=''; renderAvSheet(); guardarAv(); toast(`${ls.length} ${ls.length===1?'actividad agregada':'actividades agregadas'}`); return; }
+    if(t.closest('#avAI')){ $('#avSheet').hidden=true; abrirAI('av'); return; }
     if(t.closest('#avRep')){ const d=docs.find(x=>x.id===avId); if(!d) return; const txt=buildAvance(d, avActs);
       shareMode='av'; $('#ecFiltros').hidden=true; $('#ecFiltros').innerHTML=''; $('#shareTitle').textContent='Reporte de avance'; $('#shareDesc').textContent='Porcentaje de cada actividad y avance total de la orden, con formato de WhatsApp.';
       $('#shareText').value=txt; $('#avSheet').hidden=true; openSheet('#shareSheet'); return; }
@@ -2447,7 +2449,7 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
       $('#aiStat').textContent = esResp ? 'Corrigiendo la propuesta con tu respuesta…' : 'Leyendo… esto puede tardar hasta un minuto.';
       const opts={signal:aiCtl.signal, cache:false};
       if(imgs.length) opts.images=imgs;
-      let pr = aiMode==='asis' ? promptAsis(texto, textos, imgs.length) : aiMode==='trab' ? promptTrab(texto, textos, imgs.length) : aiMode==='gas' ? promptGas(texto, textos, imgs.length) : aiMode==='inv' ? promptInv(texto, textos, imgs.length) : promptAI(texto, textos, imgs.length);
+      let pr = aiMode==='av' ? promptAv(texto, textos, imgs.length) : aiMode==='asis' ? promptAsis(texto, textos, imgs.length) : aiMode==='trab' ? promptTrab(texto, textos, imgs.length) : aiMode==='gas' ? promptGas(texto, textos, imgs.length) : aiMode==='inv' ? promptInv(texto, textos, imgs.length) : promptAI(texto, textos, imgs.length);
       if(esResp){
         aiLast.hilo=[...(aiLast.hilo||[]), {propuesta:aiLast.res, respuesta:respuesta.trim()}];
         pr += `\n\nYa revisamos este material antes. Conversación hasta ahora (tu propuesta y la respuesta de Fran):\n${aiLast.hilo.map((h,k)=>`Propuesta ${k+1}:\n${JSON.stringify(h.propuesta)}\nRespuesta de Fran:\n<<<\n${h.respuesta}\n>>>`).join('\n\n')}\n\nAplica lo que dice Fran (su palabra manda sobre lo que leíste) y devuelve la propuesta completa corregida, con el mismo formato JSON. Quita de "dudas" lo que su respuesta ya resolvió.`;
@@ -2456,7 +2458,7 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
       aiLast = {texto, textos, imgs, res:res||{}, hilo: esResp ? aiLast.hilo : []};
       $('#aiReplyBox').hidden = !canWrite; $('#aiReply').value='';
       $('#aiStat').textContent=[...avisos, lineaConsultaIA()].filter(Boolean).join(' ');
-      if(aiMode==='asis') renderAIAsis(res||{}); else if(aiMode==='trab') renderAITrab(res||{}); else if(aiMode==='gas') renderAIGas(res||{}); else if(aiMode==='inv') renderAIInv(res||{}); else renderAI(res||{});
+      if(aiMode==='av') renderAIAv(res||{}); else if(aiMode==='asis') renderAIAsis(res||{}); else if(aiMode==='trab') renderAITrab(res||{}); else if(aiMode==='gas') renderAIGas(res||{}); else if(aiMode==='inv') renderAIInv(res||{}); else renderAI(res||{});
     }catch(e){
       const code=e&&e.code;
       $('#aiStat').textContent = msgIA(e);
@@ -2541,6 +2543,62 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
     }catch(err){ $('#aiStat').textContent=errMsg(err)+(ok?` Se alcanzaron a guardar ${ok}.`:''); }
     finally{ btn.disabled=false; btn.textContent='Guardar los cambios marcados'; }
   }
+  /* ---------- asistente para el avance de una orden ---------- */
+  function promptAv(texto, textosArch, nImgs){
+    const d=docs.find(x=>x.id===avId)||{};
+    return `Eres el asistente de avance de trabajos de WORKPROCA (taller naval en Maracaibo, Venezuela). Te paso material sobre UNA orden: «${d.descripcion||''}»${d.unidad?', embarcación '+d.unidad:''}${d.ods?', orden de servicio '+d.ods:''}. El material puede ser el presupuesto o la orden de servicio (para cargar sus actividades) o un mensaje, nota o reporte con lo que se ha hecho (para actualizar porcentajes de avance).
+
+Actividades ya cargadas en esta orden (JSON):
+${JSON.stringify(avActs.map(a=>({id:a.id, nombre:a.nombre, pct:pctAct(a), adicional:!!a.adicional})))}
+
+Reglas:
+- Una actividad por cada ítem del presupuesto o de la orden. Nombre corto y claro, como está en el documento, sin numeración, sin precios y sin punto final. No juntes ni dividas ítems.
+- Si un trabajo del material corresponde a una actividad ya cargada (aunque esté escrito de otra forma), usa su "id" y cambia solo el porcentaje. Nunca la dupliques. No devuelvas actividades ya cargadas que no cambian.
+- "pct" es el avance de 0 a 100. "Listo", "terminado", "ejecutado", "se hizo", "culminado" es 100. "Por la mitad" es 50. Una actividad nueva sin avance mencionado va en 0.
+- "adicional": true cuando el material dice que es un trabajo adicional, extra o fuera del presupuesto, o cuando ya hay actividades del presupuesto cargadas y el trabajo mencionado no corresponde a ninguna de ellas ni a un ítem del presupuesto.
+- No inventes actividades ni porcentajes. Lo que no aparezca en el material no se toca.
+${REGLAS_COMUNES}
+- Fecha de hoy: ${today()}.
+
+Material a leer:
+${texto?'Texto:\n<<<\n'+texto+'\n>>>\n':''}${textosArch.join('\n\n')}${nImgs?`\n(Además van ${nImgs} imagen(es) adjunta(s): léelas con cuidado.)`:''}
+
+Responde solo con un objeto JSON:
+{"resumen":"una frase","actividades":[{"id":"<id de una actividad ya cargada, o vacío si es nueva>","nombre":"...","pct":0,"adicional":false,"motivo":"frase corta, solo si hace falta"}],"dudas":[]}`;
+  }
+  let aiAv=[];
+  function renderAIAv(res){
+    aiAv=(Array.isArray(res.actividades)?res.actividades:[]).map(x=>{ const nom=String(x.nombre||'').trim().replace(/\s+/g,' ').replace(/[.;,:]+$/,'').slice(0,160);
+      const ex=(x.id&&avActs.find(a=>a.id===x.id)) || (nom&&avActs.find(a=>norm(a.nombre)===norm(nom))) || null;
+      return {ex, nombre:nom||(ex?ex.nombre:''), pct:Math.round(Math.max(0,Math.min(100,num(x.pct)))*10)/10, adicional:ex?!!ex.adicional:!!x.adicional, motivo:String(x.motivo||'')}; })
+      .filter(x=>x.nombre && !(x.ex && Math.abs(pctAct(x.ex)-x.pct)<0.05));
+    const dudas=Array.isArray(res.dudas)?res.dudas.filter(Boolean):[];
+    const nN=aiAv.filter(x=>!x.ex&&!x.adicional).length, nA=aiAv.filter(x=>!x.ex&&x.adicional).length, nU=aiAv.filter(x=>x.ex).length;
+    const cuenta=[nN&&`${nN} ${nN===1?'actividad nueva':'actividades nuevas'}`, nA&&`${nA} ${nA===1?'adicional nuevo':'adicionales nuevos'}`, nU&&`${nU} ${nU===1?'avance actualizado':'avances actualizados'}`].filter(Boolean).join(' · ');
+    $('#aiRes').innerHTML = (res.resumen?`<div class="sum">${esc(res.resumen)}${cuenta?'<br><b>'+cuenta+'</b>':''}</div>`:'')
+      + aiAv.map((x,i)=>`<div class="act tr"><input type="checkbox" data-vchk="${i}" checked aria-label="Incluir ${esc(x.nombre)}">
+          <div style="min-width:0;flex:1"><span class="tag">${x.ex?'Actualizar avance':x.adicional?'Trabajo adicional nuevo':'Actividad nueva'}</span>
+            ${x.ex?`<div>${esc(x.ex.nombre)} <small class="num">(está en ${avPct(pctAct(x.ex))})</small></div>`:''}
+            <div class="g">${x.ex?'':`<label style="grid-column:1/-1">Nombre<input data-vi="${i}" data-k="nombre" value="${esc(x.nombre)}" autocomplete="off"></label>`}
+              <label>Avance (%)<input data-vi="${i}" data-k="pct" inputmode="decimal" value="${nf1.format(x.pct)}"></label>
+              ${x.ex?'':`<label style="flex-direction:row;align-items:center;gap:8px;align-self:end;padding-bottom:8px"><input type="checkbox" data-vi="${i}" data-k="adicional"${x.adicional?' checked':''} style="width:18px;height:18px;accent-color:var(--accent)"> Es adicional</label>`}</div>
+            ${x.motivo?`<small>${esc(x.motivo)}</small>`:''}</div></div>`).join('')
+      + (dudas.length?`<div class="dudas"><b>Revisa antes de guardar</b><ul>${dudas.map(q=>`<li>${esc(q)}</li>`).join('')}</ul></div>`:'')
+      + (!aiAv.length?'<div class="sum">No encontré actividades nuevas ni cambios de avance en lo que enviaste.</div>':'');
+    $('#aiApplyRow').hidden=!aiAv.length || !canWrite;
+  }
+  function aplicarAIAv(){
+    let nuevas=0, act=0;
+    aiAv.forEach((x,i)=>{ const chk=document.querySelector(`[data-vchk="${i}"]`); if(!chk||!chk.checked) return; const el=k=>document.querySelector(`[data-vi="${i}"][data-k="${k}"]`);
+      const pv=parseNum((el('pct')||{}).value), p=Math.round(Math.max(0,Math.min(100,isNaN(pv)?0:pv))*10)/10;
+      if(x.ex){ const a=avActs.find(y=>y.id===x.ex.id); if(a){ a.pct=p; act++; } return; }
+      const n=String((el('nombre')||{}).value||'').trim().replace(/\s+/g,' ').slice(0,160); if(!n) return;
+      avActs.push({id:'a'+Date.now().toString(36)+i.toString(36)+Math.random().toString(36).slice(2,5), nombre:n, pct:p, peso:1, adicional:!!(el('adicional')&&el('adicional').checked)}); nuevas++; });
+    if(!nuevas&&!act){ $('#aiStat').textContent='No marcaste nada.'; return; }
+    guardarAv(); $('#aiRes').innerHTML=''; $('#aiApplyRow').hidden=true; $('#aiReplyBox').hidden=true; aiLast=null; aiAv=[]; $('#aiText').value=''; aiFiles=[]; renderChips();
+    $('#aiSheet').hidden=true; $('#aiSheet').dataset.dirty=''; renderAvSheet(); $('#avSheet').hidden=false; $('#avSheet').dataset.dirty='';
+    toast([nuevas&&`${nuevas} ${nuevas===1?'actividad agregada':'actividades agregadas'}`, act&&`${act} ${act===1?'avance actualizado':'avances actualizados'}`].filter(Boolean).join(' · '));
+  }
   /* ---------- asistente para trabajadores ---------- */
   function abrirAI(modo){
     aiMode=modo; aiActs=[]; aiTrabs=[]; aiLast=null; $('#aiReplyBox').hidden=true; $('#aiReply').value='';
@@ -2565,6 +2623,12 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
       $('#aiDesc').textContent='Sube fotos de cédulas, capturas de pago móvil o archivos, o pega los datos en texto. El asistente arma una ficha por persona y te marca lo que falta; nada se guarda hasta que confirmes.';
       $('#aiText').placeholder='Por ejemplo: “Odilio Molero, ayudante, 0414 1234567, Banesco, cédula 20.123.456”';
       $('#aiApply').textContent='Guardar trabajadores marcados';
+    } else if(modo==='av'){
+      const dAv=docs.find(x=>x.id===avId)||{};
+      $('#aiTitle').textContent='Avance con asistente';
+      $('#aiDesc').textContent=`Orden: ${dAv.descripcion||''}${dAv.unidad?' · '+dAv.unidad:''}. Sube el presupuesto o la orden (foto o PDF) para cargar sus actividades, o pega el mensaje con lo que se hizo para actualizar los porcentajes. Revisas todo antes de guardar.`;
+      $('#aiText').placeholder='Por ejemplo: “Hoy se terminó la base de la planta eléctrica y los escapes van por la mitad. Adicional: se desmontó la grúa bandera”';
+      $('#aiApply').textContent='Guardar lo marcado';
     } else {
       $('#aiTitle').textContent='Cargar con asistente';
       $('#aiDesc').textContent='Pega el mensaje del cliente o sube fotos, PDF, Excel o Word de presupuestos, órdenes de servicio, facturas o pagos. El asistente propone los cambios y tú los revisas, corriges o le respondes antes de guardar.';
@@ -2873,7 +2937,7 @@ Responde solo con un objeto JSON:
   $('#aiGo').addEventListener('click', ()=>leerAI());
   $('#aiReplyGo').addEventListener('click', ()=>leerAI($('#aiReply').value));
   $('#aiStop').addEventListener('click', ()=>aiCtl&&aiCtl.abort());
-  $('#aiApply').addEventListener('click', ()=> aiMode==='asis' ? aplicarAIAsis() : aiMode==='trab' ? aplicarAITrab() : aiMode==='gas' ? aplicarAIGas() : aiMode==='inv' ? aplicarAIInv() : aplicarAI());
+  $('#aiApply').addEventListener('click', ()=> aiMode==='av' ? aplicarAIAv() : aiMode==='asis' ? aplicarAIAsis() : aiMode==='trab' ? aplicarAITrab() : aiMode==='gas' ? aplicarAIGas() : aiMode==='inv' ? aplicarAIInv() : aplicarAI());
 
   /* =====================================================================
      MÓDULOS (pestañas de arriba)
