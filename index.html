@@ -304,22 +304,25 @@ main{padding-bottom:130px}
 .topnav{position:sticky;top:env(safe-area-inset-top,0px);z-index:8;background:var(--bg);padding-block:14px 10px;border-bottom:1px solid var(--line)}
 /* Instalada en la pantalla de inicio, la barra de estado del teléfono queda pegada arriba: más aire para las pestañas */
 @media (display-mode: standalone){.topnav{padding-top:22px}}
-.modtabs{display:flex;gap:4px}
-@media (max-width:370px){.modtabs{gap:3px;overflow-x:auto;scrollbar-width:none}.modtabs::-webkit-scrollbar{display:none}.modtabs button{flex:1 0 auto;overflow:visible;font-size:11px;letter-spacing:-.03em;padding:9px 6px}}
+.modtabs{display:flex;gap:3px}
 .avbar{height:8px;border-radius:99px;background:var(--sunk);border:1px solid var(--line);overflow:hidden;margin-top:8px}.avbar i{display:block;height:100%;background:var(--accent);border-radius:99px}
 .avcard{width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;display:block}
 .avrow .h{align-items:center}.avrow .avn{flex:1;min-width:0;font-size:14.5px;line-height:1.35}
 .avin{display:flex;align-items:center;gap:5px;flex:none}.avin input{width:62px;text-align:right;border:1px solid var(--line);background:var(--sunk);border-radius:10px;padding:9px 8px;font-size:16px;font-weight:600;color:var(--ink)}
 .avin .btn{padding:9px 9px;font-size:13px}
-.avleg{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:2px}.avleg i{display:inline-block;width:18px;height:0;border-top:2.6px solid var(--accent);vertical-align:middle;margin-right:5px}.avleg i.lp{border-top:2px dashed var(--muted)}.avst{font-size:13.5px;margin-top:6px}.avst.bad b{color:var(--danger)}#avCurvaBox svg{display:block;width:100%;height:auto;margin-top:8px}
+.avleg{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:2px}.avleg i{display:inline-block;width:18px;height:0;border-top:2.6px solid var(--accent);vertical-align:middle;margin-right:5px}.avleg i.lp{border-top:2px dashed var(--muted)}.avst{font-size:13.5px;margin-top:6px}.avfalta{margin-top:8px;padding:10px 12px;border:1px solid var(--danger);border-radius:10px;font-size:13.5px;font-weight:600}
+label.f.fvacia{position:relative}label.f.fvacia::after{content:'Toca para elegir';position:absolute;left:12px;bottom:12px;color:var(--muted);font-weight:400;font-size:15px;pointer-events:none}.avst.bad b{color:var(--danger)}#avCurvaBox svg{display:block;width:100%;height:auto;margin-top:8px}
 .avpct{font-size:17px;flex:none}.avgrp{font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:14px}
 .avdet{margin-top:8px;font-size:13px;font-weight:600;color:var(--danger)}.avedit{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 .avtot{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:6px}.avtot b{font-family:var(--f-disp);font-size:30px}
 label.f textarea{border:1px solid var(--line);background:var(--sunk);border-radius:10px;padding:10px 11px;font-size:16px;font-weight:500;color:var(--ink);width:100%;min-width:0;font-family:inherit;resize:vertical}
 .tabs{mask-image:linear-gradient(90deg,#000 88%,transparent);-webkit-mask-image:linear-gradient(90deg,#000 88%,transparent)}
 .tabs.fin{mask-image:none;-webkit-mask-image:none}
-.modtabs button{flex:1 1 auto;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 2px;font-weight:700;font-size:11.5px;letter-spacing:-.02em;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:clip}
+.modtabs button{flex:1 1 auto;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 1px;font-weight:700;font-size:11.5px;letter-spacing:-.02em;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:clip}
 .modtabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+@media (max-width:384px){#modTabs button{font-size:10.8px;letter-spacing:-.035em}}
+@media (max-width:366px){#modTabs button{font-size:10.3px;letter-spacing:-.04em}}
+@media (max-width:349px){#modTabs{overflow-x:auto;scrollbar-width:none}#modTabs::-webkit-scrollbar{display:none}#modTabs button{flex:1 0 auto;overflow:visible;padding:9px 6px}}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 13px}
 .daynav{display:flex;align-items:center;gap:8px;margin-top:16px}
 .daynav input{flex:1;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 11px;font-size:16px;min-height:44px;-webkit-appearance:none;appearance:none}
@@ -521,7 +524,7 @@ textarea.share{width:100%;min-height:46vh;border:1px solid var(--line);backgroun
 .ecchips input{width:16px;height:16px;accent-color:var(--accent)}
 textarea.share{min-height:38vh}
 .toast .tact{margin-left:12px;border:0;background:#fff;color:#04282B;border-radius:8px;font-weight:800;font-size:14px;padding:6px 10px;min-height:32px}
-@media (max-width:360px){#modTabs button{font-size:11.5px;padding-left:6px;padding-right:6px}.tabs button{font-size:12px}}
+@media (max-width:360px){.tabs button{font-size:12px}}
 .combo{position:relative}.combo[hidden]{display:none}
 .combo-in{width:100%;border:1px solid var(--line);background:var(--sunk);border-radius:10px;padding:10px 34px 10px 11px;font-size:16px;font-weight:500;color:var(--ink);font-family:inherit;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%;background-size:5px 5px;background-repeat:no-repeat}
 .combo-in::placeholder{color:var(--muted)}
@@ -553,6 +556,7 @@ select.combo-oculto{display:none}
       <button type="button" role="tab" data-m="gas" aria-selected="false">Gastos</button>
       <button type="button" role="tab" data-m="inv" aria-selected="false">Inventario</button>
       <button type="button" role="tab" data-m="res" aria-selected="false">Resumen</button>
+      <button type="button" role="tab" data-m="dat" aria-selected="false">Datos</button>
     </nav>
   </div>
 </div>
@@ -647,6 +651,7 @@ select.combo-oculto{display:none}
 
 <div id="modRes" hidden><main class="wrap" id="rMain"></main></div>
 <div id="modAv" hidden><main class="wrap" id="avMain"></main></div>
+<div id="modDat" hidden><main class="wrap" id="datMain"></main></div>
 <div id="modReg" hidden><main class="wrap" id="regMain"></main></div>
 
 <button class="fab" id="fab" type="button">
@@ -1550,7 +1555,7 @@ select.combo-oculto{display:none}
         :`<div class="empty"><b>Todavía no hay órdenes con avance</b>${canWrite?'Elige un trabajo arriba y cárgale sus actividades.':''}</div>`}
       <div style="height:20px"></div>`;
   }
-  function openAvance(id){ const d=docs.find(x=>x.id===id); if(!d) return; avId=id; avActs=JSON.parse(JSON.stringify(actsDe(d))); avDelArmed=''; avEdit=''; avCarga=''; avF={ini:d.avInicio||'', fin:d.avCompromiso||'', sab:!!d.avSabado}; renderAvSheet(); openSheet('#avSheet'); }
+  function openAvance(id){ const d=docs.find(x=>x.id===id); if(!d) return; avId=id; avActs=JSON.parse(JSON.stringify(actsDe(d))); avDelArmed=''; avEdit=''; avCarga=''; avF={ini:d.avInicio||'', fin:d.avCompromiso||'', sab:!!d.avSabado, dom:!!d.avDomingo, horas:num(d.avHorasDia)>0?num(d.avHorasDia):8, dias:{...(d.avDiasEsp||{})}}; avHorOpen=false; renderAvSheet(); openSheet('#avSheet'); }
   function pintarTotAv(){ const t=avanceActs(avActs), a=$('#avTot'), b=$('#avTotBar'); if(a) a.textContent=avPct(t); if(b) b.firstElementChild.style.width=t+'%'; pintarCurva(); }
   /* Estado de una actividad: terminada, detenida, en ejecución o por iniciar */
   const FRENOS=['Falta de material','Falta de equipo o herramienta','Falta de personal','Espera por el cliente','Espera por otra actividad','Clima','Otro'];
@@ -1590,11 +1595,21 @@ select.combo-oculto{display:none}
     $('#avTitle').textContent='Avance';
     $('#avBody').innerHTML = `<div style="font-weight:600;font-size:16px">${esc(d.descripcion||'')}</div><div class="tip" style="border:0;margin:2px 0 0">${avMeta(d)}</div>
       <div class="avtot"><span style="font-weight:600;color:var(--muted)">Avance total</span><b class="num" id="avTot">${avPct(avanceActs(avActs))}</b></div>${avBar(avanceActs(avActs),'avTotBar')}
-      <div class="row-btns" style="margin-top:12px;align-items:stretch"><button type="button" class="btn pri" id="avRep"${avActs.length?'':' disabled'}>Generar reporte</button>${canWrite&&sampleFn?'<button type="button" class="btn sec" id="avAI">Cargar con asistente</button>':''}</div>
+      <div class="row-btns" style="margin-top:12px;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;align-items:stretch"><button type="button" class="btn pri" id="avRep"${avActs.length?'':' disabled'}>Generar reporte</button>${canWrite&&sampleFn?'<button type="button" class="btn sec" id="avAI" style="margin:0">Cargar con asistente</button>':''}</div>
       ${avActs.length?`<div class="sech" style="font-size:16px">Curva de avance</div>
-        <div class="grid"><label class="f">Fecha de inicio<input type="date" id="avIni" value="${esc(avF.ini)}"${canWrite?'':' disabled'}></label>
-          <label class="f">Fecha de compromiso<input type="date" id="avFin" value="${esc(avF.fin)}"${canWrite?'':' disabled'}></label>
-          <label class="chk full"><input type="checkbox" id="avSab"${avF.sab?' checked':''}${canWrite?'':' disabled'}> Se trabaja el sábado</label></div>
+        <div class="grid"><label class="f${avF.ini?'':' fvacia'}">Fecha de inicio<input type="date" id="avIni" value="${esc(avF.ini)}"${canWrite?'':' disabled'}></label>
+          <label class="f${avF.fin?'':' fvacia'}">Fecha de compromiso<input type="date" id="avFin" value="${esc(avF.fin)}"${canWrite?'':' disabled'}></label>
+        </div>
+        ${(()=>{ const esp=Object.keys(avF.dias||{}).sort(), j=avJornada(avF), sem=avF.sab&&avF.dom?'todos los días':avF.sab?'lunes a sábado':avF.dom?'lunes a viernes y domingo':'lunes a viernes';
+          return `<details class="ddet" id="avHor"${avHorOpen?' open':''} style="margin-top:8px"><summary>Horario: ${nf1.format(j)} horas por día, ${sem}${esp.length?` · ${esp.length} ${esp.length===1?'día con horario distinto':'días con horario distinto'}`:''}</summary>
+          <div class="grid" style="margin-top:8px"><label class="f">Horas de un día normal<input id="avHorasDia" inputmode="decimal" value="${nf1.format(j)}"${canWrite?'':' disabled'}></label><span></span>
+            <label class="chk"><input type="checkbox" id="avSab"${avF.sab?' checked':''}${canWrite?'':' disabled'}> Se trabaja el sábado</label>
+            <label class="chk"><input type="checkbox" id="avDom"${avF.dom?' checked':''}${canWrite?'':' disabled'}> Se trabaja el domingo</label></div>
+          <div style="font-weight:700;font-size:13.5px;margin-top:14px">Días con horario distinto</div>
+          <div class="tip" style="border:0;margin:2px 0 0">Para sobretiempo, alargar la jornada, trabajar medio día o un día libre: pon la fecha y las horas que se trabajan ese día (0 si no se trabaja).</div>
+          ${esp.length?`<div class="lns" style="margin-top:6px">${esp.map(f=>{ const h=num(avF.dias[f]), base=avHoras(f,{...avF,dias:{}}), ex=h-base; return `<div class="ln"><div class="h"><span>${avDiaNom(f)} ${fdate(f)}</span><b class="num">${nf1.format(h)} ${h===1?'hora':'horas'}</b></div><div class="d">${h<=0?'No se trabaja':ex>0?`${nf1.format(ex)} de sobretiempo sobre ${base>0?'las '+nf1.format(base)+' normales':'un día que no se trabajaba'}`:ex<0?`${nf1.format(-ex)} menos que un día normal`:'Igual que un día normal'}</div>${canWrite?`<div class="acts" style="margin-top:6px"><button type="button" class="btn del" data-avdiadel="${f}">Quitar</button></div>`:''}</div>`; }).join('')}</div>`:''}
+          ${canWrite?`<div class="grid" style="margin-top:8px"><label class="f">Fecha<input type="date" id="avDiaF"></label><label class="f">Horas ese día<input id="avDiaH" inputmode="decimal" placeholder="Ej.: 12"></label></div>
+          <div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" id="avDiaAdd">Agregar día</button></div>`:''}</details>`; })()}
         <div id="avCurvaBox"></div>
         <div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" id="avCurvaBtn">Compartir curva (imagen)</button></div>`:''}
       ${base.length?`<div class="sech" style="font-size:16px">Actividades de la ODS · ${base.length}</div>${grupos(base)}`:''}
@@ -1625,30 +1640,33 @@ select.combo-oculto{display:none}
     if(base.length){ L.push('', '*Actividades de la ODS*'); bloque(base); }
     if(adic.length){ L.push('', '*Trabajos adicionales (no incluidos en la ODS)*'); bloque(adic); }
     if(acts.length) L.push('', `*Avance total${base.length&&adic.length?' (ODS más adicionales)':''}: ${avPct(avanceActs(acts))}*`);
-    if(acts.length && d.id===avId){ const c=avCurva(d, acts); if(c.fin && c.pHoy!==null) L.push(`Programado a la fecha: ${avPct(c.pHoy)}`, `Fecha de compromiso: ${fdate(c.fin)}`); }
+    if(acts.length && d.id===avId){ const c=avCurva(d, acts); if(c.fin && c.pHoy!==null) L.push(`Planificado a la fecha: ${avPct(c.pHoy)}`, `Fecha de compromiso: ${fdate(c.fin)}`); }
     return L.join('\n');
   }
-  /* ---------- curva de avance: programado (recta por días hábiles entre inicio y compromiso) contra real (lo guardado cada día) ---------- */
-  let avF={ini:'',fin:'',sab:false}, avCurvaOn=false, avCurvaFile=null, avCurvaKey='';
+  /* ---------- curva de avance: planificado (recta por días hábiles entre inicio y compromiso) contra real (lo guardado cada día) ---------- */
+  let avF={ini:'',fin:'',sab:false,dom:false,horas:8,dias:{}}, avHorOpen=false, avCurvaOn=false, avCurvaFile=null, avCurvaKey='';
   const avD = s => { const [y,m,d]=String(s).split('-').map(Number); return new Date(y,(m||1)-1,d||1); };
   const avIso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const avMas = (s,n) => { const d=avD(s); d.setDate(d.getDate()+n); return avIso(d); };
   const avDif = (a,b) => Math.round((avD(b)-avD(a))/864e5);
-  const avHabil = (s,sab) => { const w=avD(s).getDay(); return w!==0 && (sab || w!==6); };
-  const avHabiles = (a,b,sab) => { let n=0; for(let f=a,i=0; f<=b && i<1500; f=avMas(f,1), i++) if(avHabil(f,sab)) n++; return n; };   // contando los dos extremos
+  const avJornada = F => num(F.horas)>0 ? num(F.horas) : 8;
+  /* Horas de trabajo de un día: las del día normal, cero si no se trabaja ese día de la semana, o las que se le pusieron a esa fecha (sobretiempo, medio día, día libre) */
+  const avHoras = (f,F) => { const e=(F.dias||{})[f]; if(e!==undefined && e!==null && e!=='') return Math.max(0,num(e)); const w=avD(f).getDay(); return (w===0?F.dom:w===6?F.sab:true) ? avJornada(F) : 0; };
+  const avHorasEntre = (a,b,F) => { let n=0; for(let f=a,i=0; f<=b && i<1500; f=avMas(f,1), i++) n+=avHoras(f,F); return n; };   // contando los dos extremos
+  const avDiasEntre = (a,b,F) => { let n=0; for(let f=a,i=0; f<=b && i<1500; f=avMas(f,1), i++) if(avHoras(f,F)>0) n++; return n; };
   const avDiaNom = s => ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'][avD(s).getDay()];
   function avCurva(d, acts){
-    const hoy=today(), hist=d.avanceHist||{}, snap=d.avanceSnap||{}, sab=!!avF.sab, w=sum(acts,pesoAct), real={};
+    const hoy=today(), hist=d.avanceHist||{}, snap=d.avanceSnap||{}, F=avF, w=sum(acts,pesoAct), real={};
     Object.keys(hist).forEach(f=>{ if(f<=hoy) real[f]=num(hist[f]); });
     Object.keys(snap).forEach(f=>{ if(f<=hoy && w>0) real[f]=sum(acts,a=>Math.max(0,Math.min(100,num((snap[f]||{})[a.id])))*pesoAct(a))/w; });   // con los pesos de hoy
     if(acts.length) real[hoy]=avanceActs(acts);
     const fechas=Object.keys(real).sort(), ini=avF.ini || fechas[0] || hoy, fin=avF.fin&&avF.fin>=ini?avF.fin:'';
-    const pts=fechas.filter(f=>f>=ini).map(f=>({f, p:real[f]})), N=fin?avHabiles(ini,fin,sab):0;
-    const prog = f => !N ? null : f<ini ? 0 : Math.min(100, avHabiles(ini, f<fin?f:fin, sab)/N*100);
-    const rHoy=acts.length?avanceActs(acts):0, E=hoy>=ini?avHabiles(ini,hoy,sab):0; let est='';
+    const pts=fechas.filter(f=>f>=ini).map(f=>({f, p:real[f]})), N=fin?avHorasEntre(ini,fin,F):0;
+    const prog = f => !N ? null : f<ini ? 0 : Math.min(100, avHorasEntre(ini, f<fin?f:fin, F)/N*100);
+    const rHoy=acts.length?avanceActs(acts):0, E=hoy>=ini?avHorasEntre(ini,hoy,F):0; let est='';
     if(rHoy>=99.95) est=hoy;
-    else if(rHoy>0 && E>0){ let falta=Math.ceil((100-rHoy)/(rHoy/E)-1e-9), f=hoy, i=0; while(falta>0 && i<1500){ f=avMas(f,1); i++; if(avHabil(f,sab)) falta--; } est=f; }
-    return {ini, fin, pts, prog, rHoy, pHoy:N?prog(hoy):null, est, hoy, sab};
+    else if(rHoy>0 && E>0){ let falta=(100-rHoy)/(rHoy/E), f=hoy, i=0; while(falta>1e-6 && i<1500){ f=avMas(f,1); i++; falta-=avHoras(f,F); } est=i<1500?f:''; }   // horas de trabajo que faltan al ritmo que se lleva
+    return {ini, fin, pts, prog, rHoy, pHoy:N?prog(hoy):null, est, hoy};
   }
   /* El dibujo: dentro de la app toma los colores del tema; para compartir va con fondo blanco, título y datos de la orden */
   function avCurvaSVG(c, d, exp){
@@ -1672,9 +1690,9 @@ select.combo-oculto{display:none}
       cab=`<rect width="${W}" height="${H}" fill="${K.bg}"/><text x="14" y="22" font-size="13" font-weight="700" fill="${K.ink}">WORKPROCA · Curva de avance</text>
         <text x="14" y="38" font-size="11" fill="${K.ink}">${esc(corta(d.descripcion,56))}</text><text x="14" y="52" font-size="10" fill="${K.muted}">${esc(corta(meta,62))}</text>
         <line x1="14" x2="34" y1="66" y2="66" stroke="${K.real}" stroke-width="2.6"/><text x="39" y="69.5" font-size="10" fill="${K.ink}">Real</text>
-        ${c.fin?`<line x1="76" x2="96" y1="66" y2="66" stroke="${K.prog}" stroke-width="2" stroke-dasharray="5 4"/><text x="101" y="69.5" font-size="10" fill="${K.ink}">Programado</text>`:''}
-        <text x="14" y="${top+ph+34}" font-size="10.5" fill="${K.ink}">Fecha: ${fdate(c.hoy)} · Real: ${avPct(c.rHoy)}${c.pHoy!==null?' · Programado a la fecha: '+avPct(c.pHoy):''}</text>`; }
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"${exp?` width="${W}" height="${H}"`:''} font-family="-apple-system,Helvetica,Arial,sans-serif" role="img" aria-label="Curva de avance: real ${avPct(c.rHoy)}${c.pHoy!==null?', programado '+avPct(c.pHoy):''}">${cab}${g}</svg>`;
+        ${c.fin?`<line x1="76" x2="96" y1="66" y2="66" stroke="${K.prog}" stroke-width="2" stroke-dasharray="5 4"/><text x="101" y="69.5" font-size="10" fill="${K.ink}">Planificado</text>`:''}
+        <text x="14" y="${top+ph+34}" font-size="10.5" fill="${K.ink}">Fecha: ${fdate(c.hoy)} · Real: ${avPct(c.rHoy)}${c.pHoy!==null?' · Planificado a la fecha: '+avPct(c.pHoy):''}</text>`; }
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"${exp?` width="${W}" height="${H}"`:''} font-family="-apple-system,Helvetica,Arial,sans-serif" role="img" aria-label="Curva de avance: real ${avPct(c.rHoy)}${c.pHoy!==null?', planificado '+avPct(c.pHoy):''}">${cab}${g}</svg>`;
   }
   async function avCurvaPNG(svg){ const m=svg.match(/width="(\d+)" height="(\d+)"/), W=+m[1], H=+m[2], img=new Image();
     await new Promise((ok,no)=>{ img.onload=ok; img.onerror=()=>no(new Error('No se pudo dibujar la curva')); img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg); });
@@ -1688,10 +1706,10 @@ select.combo-oculto{display:none}
   function pintarCurva(){ const box=$('#avCurvaBox'), d=docs.find(x=>x.id===avId); if(!box||!d||!avActs.length) return;
     const c=avCurva(d, avActs), dif=c.pHoy===null?null:Math.round((c.rHoy-c.pHoy)*10)/10;
     box.innerHTML = avCurvaSVG(c,d,false)
-      + `<div class="avleg"><span><i></i>Real</span>${c.fin?'<span><i class="lp"></i>Programado</span>':''}</div>`
-      + (c.fin&&dif!==null ? `<div class="avst">Programado al cierre de hoy: <b class="num">${avPct(c.pHoy)}</b> · Real: <b class="num">${avPct(c.rHoy)}</b></div><div class="avst${dif<-0.05?' bad':''}">${Math.abs(dif)<0.05?'Vas al día con lo programado.':`Vas <b class="num">${nf1.format(Math.abs(dif))} puntos</b> ${dif<0?'por debajo':'por encima'} de lo programado.`}</div>`
-          : `<div class="tip" style="border:0;margin:6px 0 0">${avF.fin&&!c.fin?'La fecha de compromiso es anterior al inicio.':'Pon la fecha de compromiso para ver la línea programada.'}</div>`)
-      + (c.est && c.rHoy<99.95 ? `<div class="avst">Al ritmo actual terminas el <b>${avDiaNom(c.est)} ${fdate(c.est)}</b>${c.fin?(c.est>c.fin?`, ${avHabiles(avMas(c.fin,1),c.est,c.sab)} ${avHabiles(avMas(c.fin,1),c.est,c.sab)===1?'día hábil':'días hábiles'} después del compromiso.`:', dentro del compromiso.'):'.'}</div>`:'');
+      + `<div class="avleg"><span><i></i>Real</span>${c.fin?'<span><i class="lp"></i>Planificado</span>':''}</div>`
+      + (c.fin&&dif!==null ? `<div class="avst">Planificado al cierre de hoy: <b class="num">${avPct(c.pHoy)}</b> · Real: <b class="num">${avPct(c.rHoy)}</b></div><div class="avst${dif<-0.05?' bad':''}">${Math.abs(dif)<0.05?'Vas al día con lo planificado.':`Vas <b class="num">${nf1.format(Math.abs(dif))} puntos</b> ${dif<0?'por debajo':'por encima'} de lo planificado.`}</div>`
+          : `<div class="avfalta">${avF.fin&&!c.fin?'La fecha de compromiso es anterior a la de inicio: corrígela arriba.':`Falta la línea de lo planificado. Toca arriba ${avF.ini?'':'«Fecha de inicio» y '}«Fecha de compromiso» y ponlas: con eso sale lo planificado contra lo real.`}</div>`)
+      + (c.est && c.rHoy<99.95 ? `<div class="avst">Al ritmo actual terminas el <b>${avDiaNom(c.est)} ${fdate(c.est)}</b>${c.fin?(c.est>c.fin?`, ${avDiasEntre(avMas(c.fin,1),c.est,avF)} ${avDiasEntre(avMas(c.fin,1),c.est,avF)===1?'día de trabajo':'días de trabajo'} después del compromiso.`:', dentro del compromiso.'):'.'}</div>`:'');
     prepararCurva(c, d);
   }
   async function compartirCurva(){ const d=docs.find(x=>x.id===avId); if(!d||!avActs.length){ toast('Todavía no hay avance que dibujar'); return; }
@@ -1701,13 +1719,15 @@ select.combo-oculto{display:none}
     catch(e){ if(e&&e.name==='AbortError') return; }
     if(await guardarArchivo(f.nombre, f.blob)) toast('Curva guardada como imagen'); }
   function guardarAvF(){ if(!coll||!canWrite||!avId) return; const id=avId, f={...avF};
-    avCola=avCola.then(()=>conLimite(coll.doc(id).update({avInicio:f.ini, avCompromiso:f.fin, avSabado:!!f.sab, actualizado:new Date().toISOString()})))
-      .then(null, e=>{ const x=$('#avErr'); if(x) x.textContent='No se guardaron las fechas: '+errMsg(e); else toast(errMsg(e)); }); }
+    avCola=avCola.then(()=>conLimite(coll.doc(id).update({avInicio:f.ini, avCompromiso:f.fin, avSabado:!!f.sab, avDomingo:!!f.dom, avHorasDia:avJornada(f), avDiasEsp:{...(f.dias||{})}, actualizado:new Date().toISOString()})))
+      .then(()=>{ const sh=$('#avSheet'); if(sh && avId===id) sh.dataset.dirty=''; }, e=>{ const x=$('#avErr'); if(x) x.textContent='No se guardaron las fechas ni el horario: '+errMsg(e); else toast(errMsg(e)); }); }
   document.addEventListener('click', e=>{ if(e.target.closest('#btnCurva')||e.target.closest('#avCurvaBtn')) compartirCurva(); });
+  $('#avBody').addEventListener('toggle', e=>{ if(e.target.id==='avHor') avHorOpen=e.target.open; }, true);
   $('#avMain').addEventListener('click', e=>{ const b=e.target.closest('[data-avopen]'); if(b) openAvance(b.dataset.avopen); });
   $('#avMain').addEventListener('change', e=>{ if(e.target.id==='avNueva' && e.target.value) openAvance(e.target.value); });
   $('#avBody').addEventListener('change', e=>{ const t=e.target, row=t.closest('[data-avrow]');
-    if(t.id==='avIni'||t.id==='avFin'||t.id==='avSab'){ avF={ini:$('#avIni').value||'', fin:$('#avFin').value||'', sab:$('#avSab').checked}; $('#avErr').textContent=''; pintarCurva(); guardarAvF(); return; }
+    if(t.id==='avIni'||t.id==='avFin'){ avF={...avF, ini:$('#avIni').value||'', fin:$('#avFin').value||''}; $('#avIni').closest('label').classList.toggle('fvacia',!avF.ini); $('#avFin').closest('label').classList.toggle('fvacia',!avF.fin); $('#avErr').textContent=''; pintarCurva(); guardarAvF(); return; }
+    if(t.id==='avSab'||t.id==='avDom'||t.id==='avHorasDia'){ const h=parseNum($('#avHorasDia').value); avF={...avF, sab:$('#avSab').checked, dom:$('#avDom').checked, horas:h>0&&h<=24?Math.round(h*10)/10:avJornada(avF)}; avHorOpen=true; renderAvSheet(); guardarAvF(); return; }
     if(t.dataset.avq!==undefined){ const i=row&&row.querySelector('[data-avp]'); if(i) i.value=t.dataset.avq; row.querySelectorAll('.ecchips label').forEach(l=>l.classList.toggle('on', l.contains(t))); return; }
     if(t.hasAttribute('data-avdetc')){ row.querySelectorAll('[data-avdetf]').forEach(x=>x.hidden=!t.checked); return; }
     if(t.dataset.avnom){ const a=avActs.find(x=>x.id===t.dataset.avnom), n=t.value.trim().replace(/\s+/g,' ').slice(0,160); if(!a) return; if(!n){ t.value=a.nombre; return; } a.nombre=n; if(row) row.querySelector('[data-avnomtxt]').textContent=n; guardarAv(); return; }
@@ -1730,6 +1750,10 @@ select.combo-oculto{display:none}
       ls.forEach((n,i)=>avActs.push({id:'a'+Date.now().toString(36)+i.toString(36)+Math.random().toString(36).slice(2,5), nombre:n, pct:0, peso:1, adicional:ad}));
       $('#avTxt').value=''; renderAvSheet(); guardarAv(); toast(`${ls.length} ${ls.length===1?'actividad agregada':'actividades agregadas'}`); return; }
     if(t.closest('#avAI')){ $('#avSheet').hidden=true; abrirAI('av'); return; }
+    if(t.closest('#avDiaAdd')){ const f=$('#avDiaF').value, h=parseNum($('#avDiaH').value); avHorOpen=true;
+      if(!f){ toast('Elige la fecha del día con horario distinto'); return; } if(isNaN(h)||h<0||h>24){ toast('Pon las horas que se trabajan ese día, entre 0 y 24'); return; }
+      avF={...avF, dias:{...(avF.dias||{}), [f]:Math.round(h*10)/10}}; renderAvSheet(); guardarAvF(); return; }
+    { const q=t.closest('[data-avdiadel]'); if(q){ const ds={...(avF.dias||{})}; delete ds[q.dataset.avdiadel]; avF={...avF, dias:ds}; avHorOpen=true; renderAvSheet(); guardarAvF(); return; } }
     if(t.closest('#avRep')){ const d=docs.find(x=>x.id===avId); if(!d) return; const txt=buildAvance(d, avActs);
       shareMode='av'; avCurvaOn=true; $('#ecFiltros').hidden=true; $('#ecFiltros').innerHTML=''; $('#shareTitle').textContent='Reporte de avance'; $('#shareDesc').textContent='Porcentaje de cada actividad y avance total de la orden, con formato de WhatsApp.';
       $('#shareText').value=txt; $('#avSheet').hidden=true; openSheet('#shareSheet'); return; }
@@ -1870,7 +1894,7 @@ select.combo-oculto{display:none}
         /* un abono que vino de un pago repartido conserva su enlace, su fecha de factura y sus bolívares exactos (si no le cambiaron monto ni tasa) */
         c.dePago?{dePago:c.dePago}:{}, c.fechaFactura?{fechaFactura:c.fechaFactura}:{}, (num(c.montoBs)>0 && Math.abs(num(c.montoBs)-num(c.monto)*num(c.tasa))<=5)?{montoBs:num(c.montoBs)}:{})),
       creado:draft.creado||new Date().toISOString(), actualizado:new Date().toISOString() };
-    { const old0=editingId?docs.find(x=>x.id===editingId):null; if(old0) ['actividades','avanceHist','avanceSnap','avInicio','avCompromiso','avSabado'].forEach(k=>{ if(old0[k]!==undefined) body[k]=old0[k]; }); }   /* el avance de la orden se lleva en su módulo: editar el trabajo no lo borra */
+    { const old0=editingId?docs.find(x=>x.id===editingId):null; if(old0) ['actividades','avanceHist','avanceSnap','avInicio','avCompromiso','avSabado','avDomingo','avHorasDia','avDiasEsp'].forEach(k=>{ if(old0[k]!==undefined) body[k]=old0[k]; }); }   /* el avance de la orden se lleva en su módulo: editar el trabajo no lo borra */
     const btn=$('#btnSave'); btn.disabled=true; btn.textContent='Guardando…';
     if(editingId){ const old=docs.find(x=>x.id===editingId); if(old){ diffCampos('facturas', editingId, old.descripcion||'trabajo', old, body, [['monto','monto',v=>nf.format(num(v))],['cliente','cliente'],['unidad','unidad'],['ods','orden de servicio'],['cancelado','cancelado',v=>v?'sí':'no'],['ejecutado','ejecutado',v=>v?'sí':'no']]);
       const resumenC=ls=>(ls||[]).map(c=>`${nf.format(num(c.monto))}${num(c.tasa)>0?' a '+nfT.format(num(c.tasa)):''} (${c.fecha||''})`).join('; '); if(resumenC(old.cobros)!==resumenC(body.cobros)) registrarCambio('facturas', editingId, `${old.descripcion||'trabajo'}: pagos`, resumenC(old.cobros), resumenC(body.cobros)); } }
@@ -3074,12 +3098,12 @@ Responde solo con un objeto JSON:
   let modulo='cob';
   function setModulo(m){
     if(esRegistro() && !['reg','nom'].includes(m) && !(m==='inv'&&iView==='eq')) m='reg';
-    modulo = ['nom','gas','inv','res','reg','av'].includes(m) ? m : 'cob';
+    modulo = ['nom','gas','inv','res','reg','av','dat'].includes(m) ? m : 'cob';
     document.querySelectorAll('#modTabs button').forEach(b=>b.setAttribute('aria-selected', String(b.dataset.m===modulo)));
     $('#modCob').hidden = modulo!=='cob'; $('#cobHead').hidden = modulo!=='cob'; $('#cobBtns').hidden = modulo!=='cob';
-    $('#modNom').hidden = modulo!=='nom'; $('#modGas').hidden = modulo!=='gas'; $('#modInv').hidden = modulo!=='inv'; $('#modRes').hidden = modulo!=='res'; $('#modReg').hidden = modulo!=='reg'; $('#modAv').hidden = modulo!=='av';
-    $('#modTitle').textContent = modulo==='reg' ? 'Registrar' : modulo==='nom' && esRegistro() ? 'Asistencia del día' : modulo==='nom' ? 'Nómina' : modulo==='gas' ? 'Gastos y balance' : modulo==='inv' ? 'Inventario' : modulo==='res' ? 'Resumen general' : modulo==='av' ? 'Avance de órdenes' : 'Cobranzas';
-    const hs = modulo==='reg'?'registro':modulo==='nom'?'nomina':modulo==='gas'?'gastos':modulo==='inv'?'inventario':modulo==='res'?'resumen':modulo==='av'?'avance':'cobranzas';
+    $('#modNom').hidden = modulo!=='nom'; $('#modGas').hidden = modulo!=='gas'; $('#modInv').hidden = modulo!=='inv'; $('#modRes').hidden = modulo!=='res'; $('#modReg').hidden = modulo!=='reg'; $('#modAv').hidden = modulo!=='av'; $('#modDat').hidden = modulo!=='dat';
+    $('#modTitle').textContent = modulo==='reg' ? 'Registrar' : modulo==='nom' && esRegistro() ? 'Asistencia del día' : modulo==='nom' ? 'Nómina' : modulo==='gas' ? 'Gastos y balance' : modulo==='inv' ? 'Inventario' : modulo==='res' ? 'Resumen general' : modulo==='av' ? 'Avance de órdenes' : modulo==='dat' ? 'Exportar e importar datos' : 'Cobranzas';
+    const hs = modulo==='reg'?'registro':modulo==='nom'?'nomina':modulo==='gas'?'gastos':modulo==='inv'?'inventario':modulo==='res'?'resumen':modulo==='av'?'avance':modulo==='dat'?'datos':'cobranzas';
     try{ if(location.hash !== '#'+hs) history.replaceState(null,'','#'+hs); }catch(_){}
     if(modulo!=='cob'){ selMode=false; sel.clear(); }
     if(modulo==='nom') renderNom();
@@ -3087,6 +3111,7 @@ Responde solo con un objeto JSON:
     if(modulo==='inv') renderInv();
     if(modulo==='res') renderRes();
     if(modulo==='av') renderAv();
+    if(modulo==='dat' && typeof renderDat==='function') renderDat();
     if(modulo==='reg') renderReg();
     if(modulo==='nom' && esRegistro()){ nView='dia'; renderNom(); }
     if(modulo==='cob') render();
@@ -3238,7 +3263,7 @@ Responde solo con un objeto JSON:
   function medirNav(){ const n=$('#topnav'); if(n) document.documentElement.style.setProperty('--navh', n.offsetHeight+'px'); }
   medirNav(); window.addEventListener('resize', medirNav);
   $('#modTabs').addEventListener('click', e=>{ const b=e.target.closest('button'); if(b) setModulo(b.dataset.m); });
-  const modDeHash = () => location.hash==='#registro'?'reg':location.hash==='#nomina'?'nom':location.hash==='#gastos'?'gas':location.hash==='#inventario'?'inv':location.hash==='#resumen'?'res':location.hash==='#avance'?'av':'cob';
+  const modDeHash = () => location.hash==='#registro'?'reg':location.hash==='#nomina'?'nom':location.hash==='#gastos'?'gas':location.hash==='#inventario'?'inv':location.hash==='#resumen'?'res':location.hash==='#avance'?'av':location.hash==='#datos'?'dat':'cob';
   window.addEventListener('hashchange', ()=>setModulo(modDeHash()));
   /* En la versión de Claude el modo registro se recuerda en el teléfono: quien abra el enlace sin «#registro» sigue en modo registro hasta que el dueño lo quite */
   try{ if(location.hash==='#registro') localStorage.setItem('modoRegistro','1'); if(!window.__standalone && localStorage.getItem('modoRegistro')==='1' && !document.documentElement.dataset.rol){ document.documentElement.dataset.rol='registro'; if(location.hash!=='#registro') history.replaceState(null,'','#registro'); } }catch(_){}
@@ -4330,14 +4355,14 @@ Responde solo con un objeto JSON:
   }
   async function descargarJSON(){
     const ok=await guardarArchivo(`respaldo-workproca-${today()}.json`, JSON.stringify(respaldoJSON(), null, 1));
-    if(ok) toast('Respaldo descargado');
+    if(ok) toast(modulo==='dat'?'Base de datos exportada':'Respaldo descargado');
   }
   async function restaurarJSON(file){
     if(!gDb||!file) return;
-    let data; try{ data=JSON.parse(await file.text()); }catch(_){ $('#gAjErr').textContent='Ese archivo no es un respaldo válido.'; return; }
+    let data; try{ data=JSON.parse(await file.text()); }catch(_){ errResp('Ese archivo no es un respaldo válido.'); return; }
     const cols=['facturas','trabajadores','asistencia','adelantos','cortes','movimientos','inventario','invMovs','activos','cambios'];
     const n=cols.reduce((a,c)=>a+Object.keys(data[c]||{}).length,0)+Object.keys(data.config||{}).length;
-    if(!n){ $('#gAjErr').textContent='El respaldo está vacío.'; return; }
+    if(!n){ errResp('El respaldo está vacío.'); return; }
     /* Qué cambia frente a lo que hay: se agrega, se cambia, se borra */
     const actual={facturas:docs, trabajadores:trabs, asistencia:Object.values(asis), adelantos:adels, cortes, movimientos:movs, inventario:items, invMovs, activos, cambios};
     let agrega=0, cambia=0, borra=0; const sobran=[];
@@ -4348,15 +4373,32 @@ Responde solo con un objeto JSON:
     const reemplazar=confirm(`Respaldo del ${fechaR}: ${agrega} registros nuevos, ${cambia} que ya existen (se sobrescriben) y ${borra} actuales que no están en el respaldo.\n\nREEMPLAZAR TODO: deja la base exactamente como el respaldo (borra esos ${borra}).\n\nAceptar = reemplazar todo. Cancelar = ver la otra opción.`);
     let soloFaltan=false;
     if(!reemplazar){ soloFaltan=confirm(`AGREGAR SOLO LO QUE FALTA: escribe los ${agrega} registros nuevos y no toca nada de lo actual.\n\nAceptar = agregar solo lo que falta. Cancelar = no hacer nada.`); if(!soloFaltan) return; }
-    let ok=0; $('#gAjErr').textContent='';
+    let ok=0; errResp('');
     try{
       /* Respaldo automático de lo actual antes de tocar nada */
       try{ await guardarArchivo(`antes-de-restaurar-${today()}.json`, JSON.stringify(respaldoJSON(), null, 1)); }catch(_){}
       for(const c of cols){ const cur=new Set((actual[c]||[]).map(d=>c==='asistencia'?d.fecha:d.id)); for(const [id,d] of Object.entries(data[c]||{})){ if(soloFaltan && cur.has(id)) continue; const body={...d}; delete body.id; await gDb.collection(c).doc(id).set(body); ok++; } }
       if(!soloFaltan){ for(const [k,v] of Object.entries(data.config||{})){ await gDb.doc('config/'+k).set(v); ok++; } for(const [c,id] of sobran){ await gDb.collection(c).doc(id).delete(); ok++; } }
-      toast(soloFaltan?`Agregados ${ok} registros que faltaban`:`Base reemplazada: ${ok} registros escritos o borrados`); renderGas();
-    }catch(e){ $('#gAjErr').textContent=`Se procesaron ${ok} y falló el resto: ${errMsg(e)}`; }
+      toast(soloFaltan?`Agregados ${ok} registros que faltaban`:`Base reemplazada: ${ok} registros escritos o borrados`); if(modulo==='dat') renderDat(); else renderGas();
+    }catch(e){ errResp(`Se procesaron ${ok} y falló el resto: ${errMsg(e)}`); }
   }
+  /* ---------- pestaña Datos: exportar e importar la base completa ---------- */
+  const errResp = m => { const x=(modulo==='dat'&&$('#datErr'))||$('#gAjErr')||$('#datErr'); if(x) x.textContent=m; else if(m) toast(m); };
+  function renderDat(){ const m=$('#datMain'); if(!m) return;
+    const n=[[docs.length,'trabajos'],[trabs.length,'trabajadores'],[Object.keys(asis).length,'días de asistencia'],[movs.length,'movimientos'],[cortes.length,'cortes de nómina'],[items.length,'artículos de inventario']].filter(x=>x[0]).map(x=>`${x[0]} ${x[1]}`).join(' · ');
+    m.innerHTML=`<div class="sech">Exportar</div>
+      <div class="tip">Baja la base de datos completa en un solo archivo: trabajos, pagos, avance de las órdenes, trabajadores, asistencia, adelantos, cortes, movimientos, inventario y ajustes.${n?'<br>Ahora tiene: '+n+'.':''}</div>
+      <div class="row-btns"><button type="button" class="btn pri" id="datExp">Exportar base de datos</button></div>
+      ${canWrite?`<div class="sech">Importar</div>
+      <div class="tip">Carga un archivo exportado desde aquí. Antes de escribir te dice cuántos registros agrega, cuántos cambia y cuántos borra, y guarda una copia de lo que hay.</div>
+      <div class="row-btns"><label class="btn sec" style="cursor:pointer">Importar base de datos<input type="file" id="datImp" accept=".json,application/json" style="position:absolute;width:1px;height:1px;opacity:0"></label></div>`:''}
+      <div class="sech">Excel</div>
+      <div class="tip">Lo mismo en una hoja de cálculo, una hoja por tipo de dato, para revisarlo o archivarlo. No sirve para importar.</div>
+      <div class="row-btns"><button type="button" class="btn sec" id="datExcel">Descargar en Excel</button></div>
+      <div class="err" id="datErr"></div>`;
+  }
+  $('#datMain').addEventListener('click', e=>{ const t=e.target; if(t.closest('#datExp')) return descargarJSON(); const x=t.closest('#datExcel'); if(x) return exportarExcel(x); });
+  $('#datMain').addEventListener('change', e=>{ const t=e.target; if(t.id==='datImp'){ const f=t.files&&t.files[0]; t.value=''; return restaurarJSON(f); } });
   /* Respaldo completo en Excel, una hoja por tipo de dato */
   async function exportarExcel(btn){
     btn=btn||$('#gExcel'); const lbl=btn?btn.textContent:''; if(btn){ btn.disabled=true; btn.textContent='Preparando…'; }
