@@ -1587,7 +1587,7 @@ select.combo-oculto{display:none}
     $('#avTitle').textContent='Avance';
     $('#avBody').innerHTML = `<div style="font-weight:600;font-size:16px">${esc(d.descripcion||'')}</div><div class="tip" style="border:0;margin:2px 0 0">${avMeta(d)}</div>
       <div class="avtot"><span style="font-weight:600;color:var(--muted)">Avance total</span><b class="num" id="avTot">${avPct(avanceActs(avActs))}</b></div>${avBar(avanceActs(avActs),'avTotBar')}
-      ${canWrite&&sampleFn?`<div class="row-btns" style="margin-top:12px"><button type="button" class="btn sec" id="avAI">Cargar con asistente</button></div>`:''}
+      <div class="row-btns" style="margin-top:12px"><button type="button" class="btn pri" id="avRep"${avActs.length?'':' disabled'}>Generar reporte</button>${canWrite&&sampleFn?'<button type="button" class="btn sec" id="avAI">Cargar con asistente</button>':''}</div>
       ${base.length?`<div class="sech" style="font-size:16px">Actividades de la ODS · ${base.length}</div>${grupos(base)}`:''}
       ${adic.length?`<div class="sech" style="font-size:16px">Trabajos adicionales · ${adic.length}</div><div class="tip" style="border:0;margin:0">Se reportan aparte y no entran en el avance total.</div>${grupos(adic)}`:''}
       ${!avActs.length?'<div class="empty" style="margin-top:14px"><b>Esta orden no tiene actividades</b>Escríbelas o pega la lista aquí abajo.</div>':''}
@@ -1596,8 +1596,7 @@ select.combo-oculto{display:none}
         <label class="chk" style="margin-top:8px"><input type="checkbox" id="avAdic"${adicChk?' checked':''}> Son trabajos adicionales</label>
         <div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" id="avAdd">Agregar</button></div>
         <div class="tip" style="border:0;margin:8px 0 0">Todas las actividades pesan igual en el total, salvo que les cambies el peso en «Editar».</div>`:''}
-      <div class="err" id="avErr"></div>
-      <div class="row-btns" style="margin-top:14px"><button type="button" class="btn pri" id="avRep"${avActs.length?'':' disabled'}>Generar reporte</button></div>`;
+      <div class="err" id="avErr"></div>`;
   }
   /* Guarda las actividades en el trabajo, una escritura a la vez, y anota el avance total del día (sirve después para ver el ritmo) */
   function guardarAv(){ if(!coll||!canWrite||!avId) return; const id=avId, acts=JSON.parse(JSON.stringify(avActs));
