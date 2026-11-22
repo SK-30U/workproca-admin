@@ -1554,7 +1554,9 @@ select.combo-oculto{display:none}
   /* Estado de una actividad: terminada, detenida, en ejecución o por iniciar */
   const FRENOS=['Falta de material','Falta de equipo o herramienta','Falta de personal','Espera por el cliente','Espera por otra actividad','Clima','Otro'];
   const estAct = a => pctAct(a)>=100 ? 'fin' : a.detenida ? 'det' : pctAct(a)>0 ? 'eje' : 'ini';
-  const AV_GRUPOS=[['eje','En ejecución'],['det','Detenidas'],['ini','Por iniciar (0 %)'],['fin','Terminadas']];
+  /* De mayor a menor avance: terminadas, en ejecución, detenidas y por iniciar; dentro de cada grupo también de mayor a menor */
+  const AV_GRUPOS=[['fin','Terminadas'],['eje','En ejecución'],['det','Detenidas'],['ini','Por iniciar (0 %)']];
+  const porAvance = xs => xs.map((a,i)=>[a,i]).sort((x,y)=>(pctAct(y[0])-pctAct(x[0])) || (x[1]-y[1])).map(x=>x[0]);
   const txtFreno = a => [a.freno&&a.freno!=='Otro'?a.freno:'', String(a.porque||'').trim()].filter(Boolean).join(': ');
   let avCarga='';
   function renderAvSheet(){
@@ -1581,7 +1583,7 @@ select.combo-oculto{display:none}
           <label class="chk full"><input type="checkbox" data-avadic="${esc(a.id)}"${a.adicional?' checked':''}> Es un trabajo adicional (no entra en el total)</label></div>
           <div class="row-btns" style="margin-top:8px"><button type="button" class="btn del" data-avdel="${esc(a.id)}">${avDelArmed===a.id?'Toca otra vez para eliminar':'Eliminar actividad'}</button></div></details>`:''}
       </div>`; };
-    const grupos=xs=>AV_GRUPOS.map(([k,t])=>{ const g=xs.filter(a=>estAct(a)===k); return g.length?`<div class="avgrp">${t} · ${g.length}</div><div class="lns" style="margin-top:6px">${g.map(fila).join('')}</div>`:''; }).join('');
+    const grupos=xs=>AV_GRUPOS.map(([k,t])=>{ const g=porAvance(xs.filter(a=>estAct(a)===k)); return g.length?`<div class="avgrp">${t} · ${g.length}</div><div class="lns" style="margin-top:6px">${g.map(fila).join('')}</div>`:''; }).join('');
     $('#avTitle').textContent='Avance';
     $('#avBody').innerHTML = `<div style="font-weight:600;font-size:16px">${esc(d.descripcion||'')}</div><div class="tip" style="border:0;margin:2px 0 0">${avMeta(d)}</div>
       <div class="avtot"><span style="font-weight:600;color:var(--muted)">Avance total</span><b class="num" id="avTot">${avPct(avanceActs(avActs))}</b></div>${avBar(avanceActs(avActs),'avTotBar')}
@@ -1610,7 +1612,7 @@ select.combo-oculto{display:none}
     L.push(`Fecha: ${fdate(today())}`);
     const linea=(a,n)=>`${n}. ${a.nombre}: ${avPct(pctAct(a))}${estAct(a)==='det'?` · Detenida${txtFreno(a)?': '+txtFreno(a):''}`:''}`;
     const bloque=xs=>{ const n0={}; xs.forEach((a,i)=>n0[a.id]=i+1);
-      [['fin','Terminadas'],['eje','En ejecución'],['det','Detenidas'],['ini','Por iniciar']].forEach(([k,t])=>{ const g=xs.filter(a=>estAct(a)===k); if(!g.length) return; L.push(`_${t}_`); g.forEach(a=>L.push(linea(a,n0[a.id]))); }); };
+      [['fin','Terminadas'],['eje','En ejecución'],['det','Detenidas'],['ini','Por iniciar']].forEach(([k,t])=>{ const g=porAvance(xs.filter(a=>estAct(a)===k)); if(!g.length) return; L.push(`_${t}_`); g.forEach(a=>L.push(linea(a,n0[a.id]))); }); };
     if(base.length){ L.push('', '*Actividades de la ODS*'); bloque(base); L.push('', `*Avance total: ${avPct(avanceActs(acts))}*`); }
     if(adic.length){ L.push('', '*Trabajos adicionales (no incluidos en la ODS)*'); bloque(adic); }
     return L.join('\n');
