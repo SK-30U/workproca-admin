@@ -824,6 +824,16 @@ input,select,textarea{min-width:0;max-width:100%}
     <div class="row-btns" style="margin-top:12px"><button type="button" class="btn pri" id="rpSave">Guardar reparto</button></div>
   </div>
 </section>
+<section class="sheet" id="impSheet" hidden aria-modal="true" role="dialog" aria-labelledby="impTitle">
+  <div class="wrap">
+    <div class="grab"></div>
+    <div class="sh-head"><h3 id="impTitle">Importar respaldo</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
+    <div id="impBody"></div>
+    <div class="tip num" id="impAvance" aria-live="polite" hidden></div>
+    <div class="err" id="impErr" aria-live="polite"></div>
+    <div class="row-btns" style="margin-top:12px" id="impBtns"></div>
+  </div>
+</section>
 <section class="sheet" id="shareSheet" hidden aria-modal="true" role="dialog" aria-labelledby="shareTitle">
   <div class="wrap">
     <div class="grab"></div>
@@ -1869,7 +1879,7 @@ input,select,textarea{min-width:0;max-width:100%}
      Se pone con cualquier cambio real: teclear, cambiar un selector o una casilla (eventos input y change) y los botones que agregan o quitan
      renglones, pagos, líneas o actividades (marcarCambio). Se quita en todo guardado exitoso (hojaLimpia) y cada vez que una hoja se abre.
      Mientras una hoja se abre y el código la rellena, nada la marca: una hoja recién abierta nunca nace marcada. */
-  const HOJAS_LECTURA=['shareSheet','ctaSheet','trSheet'];   /* solo se leen o se copian: no tienen nada que guardar */
+  const HOJAS_LECTURA=['shareSheet','ctaSheet','trSheet','impSheet'];   /* solo se leen o se copian: no tienen nada que guardar */
   const TXT_SUCIA='Tienes datos sin guardar. Toca otra vez para descartarlos.';
   let cierreArmado=0, abriendoHoja=0;
   /* Aviso que pide un segundo toque (fecha futura, monto muy alto, trabajo repetido…): la primera vez muestra el mensaje y no sigue; la segunda, con lo mismo, sigue. Al abrir una hoja se olvidan todos. */
@@ -1897,6 +1907,7 @@ input,select,textarea{min-width:0;max-width:100%}
   document.addEventListener('click', frenoNumero, true); document.addEventListener('submit', frenoNumero, true);
   /* Lo escrito en una hoja no se pierde por un toque fuera: la primera vez avisa, la segunda descarta */
   function intentarCerrar(){
+    if(impBusy && !$('#impSheet').hidden){ toast('Importando: espera a que termine.'); return; }
     /* Avance guarda solo: si todavía está guardando, se espera el resultado antes de decidir (ni aviso falso ni cierre sin saber) */
     if(avEnVuelo && !$('#avSheet').hidden){ if(!avCierra){ avCierra=true; toast('Guardando el avance…'); avCola.then(()=>{ avCierra=false; if(!$('#avSheet').hidden) intentarCerrar(); }); } return; }
     if(hojaSucia() && Date.now()-cierreArmado>4000){ cierreArmado=Date.now(); toast(TXT_SUCIA); return; }
@@ -1907,7 +1918,7 @@ input,select,textarea{min-width:0;max-width:100%}
   /* =====================================================================
      GUARDADO SEGURO: todo o nada, identificadores estables por intento, cola del teléfono y causa real de cada error
      ===================================================================== */
-  const APP_VERSION='146';
+  const APP_VERSION='147';
   let dbRaiz=null;                                       /* la base de datos (se asigna al arrancar) */
   const cacheActiva = () => !!window.__persistencia;     /* versión independiente con la caché del teléfono activa: lo escrito queda en cola y sube solo */
   const sinRed = () => typeof navigator!=='undefined' && navigator.onLine===false;
@@ -5084,11 +5095,11 @@ Responde solo con un objeto JSON:
       ${lista('catPersonal','Categorías de gastos de papá y tuyos')}
       ${lista('catIngreso','Categorías de ingresos')}
       <div class="sech">Respaldo</div>
-      <div class="tip">Descarga un Excel con todo lo registrado: trabajos, pagos, trabajadores, asistencia, adelantos, cortes, movimientos, inventario y herramientas. Guárdalo en tu nube de vez en cuando.</div>
-      <div class="row-btns"><button type="button" class="btn sec" id="gExcel">Descargar respaldo en Excel</button><button type="button" class="btn sec" id="gJson">Descargar respaldo completo (JSON)</button></div>
-      <div class="tip">El respaldo completo (JSON) sirve para restaurar la app tal cual, por ejemplo al pasarla a otra plataforma. Restaurar sobrescribe lo que tenga el mismo nombre y no borra lo demás.</div>
+      <div class="tip">Exporta toda la base a un archivo de respaldo, o a Excel (hace falta internet). Guárdalo en tu nube de vez en cuando. Lo mismo, con más explicación, está en la pestaña Datos.</div>
+      <div class="row-btns"><button type="button" class="btn sec" id="gExcel">Exportar a Excel (necesita internet)</button><button type="button" class="btn sec" id="gJson">Exportar todo (archivo de respaldo)</button></div>
+      <div class="tip">El archivo de respaldo sirve para restaurar la app tal cual, por ejemplo al pasarla a otra plataforma. Al importarlo se muestra primero qué agregaría, cambiaría y borraría, y lo que el archivo no trae nunca se borra.</div>
       ${(()=>{ const ls=cambios.slice(0,60); return `<details class="opcRep" style="margin-top:14px"><summary>Cambios recientes a cifras del pasado (${cambios.length})</summary>${ls.length?`<div class="lns">${ls.map(x=>`<div class="ln"><div class="h"><b>${esc(x.que)}</b></div><div class="d num">${fechaHora(x.fecha)}${x.quien?' · '+esc(x.quien):''}${x.antes||x.despues?`<br>Antes: ${esc(x.antes||'—')} → Ahora: ${esc(x.despues||'—')}`:''}</div></div>`).join('')}</div>`:'<div class="tip">Todavía no hay cambios anotados. Aquí queda rastro cuando se corrige un cobro, un movimiento, un saldo inicial, una tarifa o se anula un corte.</div>'}</details>`; })()}
-      <div class="row-btns"><label class="btn sec" style="cursor:pointer">Restaurar desde respaldo (JSON)<input type="file" id="gRestaurar" accept=".json,application/json" style="position:absolute;width:1px;height:1px;opacity:0"></label></div>
+      <div class="row-btns"><label class="btn sec" style="cursor:pointer">Importar respaldo<input type="file" id="gRestaurar" accept=".json,application/json" style="position:absolute;width:1px;height:1px;opacity:0"></label></div>
       ${window.__standalone?`<div class="sech">Asistente de Claude</div>
       <div class="tip">Fuera de Claude, el asistente trabaja con la API de Claude y una clave tuya (Consola de Claude → API keys). Se paga por uso con crédito prepagado, aparte del plan Max. Donde la API no tenga servicio, el asistente no responde y ya.</div>
       <div class="cfg"><label class="f full">Clave de la API<input id="iaClave" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(($('#iaClave')||{}).value??iaCfg.clave)}" placeholder="sk-ant-…"></label><label class="f full">Modelo (opcional)<input id="iaModelo" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(($('#iaModelo')||{}).value??iaCfg.modelo)}" placeholder="${IA_MODELO}"></label>
@@ -5106,11 +5117,87 @@ Responde solo con un objeto JSON:
       <div class="err" id="gAjErr"></div>
       <div class="nsum"><div class="row-btns" style="margin-top:0"><button type="button" class="btn pri" id="gAjSave">Guardar ajustes</button></div></div>`;
   }
-  /* Respaldo completo en JSON (tal cual está en la base) y restauración */
+  /* ---------- Respaldo completo: qué entra, cuándo se puede exportar y cómo se valida ---------- */
+  const lecEst={}, lecExiste={};   /* estado de lectura de cada colección o documento de configuración: 'ok' o 'mal'; sin valor = todavía no llegó */
+  function sondearLectura(b){ if(!b) return b;
+    const mira=(k,doc,o)=>Object.assign({}, o, {onSnapshot:(f,e)=>o.onSnapshot(s=>{ lecEst[k]='ok'; if(doc) lecExiste[k]=!!s.exists; f(s); }, er=>{ if(lecEst[k]!=='ok') lecEst[k]='mal'; if(e) e(er); })});
+    return Object.assign({}, b, {collection:c=>mira(c,false,b.collection(c)), doc:p=>mira(p,true,b.doc(p))}); }
+  const RESP_FORMATO=3, RESP_FORMATOS=[1,2,3], RESP_APP='Administración Workproca';
+  const soloIndep = () => !!window.__standalone;
+  const RESP_COLS=[
+    {k:'facturas', et:'trabajos', lista:()=>docs.map(d=>[d.id,d])},
+    {k:'trabajadores', et:'trabajadores', lista:()=>trabs.map(d=>[d.id,d])},
+    {k:'asistencia', et:'días de asistencia', lista:()=>Object.entries(asis)},
+    {k:'adelantos', et:'adelantos', lista:()=>adels.map(d=>[d.id,d])},
+    {k:'cortes', et:'cortes de nómina', lista:()=>cortes.map(d=>[d.id,d])},
+    {k:'movimientos', et:'movimientos de Gastos', lista:()=>movs.map(d=>[d.id,d])},
+    {k:'inventario', et:'artículos de inventario', lista:()=>items.map(d=>[d.id,d])},
+    {k:'invMovs', et:'movimientos de inventario', lista:()=>invMovs.map(d=>[d.id,d])},
+    {k:'activos', et:'herramientas y equipos', lista:()=>activos.map(d=>[d.id,d])},
+    {k:'cambios', et:'registro de cambios', aplica:esDueno, lista:()=>cambios.map(d=>[d.id,d])},
+    {k:'papelera', et:'papelera', aplica:esDueno, lista:()=>papelera.map(d=>[d.id,d])},
+    {k:'acceso', et:'personas con acceso', aplica:()=>soloIndep()&&esDueno(), lista:()=>accesos.map(d=>[d.id,d])},
+    {k:'solicitudes', et:'solicitudes por aprobar', aplica:soloIndep, lista:()=>solicitudes.map(d=>[d.id,d])}];
+  const RESP_CFG=[
+    {k:'clientes', et:'lista de clientes'}, {k:'unidades', et:'lista de unidades'}, {k:'nomina', et:'ajustes de Nómina'}, {k:'gastos', et:'ajustes de Gastos'}, {k:'inventario', et:'ajustes de Inventario'},
+    {k:'ia', et:'ajustes del asistente (sin la clave)', aplica:()=>soloIndep()&&esDueno()}];
+  const respAplica = c => !c.aplica || c.aplica();
+  /* La clave del asistente es un secreto: nunca sale en el archivo, y al importar se conserva la que ya está en la base */
+  const iaPlano = o => { o=o||{}; const r={modelo:String(o.modelo||'').trim(), credito:num(o.credito)}; const u=o.uso&&typeof o.uso==='object'?o.uso:null; if(u) r.uso={llamadas:num(u.llamadas), entrada:num(u.entrada), salida:num(u.salida), costo:num(u.costo), ultimo:String(u.ultimo||''), ultimoCosto:num(u.ultimoCosto), ultimoModelo:String(u.ultimoModelo||'')}; return r; };
+  const cfgActual = k => k==='ia' ? (lecExiste['config/ia']?iaPlano(iaCfg):null) : (cfgLeida[k]&&cfgLeida[k].existe ? cfgCruda[k] : null);
+  /* Qué falta por llegar y qué falló al leerse (solo lo que esta sesión realmente lee) */
+  function estadoLectura(){ const pend=[], mal=[];
+    const mira=(clave,et)=>{ const e=lecEst[clave]; if(e==='mal') mal.push(et); else if(e!=='ok') pend.push(et); };
+    RESP_COLS.forEach(c=>{ if(respAplica(c)) mira(c.k, c.et); }); RESP_CFG.forEach(c=>{ if(respAplica(c)) mira('config/'+c.k, c.et); });
+    return {pend, mal}; }
+  /* Espera (hasta 8 segundos) a que todo haya cargado. Con una lectura fallida no se exporta ni se importa: saldría incompleto */
+  async function respaldoListo(){
+    for(let i=0;i<40;i++){ const e=estadoLectura(); if(e.mal.length) return {falla:e.mal}; if(!e.pend.length) return {ok:true}; if(i===0) toast('Esperando a que termine de cargar…'); await new Promise(r=>setTimeout(r,200)); }
+    return {tarda:estadoLectura().pend};
+  }
+  const textoNoListo = (r, que) => r.falla ? `No se ${que} nada: no se pudo leer ${r.falla.join(', ')}. Recarga la app y vuelve a intentarlo; un respaldo sin eso saldría incompleto.` : `Todavía no terminó de cargar: ${r.tarda.join(', ')}. Espera unos segundos con buena señal y vuelve a intentarlo.`;
   function respaldoJSON(){
-    const obj=ls=>Object.fromEntries(ls.map(d=>{ const c={...d}; delete c.id; return [d.id, c]; }));
-    const cfg={}; if(clientesExtra.length) cfg.clientes={lista:clientesExtra}; if(unidadesExtra.length) cfg.unidades={lista:unidadesExtra}; cfg.nomina=cfgN; cfg.gastos=gcfg; cfg.inventario=icfg;
-    return {version:2, fecha:new Date().toISOString(), facturas:obj(docs), trabajadores:obj(trabs), asistencia:Object.fromEntries(Object.values(asis).map(a=>[a.fecha, a])), adelantos:obj(adels), cortes:obj(cortes), movimientos:obj(movs), inventario:obj(items), invMovs:obj(invMovs), activos:obj(activos), cambios:obj(cambios), config:cfg};
+    const cols={}, conteo={};
+    RESP_COLS.forEach(c=>{ if(!respAplica(c)) return; const o={}; c.lista().forEach(([id,d])=>{ const x=copia(d); delete x.id; o[id]=x; }); cols[c.k]=o; conteo[c.k]=Object.keys(o).length; });
+    const cfg={}; RESP_CFG.forEach(c=>{ if(!respAplica(c)) return; const v=cfgActual(c.k); if(v) cfg[c.k]=copia(v); }); conteo.config=Object.keys(cfg).length;
+    return Object.assign({version:RESP_FORMATO, app:RESP_APP, appVersion:APP_VERSION, fecha:new Date().toISOString(), conteo}, cols, {config:cfg});
+  }
+  const esTxt = x => typeof x==='string', esNum = x => typeof x==='number' && isFinite(x);
+  const REQ_REG={
+    facturas:r=>!esTxt(r.cliente)?'no tiene cliente':!esTxt(r.descripcion)?'no tiene descripción':!esNum(r.monto)?'no tiene un monto numérico':(r.cobros!==undefined&&!Array.isArray(r.cobros))?'trae mal la lista de cobros':'',
+    trabajadores:r=>!esTxt(r.nombre)||!r.nombre.trim()?'no tiene nombre':'',
+    asistencia:(r,id)=>!/^\d{4}-\d{2}-\d{2}$/.test(id)?'no tiene una fecha válida como identificador':(r.registros!==undefined&&!esObj(r.registros))?'trae mal los registros del día':'',
+    adelantos:r=>!esTxt(r.trabajadorId)||!r.trabajadorId?'no dice de qué trabajador es':!esNum(r.monto)?'no tiene un monto numérico':!esTxt(r.fecha)?'no tiene fecha':'',
+    cortes:r=>!esTxt(r.fecha)?'no tiene fecha':!Array.isArray(r.lineas)?'no tiene la lista de trabajadores':'',
+    movimientos:r=>!esTxt(r.tipo)?'no tiene tipo':!esTxt(r.fecha)?'no tiene fecha':(r.tipo==='cambio'?(!esNum(r.montoOrigen)||!esNum(r.montoDestino)):!esNum(r.monto))?'no tiene un monto numérico':'',
+    inventario:r=>!esTxt(r.nombre)||!r.nombre.trim()?'no tiene nombre':'',
+    invMovs:r=>!esTxt(r.itemId)||!r.itemId?'no dice de qué artículo es':!esTxt(r.tipo)?'no tiene tipo':!esTxt(r.fecha)?'no tiene fecha':'',
+    activos:r=>!esTxt(r.nombre)||!r.nombre.trim()?'no tiene nombre':'',
+    cambios:()=>'', papelera:()=>'', acceso:()=>'', solicitudes:()=>''};
+  const idMal = id => !id || id.length>200 || id.includes('/') || id==='.' || id==='..' || /^__.*__$/.test(id);
+  /* Revisa el archivo completo ANTES de escribir nada. Devuelve la lista de problemas (vacía = el archivo sirve) */
+  function validarRespaldo(d){
+    if(!esObj(d)) return ['no es un respaldo de esta app (no trae la estructura esperada)'];
+    const v=d.version, err=[];
+    if(typeof v!=='number' || !isFinite(v) || v<1) return ['no es un respaldo de esta app (no trae la versión del formato)'];
+    if(!RESP_FORMATOS.includes(v)) return [`es de un formato más nuevo (versión ${v}) que esta app no entiende: actualiza la app y vuelve a intentarlo`];
+    if(v>=3 && d.app!==RESP_APP) err.push('no dice que es un respaldo de esta app');
+    if(d.fecha!==undefined && !esTxt(d.fecha)) err.push('la fecha del respaldo está mal escrita');
+    let total=0;
+    RESP_COLS.forEach(c=>{ if(!(c.k in d)) return; const a=d[c.k];
+      if(!esObj(a)){ err.push(`«${c.et}» no tiene la forma esperada (debe ser un conjunto de registros con identificador)`); return; }
+      const ids=Object.keys(a), malos=[]; total+=ids.length;
+      ids.forEach(id=>{ const r=a[id]; const m=idMal(id)?'tiene un identificador no válido':!esObj(r)?'no es un registro':REQ_REG[c.k](r,id); if(m) malos.push(`el registro ${id.slice(0,24)} ${m}`); });
+      if(malos.length) err.push(`«${c.et}»: ${malos.slice(0,2).join('; ')}${malos.length>2?` y ${malos.length-2} más`:''}`); });
+    if('config' in d){
+      if(!esObj(d.config)) err.push('los ajustes («config») no tienen la forma esperada');
+      else{ total+=Object.keys(d.config).length; const cf=d.config; RESP_CFG.forEach(c=>{ if(c.k in cf && !esObj(cf[c.k])) err.push(`«${c.et}» no tiene la forma esperada`); });
+        if(esObj(cf.gastos)){ if(cf.gastos.cuentas!==undefined && !Array.isArray(cf.gastos.cuentas)) err.push('los ajustes de Gastos traen mal la lista de cuentas'); if(cf.gastos.saldos!==undefined && !esObj(cf.gastos.saldos)) err.push('los ajustes de Gastos traen mal los saldos iniciales'); }
+        if(esObj(cf.nomina) && cf.nomina.cargos!==undefined && !Array.isArray(cf.nomina.cargos)) err.push('los ajustes de Nómina traen mal la lista de cargos'); } }
+    if(!total && !err.length) err.push('el respaldo está vacío');
+    if(v>=3){ if(!esObj(d.conteo)) err.push('no trae el conteo de registros por colección (archivo incompleto)');
+      else RESP_COLS.forEach(c=>{ const n=d.conteo[c.k]; if(n===undefined) return; const real=esObj(d[c.k])?Object.keys(d[c.k]).length:-1; if(real!==n) err.push(`«${c.et}»: el archivo dice traer ${n} y trae ${real<0?'ninguno':real} (está incompleto o fue modificado)`); }); }
+    return err;
   }
   /* Entregar un archivo generado: dentro de Claude se pide por la capacidad "downloads" (el visor confirma y guarda); en la versión independiente se descarga directo. */
   async function guardarArchivo(nombre, data){
@@ -5126,47 +5213,136 @@ Responde solo con un objeto JSON:
     return true;
   }
   async function descargarJSON(){
-    const ok=await guardarArchivo(`respaldo-workproca-${today()}.json`, JSON.stringify(respaldoJSON(), null, 1));
-    if(ok) toast(modulo==='dat'?'Base de datos exportada':'Respaldo descargado');
+    if(impBusy || expBusy) return; expBusy=true;
+    try{ errResp('');
+      const r=await respaldoListo();
+      if(!r.ok){ const m=textoNoListo(r,'exportó'); errResp(m); toast(m); return; }
+      const obj=respaldoJSON(), nombre=`respaldo-workproca-${today()}.json`, n=RESP_COLS.reduce((a,c)=>a+(obj.conteo[c.k]||0),0);
+      if(await guardarArchivo(nombre, JSON.stringify(obj, null, 1))) toast(`Respaldo listo: ${nombre} (${n} registros). ${DONDE_ARCHIVO()}`, null);
+    } finally{ expBusy=false; }
+  }
+  const DONDE_ARCHIVO = () => window.__standalone ? 'En el iPhone queda en la app Archivos, carpeta Descargas.' : 'Quedó donde elegiste guardarlo.';
+  /* ---------- Importar: validar, mostrar qué cambiaría, copia obligatoria y escritura por lotes ---------- */
+  let impBusy=false, expBusy=false, imp=null;
+  const idCorto = id => String(id).slice(0,24);
+  /* Compara el archivo con lo que hay: por colección, qué se agrega, qué cambia, qué se borraría y qué ya está igual. Nada de esto escribe */
+  function planImportar(d){
+    const plan={cols:[], ausentes:[], noAplica:[], cfg:[], notas:[]}, lim=new Date(Date.now()-90*864e5).toISOString();
+    RESP_COLS.forEach(c=>{
+      const aplica=respAplica(c), act=new Map(aplica?c.lista().map(([id,x])=>{ const y=copia(x); delete y.id; return [id,y]; }):[]);
+      if(!(c.k in d)){ if(aplica) plan.ausentes.push({et:c.et, n:act.size}); return; }
+      /* Una colección que el archivo trae vacía mientras aquí tiene registros se trata como si no viniera: un respaldo incompleto no puede vaciar la base */
+      if(aplica && act.size && d[c.k] && typeof d[c.k]==='object' && !Object.keys(d[c.k]).length){ plan.ausentes.push({et:c.et, n:act.size, vacia:true}); return; }
+      if(!aplica){ plan.noAplica.push(c.et); return; }
+      const arch=d[c.k], agrega=[], cambia=[], borra=[]; let sin=0, omit=0;
+      Object.keys(arch).forEach(id=>{ const r=copia(arch[id]); delete r.id;
+        if(c.k==='papelera' && String(r.fecha||'')<lim){ omit++; return; }   /* lo de más de 90 días la app lo borra sola */
+        if(!act.has(id)) agrega.push(id); else if(igual(act.get(id), r)) sin++; else cambia.push(id); });
+      act.forEach((_,id)=>{ if(!(id in arch)) borra.push(id); });
+      plan.cols.push({c, arch, act, agrega, cambia, borra, sin, omit}); });
+    const cf=esObj(d.config)?d.config:{};
+    RESP_CFG.forEach(c=>{ const act=respAplica(c)?cfgActual(c.k):null;
+      if(!(c.k in cf)){ if(act) plan.ausentes.push({et:c.et, n:0, cfg:true}); return; }
+      if(!respAplica(c)){ plan.noAplica.push(c.et); return; }
+      let v=copia(cf[c.k]); if(c.k==='ia'){ if('clave' in v) plan.notas.push('El archivo traía una clave del asistente: se ignoró. La clave que ya tienes se conserva.'); v=iaPlano(v); }
+      plan.cfg.push({c, v, act, estado:!act?'agrega':igual(act,v)?'igual':'cambia'}); });
+    plan.omit=plan.cols.reduce((a,p)=>a+p.omit,0);
+    plan.n={agrega:plan.cols.reduce((a,p)=>a+p.agrega.length,0)+plan.cfg.filter(x=>x.estado==='agrega').length, cambia:plan.cols.reduce((a,p)=>a+p.cambia.length,0)+plan.cfg.filter(x=>x.estado==='cambia').length, borra:plan.cols.reduce((a,p)=>a+p.borra.length,0),
+      soloAgrega:plan.cols.reduce((a,p)=>a+p.agrega.length,0)+plan.cfg.filter(x=>x.estado==='agrega').length};
+    plan.hay = plan.n.agrega+plan.n.cambia+plan.n.borra>0;
+    plan.firma = JSON.stringify([plan.cols.map(p=>[p.c.k,p.agrega,p.cambia,p.borra]), plan.cfg.map(x=>[x.c.k,x.estado])]);
+    return plan;
+  }
+  /* Las escrituras, en el orden: lo que se agrega o cambia, la configuración y, al final, lo que se borra. Cada una lleva cómo estaba antes (para deshacer si hace falta) */
+  function opsImportar(plan, modo){
+    const ops=[], dels=[], reemp=modo==='reemplazar';
+    plan.cols.forEach(p=>{ const col=p.c.k, que=p.c.et;
+      const poner=id=>{ const body=copia(p.arch[id]); delete body.id; const ex=p.act.has(id); ops.push({op:'set', col, id, datos:body, que, nuevo:!ex, antes:ex?copia(p.act.get(id)):undefined}); };
+      p.agrega.forEach(poner); if(reemp){ p.cambia.forEach(poner); p.borra.forEach(id=>dels.push({op:'delete', col, id, que, antes:copia(p.act.get(id))})); } });
+    plan.cfg.forEach(x=>{ if(x.estado==='igual' || (!reemp && x.estado!=='agrega')) return;
+      if(x.c.k==='ia') ops.push({op:'set', col:'config', id:'ia', datos:x.v, merge:true, que:x.c.et, antes:undefined});
+      else ops.push({op:'set', col:'config', id:x.c.k, datos:copia(x.v), que:x.c.et, nuevo:!x.act, antes:x.act?copia(x.act):undefined}); });
+    return ops.concat(dels);
+  }
+  function htmlPlan(plan, d, aviso){
+    const fila=(et,txt,mal)=>`<div class="ln"><div class="h"><b>${esc(et)}</b></div><div class="d num"${mal?' style="color:var(--danger)"':''}>${txt}</div></div>`;
+    const cab=`Respaldo del ${esc(d.fecha?fechaHora(d.fecha)||'fecha desconocida':'sin fecha')} · formato ${d.version}${d.appVersion?` · hecho con la versión ${esc(d.appVersion)} de la app`:''}`;
+    const filas=plan.cols.map(p=>fila(p.c.et, `agrega ${p.agrega.length} · cambia ${p.cambia.length} · se borrarían ${p.borra.length} · ya iguales ${p.sin}${p.omit?` · ${p.omit} con más de 90 días no se importan`:''}`, p.borra.length>0)).join('')
+      + plan.cfg.map(x=>fila(x.c.et, x.estado==='agrega'?'se agrega':x.estado==='cambia'?'cambia':'ya igual')).join('');
+    const aus=plan.ausentes.length?`<div class="tip"><b>Este archivo no trae, o trae vacío:</b> ${plan.ausentes.map(a=>esc(a.et)+(a.n?` (aquí hay ${a.n})`:'')).join(', ')}. Eso NO se toca, ni con «Reemplazar todo».</div>`:'';
+    const na=plan.noAplica.length?`<div class="tip">No se importan en esta vista (solo existen en la versión independiente o para el dueño): ${plan.noAplica.map(esc).join(', ')}.</div>`:'';
+    const viejo=d.version<RESP_FORMATO?`<div class="tip">Es un respaldo de una versión anterior: puede no traer todo. Solo se tocan las colecciones que trae.</div>`:'';
+    return (aviso?`<div class="err" style="margin-bottom:8px">${esc(aviso)}</div>`:'')+`<div class="tip num">${cab}</div>${viejo}<div class="lns">${filas}</div>${aus}${na}${plan.notas.map(n=>`<div class="tip">${esc(n)}</div>`).join('')}
+      <div class="tip"><b>Agregar solo lo que falta</b> escribe lo nuevo y no toca nada de lo actual. <b>Reemplazar todo</b> deja cada colección del archivo igual al archivo (cambia lo distinto y borra lo que sobra). Antes de escribir se guarda una copia de lo que hay ahora; si no se puede guardar, no se importa nada.</div>`;
+  }
+  function mostrarImport(plan, aviso){
+    imp.plan=plan; const n=plan.n;
+    $('#impBody').innerHTML=htmlPlan(plan, imp.data, aviso); $('#impErr').textContent=''; $('#impAvance').hidden=true;
+    const hayRe = n.cambia+n.borra>0, b=[];
+    if(n.soloAgrega>0) b.push(`<button type="button" class="btn pri" data-imp="agregar">${hayRe?'Agregar solo lo que falta':'Importar'} (${n.soloAgrega})</button>`);
+    if(hayRe) b.push(`<button type="button" class="btn ${n.borra>0?'del':'sec'}" data-imp="reemplazar">${n.borra>0?`Reemplazar todo (borra ${n.borra})`:`Agregar y cambiar (${n.soloAgrega+n.cambia})`}</button>`);
+    b.push('<button type="button" class="btn sec" data-imp="cancelar">Cancelar</button>');
+    $('#impBtns').innerHTML=b.join(''); openSheet('#impSheet');
   }
   async function restaurarJSON(file){
-    if(!gDb||!file) return;
+    if(!file) return;
+    if(impBusy){ errResp('Ya hay una importación en curso: espera a que termine.'); return; }
+    if(!gDb || !canWrite){ errResp('Ahora no se puede importar: la base no está lista o no tienes permiso para escribir.'); return; }
+    errResp('');
     let data; try{ data=JSON.parse(await file.text()); }catch(_){ errResp('Ese archivo no es un respaldo válido.'); return; }
-    const cols=['facturas','trabajadores','asistencia','adelantos','cortes','movimientos','inventario','invMovs','activos','cambios'];
-    const n=cols.reduce((a,c)=>a+Object.keys(data[c]||{}).length,0)+Object.keys(data.config||{}).length;
-    if(!n){ errResp('El respaldo está vacío.'); return; }
-    /* Qué cambia frente a lo que hay: se agrega, se cambia, se borra */
-    const actual={facturas:docs, trabajadores:trabs, asistencia:Object.values(asis), adelantos:adels, cortes, movimientos:movs, inventario:items, invMovs, activos, cambios};
-    let agrega=0, cambia=0, borra=0; const sobran=[];
-    cols.forEach(c=>{ const cur=actual[c]||[], idDe=d=>c==='asistencia'?d.fecha:d.id; const curIds=new Set(cur.map(idDe)); const nuevos=data[c]||{};
-      Object.keys(nuevos).forEach(id=>{ if(curIds.has(id)) cambia++; else agrega++; });
-      cur.forEach(d=>{ if(!(idDe(d) in nuevos)) sobran.push([c,idDe(d)]); }); });
-    borra=sobran.length; const fechaR=data.fecha?fechaHora(data.fecha):'sin fecha';
-    const reemplazar=confirm(`Respaldo del ${fechaR}: ${agrega} registros nuevos, ${cambia} que ya existen (se sobrescriben) y ${borra} actuales que no están en el respaldo.\n\nREEMPLAZAR TODO: deja la base exactamente como el respaldo (borra esos ${borra}).\n\nAceptar = reemplazar todo. Cancelar = ver la otra opción.`);
-    let soloFaltan=false;
-    if(!reemplazar){ soloFaltan=confirm(`AGREGAR SOLO LO QUE FALTA: escribe los ${agrega} registros nuevos y no toca nada de lo actual.\n\nAceptar = agregar solo lo que falta. Cancelar = no hacer nada.`); if(!soloFaltan) return; }
-    let ok=0; errResp('');
-    try{
-      /* Respaldo automático de lo actual antes de tocar nada */
-      try{ await guardarArchivo(`antes-de-restaurar-${today()}.json`, JSON.stringify(respaldoJSON(), null, 1)); }catch(_){}
-      for(const c of cols){ const cur=new Set((actual[c]||[]).map(d=>c==='asistencia'?d.fecha:d.id)); for(const [id,d] of Object.entries(data[c]||{})){ if(soloFaltan && cur.has(id)) continue; const body={...d}; delete body.id; await gDb.collection(c).doc(id).set(body); ok++; } }
-      if(!soloFaltan){ for(const [k,v] of Object.entries(data.config||{})){ await gDb.doc('config/'+k).set(v); ok++; } for(const [c,id] of sobran){ await gDb.collection(c).doc(id).delete(); ok++; } }
-      toast(soloFaltan?`Agregados ${ok} registros que faltaban`:`Base reemplazada: ${ok} registros escritos o borrados`); if(modulo==='dat') renderDat(); else renderGas();
-    }catch(e){ errResp(`Se procesaron ${ok} y falló el resto: ${errMsg(e)}`); }
+    const prob=validarRespaldo(data);
+    if(prob.length){ errResp('Ese archivo no se importó y no se cambió nada: '+prob.map((x,i)=>`${i+1}) ${x}`).join(' · ')+'.'); return; }
+    const r=await respaldoListo(); if(!r.ok){ errResp(textoNoListo(r,'importó')); return; }
+    imp={data, nombre:file.name||'', plan:null};
+    const plan=planImportar(data);
+    if(!plan.hay){ imp=null; toast('El archivo es igual a lo que ya hay: no se cambió nada.'); return; }
+    mostrarImport(plan);
   }
+  async function ejecutarImport(modo){
+    if(impBusy || !imp) return; impBusy=true;
+    const err=$('#impErr'), av=$('#impAvance'), bt=$('#impBtns'); err.textContent=''; av.hidden=false; av.textContent='Revisando…';
+    bt.querySelectorAll('button').forEach(b=>b.disabled=true);
+    const sale=m=>{ err.textContent=m; av.hidden=true; bt.querySelectorAll('button').forEach(b=>b.disabled=false); impBusy=false; };
+    let hechos=0, total=0, nombre='';
+    try{
+      const e0=estadoLectura(); if(e0.mal.length||e0.pend.length){ sale(textoNoListo(e0.mal.length?{falla:e0.mal}:{tarda:e0.pend},'importó')); return; }
+      const plan=planImportar(imp.data);
+      if(plan.firma!==imp.plan.firma){ impBusy=false; mostrarImport(plan, 'Lo que hay en la base cambió mientras decidías. Revisa el resumen nuevo y vuelve a elegir.'); return; }
+      nombre=`antes-de-importar-${today()}-${new Date().toTimeString().slice(0,5).replace(':','')}.json`;
+      av.textContent='Paso 1 de 2: guardando una copia de lo que hay ahora…';
+      let okCopia=false; try{ okCopia=await guardarArchivo(nombre, JSON.stringify(respaldoJSON(), null, 1)); }catch(_){ okCopia=false; }
+      if(!okCopia){ sale('No se importó nada: no se pudo guardar la copia de lo que hay ahora, y esa copia es obligatoria. Inténtalo otra vez y acepta la descarga.'); return; }
+      const ops=opsImportar(plan, modo); total=ops.length;
+      if(!total){ sale('No hay nada que escribir.'); return; }
+      const CH=typeof dbRaiz.lote==='function'?400:100; let enCola=false;
+      for(let i=0;i<ops.length;i+=CH){ const tr=ops.slice(i,i+CH); av.textContent=`Paso 2 de 2: escribiendo… ${hechos} de ${total}`;
+        const r=await escribirJuntos(tr, 'la importación del respaldo'); if(r===EN_COLA) enCola=true; hechos+=tr.length; av.textContent=`Paso 2 de 2: escritos ${hechos} de ${total}`; }
+      const n=plan.n, reemp=modo==='reemplazar', ag=n.soloAgrega, ca=reemp?n.cambia:0, bo=reemp?n.borra:0;
+      const msg=`Importación terminada: ${ag} agregados, ${ca} cambiados y ${bo} borrados. La copia de antes quedó en «${nombre}»${enCola?'. Los cambios están guardados en el teléfono y se suben solos cuando vuelva la señal':''}.`;
+      impBusy=false; av.hidden=true; $('#impBody').innerHTML=`<div class="tip">${esc(msg)}</div>`; bt.innerHTML='<button type="button" class="btn pri" data-imp="cerrar">Cerrar</button>';
+      errResp(''); toast('Importación terminada'); if(modulo==='dat') renderDat(); else if(modulo==='gas') renderGas();
+    }catch(e){
+      const m=`La importación se cortó. Motivo: ${errMsg(e)} Quedaron escritos ${hechos} de ${total} cambios; los demás no se escribieron${e&&e.dudoso?' (y el último bloque quedó con resultado incierto: puede haberse escrito en parte)':''}. La base quedó a medias. Para terminar, vuelve a importar el mismo archivo: lo que ya se escribió no se repite ni se duplica. Para volver atrás, importa la copia «${nombre}» con «Reemplazar todo».`;
+      impBusy=false; av.hidden=true; err.textContent=m; $('#impBtns').innerHTML='<button type="button" class="btn sec" data-imp="cerrar">Cerrar</button>'; errResp(m);
+    }
+  }
+  $('#impSheet').addEventListener('click', e=>{ const b=e.target.closest('[data-imp]'); if(!b||b.disabled) return; const m=b.dataset.imp;
+    if(m==='cancelar'||m==='cerrar'){ if(!impBusy){ imp=null; closeSheets(); } return; }
+    if(m==='reemplazar' && imp && imp.plan && imp.plan.n.borra>0 && !dobleToque('impReemp', `Toca otra vez: se borrarán ${imp.plan.n.borra} registros`, b)) return;
+    ejecutarImport(m); });
   /* ---------- pestaña Datos: exportar e importar la base completa ---------- */
   const errResp = m => { const x=(modulo==='dat'&&$('#datErr'))||$('#gAjErr')||$('#datErr'); if(x) x.textContent=m; else if(m) toast(m); };
   function renderDat(){ const m=$('#datMain'); if(!m) return;
     const n=[[docs.length,'trabajos'],[trabs.length,'trabajadores'],[Object.keys(asis).length,'días de asistencia'],[movs.length,'movimientos'],[cortes.length,'cortes de nómina'],[items.length,'artículos de inventario']].filter(x=>x[0]).map(x=>`${x[0]} ${x[1]}`).join(' · ');
     m.innerHTML=`<div class="sech">Exportar</div>
-      <div class="tip">Baja la base de datos completa en un solo archivo: trabajos, pagos, avance de las órdenes, trabajadores, asistencia, adelantos, cortes, movimientos, inventario y ajustes.${n?'<br>Ahora tiene: '+n+'.':''}</div>
-      <div class="row-btns"><button type="button" class="btn pri" id="datExp">Exportar base de datos</button></div>
+      <div class="tip">Guarda toda la base en un solo archivo de respaldo: trabajos, pagos, avance de las órdenes, trabajadores, asistencia, adelantos, cortes, movimientos, inventario, herramientas, registro de cambios, papelera, personas con acceso, solicitudes por aprobar y ajustes (del asistente se guarda el crédito y el uso, pero nunca la clave).${n?'<br>Ahora tiene: '+n+'.':''}<br>Si algo todavía está cargando o no se pudo leer, no exporta y te dice qué falta.</div>
+      <div class="row-btns"><button type="button" class="btn pri" id="datExp">Exportar todo (archivo de respaldo)</button></div>
       ${canWrite?`<div class="sech">Importar</div>
-      <div class="tip">Carga un archivo exportado desde aquí. Antes de escribir te dice cuántos registros agrega, cuántos cambia y cuántos borra, y guarda una copia de lo que hay.</div>
-      <div class="row-btns"><label class="btn sec" style="cursor:pointer">Importar base de datos<input type="file" id="datImp" accept=".json,application/json" style="position:absolute;width:1px;height:1px;opacity:0"></label></div>`:''}
+      <div class="tip">Carga un archivo de respaldo. Primero revisa que el archivo esté completo y bien armado; después te muestra, por colección, cuántos registros agrega, cuántos cambia y cuántos se borrarían, y nombra lo que el archivo no trae (eso nunca se borra). Guarda una copia de lo que hay antes de escribir; si no puede, no importa.</div>
+      <div class="row-btns"><label class="btn sec" style="cursor:pointer">Importar respaldo<input type="file" id="datImp" accept=".json,application/json" style="position:absolute;width:1px;height:1px;opacity:0"></label></div>`:''}
       <div class="sech">Excel</div>
-      <div class="tip">Lo mismo en una hoja de cálculo, una hoja por tipo de dato, para revisarlo o archivarlo. No sirve para importar.</div>
-      <div class="row-btns"><button type="button" class="btn sec" id="datExcel">Descargar en Excel</button></div>
+      <div class="tip">Lo mismo en una hoja de cálculo, una hoja por tipo de dato, para revisarlo o archivarlo. Necesita internet y no sirve para importar.</div>
+      <div class="row-btns"><button type="button" class="btn sec" id="datExcel">Exportar a Excel (necesita internet)</button></div>
       <div class="err" id="datErr"></div>
       <div class="tip" id="datVer" style="border:0;text-align:center;margin-top:18px">Versión ${APP_VERSION}</div>`;
   }
@@ -5176,6 +5352,7 @@ Responde solo con un objeto JSON:
   async function exportarExcel(btn){
     btn=btn||$('#gExcel'); const lbl=btn?btn.textContent:''; if(btn){ btn.disabled=true; btn.textContent='Preparando…'; }
     try{
+      { const r=await respaldoListo(); if(!r.ok){ const m=textoNoListo(r,'exportó'); errResp(m); toast(m); return; } }
       await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
       const X=window.XLSX, wb=X.utils.book_new(), siNo=v=>v?'Sí':'No';
       const add=(name,rows)=>{ const ws=X.utils.json_to_sheet(rows.length?rows:[{'Sin datos':''}]); ws['!cols']=Object.keys(rows[0]||{'Sin datos':1}).map(k=>({wch:Math.min(48,Math.max(10,k.length+2,...rows.slice(0,200).map(r=>String(r[k]??'').length)))})); X.utils.book_append_sheet(wb, ws, name); };
@@ -5193,8 +5370,8 @@ Responde solo con un objeto JSON:
       add('Mov. inventario', invMovs.slice().sort(byFechaCreado).map(m=>{ const it=itemDe(m.itemId)||{nombre:'Ítem eliminado',unidad:'und'}; const d=detI[m.id]||{}; return {Fecha:m.fecha, Tipo:TIPO_INV[m.tipo]||m.tipo, Ítem:it.nombre, Cantidad:m.tipo==='conteo'?num(m.contado):num(m.cantidad), Unidad:uni(it.unidad), 'Diferencia (conteo)':m.tipo==='conteo'?num(d.diferencia):'', 'Costo unitario USD':num(d.cu)||'', 'Costo USD':num(d.costo), 'Orden o trabajo':m.trabajoId?nomD(m.trabajoId):'', 'Quién':m.quienId?nomT(m.quienId):'', Proveedor:m.proveedor||'', Referencia:m.referencia||'', Nota:m.nota||'', 'Con gasto':m.movId?'Sí':'', 'Registrado por':m.registradoPor||''}; }));
       add('Herramientas', activos.slice().sort((a,b)=>String(a.nombre).localeCompare(String(b.nombre),'es')).map(a=>({Nombre:a.nombre, Código:a.codigo||'', Estado:a.estado||'Bueno', Responsable:respNombre(a.responsableId), Ubicación:a.ubicacion||'', 'Fecha de compra':a.fechaCompra||'', 'Costo USD':num(a.costo)||'', Nota:a.nota||''})));
       const bin=X.write(wb, {bookType:'xlsx', type:'array'});
-      if(await guardarArchivo(`Respaldo Workproca ${today()}.xlsx`, new Blob([bin]))) toast('Respaldo descargado');
-    }catch(e){ const sin=!window.XLSX; toast(sin?'Para el Excel hace falta conexión a internet. El respaldo completo (JSON) sí funciona sin conexión: Gastos › Ajustes.':'No se pudo generar el Excel. Inténtalo otra vez.', sin?{label:'Respaldo JSON', fn:()=>descargarJSON()}:null); }
+      { const nx=`Respaldo Workproca ${today()}.xlsx`; if(await guardarArchivo(nx, new Blob([bin]))) toast(`Excel listo: ${nx}. ${DONDE_ARCHIVO()}`); }
+    }catch(e){ const sin=!window.XLSX; toast(sin?'Para el Excel hace falta conexión a internet. El archivo de respaldo completo sí funciona sin conexión: pestaña Datos › Exportar todo.':'No se pudo generar el Excel. Inténtalo otra vez.', sin?{label:'Exportar todo', fn:()=>descargarJSON()}:null); }
     finally{ if(btn){ btn.disabled=false; btn.textContent=lbl; } }
   }
   function leerGAj(){
@@ -7243,7 +7420,7 @@ Responde solo con un objeto JSON:
     const perLbl = resF.periodo==='mes' ? `Del 01/${R.hoy.slice(5,7)} al ${fdate(R.hoy)}` : `Semana del ${fdate(R.per[0])} al ${fdate(R.per[1])}`;
     const sinSaldos=!gcfg.cuentas.some(c=>((gcfg.saldos||{})[c.id]||{}).fecha);
     el.innerHTML = `${bloqueSolicitudes()}
-      <div class="row-btns" style="margin-top:12px"><button type="button" class="btn sec" id="rExcel">Exportar todo a Excel</button><button type="button" class="btn sec" id="rCopy">Copiar resumen</button></div>
+      <div class="row-btns" style="margin-top:12px"><button type="button" class="btn sec" id="rExcel">Exportar a Excel (necesita internet)</button><button type="button" class="btn sec" id="rCopy">Copiar resumen</button></div>
       ${sinSaldos?`<div class="lock" style="margin-top:14px">Las cuentas arrancan en cero el ${fdate(inicioCaja())} porque no tienen saldo inicial: la caja solo muestra los movimientos desde esa fecha. Pon el saldo real en <button type="button" class="lnk" id="rIrAj">Gastos → Ajustes</button>.</div>`:''}
       ${card('Caja hoy', R.disponible, `Bolívares a la tasa del día, ${nfT.format(R.tasaBs||0)} Bs/$${R.tasaEnt&&Math.abs(R.dispEnt-R.disponible)>=0.01?` · a la tasa a la que entraron (${nfT.format(r2(R.tasaEnt))}) serían ${usd(R.dispEnt)}`:''}`,
         gcfg.cuentas.map(c=>fila(esc(c.nombre)+' ›', 0, {cta:c.id, raw: c.moneda==='VES' ? `${bsNeg(R.sal[c.id]||0)}${R.tasaBs?' = '+usdNeg(r2((R.sal[c.id]||0)/R.tasaBs)):''}` : usdNeg(R.sal[c.id]||0), neg:(R.sal[c.id]||0)<0})).join('')
@@ -7323,7 +7500,7 @@ Responde solo con un objeto JSON:
   /* ---------- datos ---------- */
   (async()=>{
     const c=window.claude;
-    const db = c&&c.use ? await c.use('db') : null;
+    const db = c&&c.use ? sondearLectura(await c.use('db')) : null;
     if(!db){ failed='Abre esta página desde tu cuenta de Claude para ver y editar los trabajos.'; canWrite=false; nFallo=true; render(); renderNom(); return; }
     dbRaiz=db; pintarRed(); pintarRechazos(); revisarColaVieja();
     coll=db.collection('facturas');
