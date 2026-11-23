@@ -24,7 +24,7 @@
 #login button{border:0;background:#0D5C63;color:#fff;border-radius:12px;padding:13px 18px;font-weight:700;font-size:15px;width:100%}
 </style>
 </head>
-<body><div style="background:#B26A00;color:#fff;font:700 12px/1.3 system-ui,sans-serif;text-align:center;padding:4px 8px">VERSIÓN DE PRUEBA · base v143 (sin correcciones) · trabaja con tus datos reales</div>
+<body><div style="background:#B26A00;color:#fff;font:700 12px/1.3 system-ui,sans-serif;text-align:center;padding:4px 8px">VERSIÓN DE PRUEBA · etapa 1a · trabaja con tus datos reales</div>
 <div id="login" class="scrim-login">
   <div class="box">
     <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:#5A6A75">Workproca · Trabajos Profesionales C.A.</div>
@@ -100,13 +100,26 @@ window.__standalone = true;
   if (typeof firebase === 'undefined') { msg.textContent = 'No se pudo cargar Firebase. Revisa la conexión y recarga.'; btn.hidden = true; return; }
   firebase.initializeApp(cfg);
   const auth = firebase.auth(), fs = firebase.firestore(); fsRef = fs;
-  try { fs.enablePersistence({ synchronizeTabs: true }).catch(() => {}); } catch (_) {}
-  const wrapDoc = d => ({ id: d.id, set: (o, opt) => opt ? d.set(limpiar(o), opt) : d.set(limpiar(o)), update: o => d.update(limpiar(o)), delete: () => d.delete(), onSnapshot: (f, e) => d.onSnapshot(f, e), get: () => d.get() });
+  /* Caché del teléfono: si queda activa, lo que se guarda sin señal queda en cola y sube solo. La app lo consulta en window.__persistencia */
+  const avisarRed = () => { try { window.dispatchEvent(new Event('wk-red')); } catch (_) {} };
+  window.__persistencia = false; window.__pendientes = 0; window.__pendViejos = false;
+  try { fs.enablePersistence({ synchronizeTabs: true }).then(() => { window.__persistencia = true; avisarRed(); }).catch(() => {}); } catch (_) {}
+  /* Cada escritura cuenta como «cambio por subir» hasta que el servidor la confirma (o la rechaza) */
+  const contar = p => { window.__pendientes++; avisarRed(); const fin = () => { window.__pendientes = Math.max(0, window.__pendientes - 1); avisarRed(); }; p.then(fin, fin); return p; };
+  const wrapDoc = d => ({ id: d.id, set: (o, opt) => contar(opt ? d.set(limpiar(o), opt) : d.set(limpiar(o))), update: o => contar(d.update(limpiar(o))), delete: () => contar(d.delete()), onSnapshot: (f, e) => d.onSnapshot(f, e), get: () => d.get() });
   const wrapColl = c => ({ doc: id => wrapDoc(id ? c.doc(id) : c.doc()), onSnapshot: (f, e) => c.onSnapshot(f, e) });
-  const adapter = { collection: c => wrapColl(fs.collection(c)), doc: p => wrapDoc(fs.doc(p)) };
+  /* Lote de Firestore: varias escrituras que entran todas o no entra ninguna (también cuando quedan en cola sin señal) */
+  const lote = ops => { const b = fs.batch(); (ops || []).forEach(o => { const r = fs.collection(o.col).doc(o.id);
+      if (o.op === 'set') { if (o.merge) b.set(r, limpiar(o.datos || {}), { merge: true }); else b.set(r, limpiar(o.datos || {})); }
+      else if (o.op === 'update') b.update(r, limpiar(o.datos || {})); else b.delete(r); });
+    return contar(b.commit()); };
+  const adapter = { collection: c => wrapColl(fs.collection(c)), doc: p => wrapDoc(fs.doc(p)), lote,
+    /* Para comprobar, al volver a abrir la app, lo que quedó en cola en una sesión anterior */
+    esperarSubida: () => fs.waitForPendingWrites(),
+    enServidor: (col, id) => fs.collection(col).doc(id).get({ source: 'server' }).then(s => ({ existe: s.exists, datos: s.exists ? s.data() : null })) };
   /* Personas invitadas (modo registro): cada escritura se convierte en una solicitud que el dueño aprueba; nada cambia hasta entonces */
   let quien = null;
-  const solicitar = (col, docId, op, datos) => { const resumen = (window.__resumenSolicitud ? window.__resumenSolicitud(col, docId, op, datos) : '') || ''; return fs.collection('solicitudes').doc().set(limpiar({ col, docId, op, datos: datos || null, autor: quien.email, nombre: quien.nombre, fecha: new Date().toISOString(), estado: 'pendiente', resumen }))
+  const solicitar = (col, docId, op, datos) => { const resumen = (window.__resumenSolicitud ? window.__resumenSolicitud(col, docId, op, datos) : '') || ''; return contar(fs.collection('solicitudes').doc().set(limpiar({ col, docId, op, datos: datos || null, autor: quien.email, nombre: quien.nombre, fecha: new Date().toISOString(), estado: 'pendiente', resumen })))
     .then(() => { window.dispatchEvent(new Event('wk-solicitud')); }); };
   const docInvitado = (col, d) => ({ id: d.id, set: (o, opt) => solicitar(col, d.id, opt && opt.merge ? 'merge' : 'set', limpiar(o)), update: o => solicitar(col, d.id, 'update', limpiar(o)), delete: () => solicitar(col, d.id, 'delete', null), onSnapshot: (f, e) => d.onSnapshot(f, e), get: () => d.get() });
   /* La persona invitada no lee las colecciones con dinero: lee copias livianas (sin montos, cédulas ni pagos) que mantiene la app del dueño */
@@ -160,7 +173,9 @@ window.__standalone = true;
     }
     ov.hidden = true; document.documentElement.dataset.user = u.email || '';
     if (perfil && perfil.activo !== false) { quien = { email: u.email, nombre: perfil.nombre || u.email }; document.documentElement.dataset.rol = 'registro'; document.documentElement.dataset.area = perfil.area || 'todo'; if (location.hash !== '#registro') history.replaceState(null, '', '#registro'); }
-    if (!entregado) { entregado = true; resolveDb(quien ? adapterInvitado : adapter); if (!quien) { try { mantenerCopiasLite(); } catch (_) {} } }
+    if (!entregado) { entregado = true; resolveDb(quien ? adapterInvitado : adapter); if (!quien) { try { mantenerCopiasLite(); } catch (_) {} }
+      /* Escrituras de una sesión anterior que todavía no han subido: el indicador lo dice hasta que terminen */
+      try { let subio = false; fs.waitForPendingWrites().then(() => { subio = true; window.__pendViejos = false; avisarRed(); }, () => {}); setTimeout(() => { if (!subio) { window.__pendViejos = true; avisarRed(); } }, 2500); } catch (_) {} }
   });
   btn.onclick = () => auth.signInWithPopup(provider).catch(e => { if (e && (e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-this-environment' || e.code === 'auth/cancelled-popup-request')) return auth.signInWithRedirect(provider); msg.textContent = 'No se pudo entrar: ' + (e && e.message || e); });
   window.__cerrarSesion = () => auth.signOut().then(() => location.reload());
@@ -304,6 +319,9 @@ main{padding-bottom:130px}
 .topnav{position:sticky;top:env(safe-area-inset-top,0px);z-index:8;background:var(--bg);padding-block:14px 10px;border-bottom:1px solid var(--line)}
 /* Instalada en la pantalla de inicio, la barra de estado del teléfono queda pegada arriba: más aire para las pestañas */
 @media (display-mode: standalone){.topnav{padding-top:22px}}
+/* Indicador de conexión y de cambios por subir: una línea discreta sobre las pestañas (no tapa nada) */
+.netbar{font-size:12px;font-weight:700;color:var(--muted);text-align:center;margin:-6px 0 6px;line-height:1.3}.netbar.off{color:var(--danger)}
+.rechazo{background:var(--danger);color:#fff;border-radius:10px;padding:9px 12px;margin:0 0 8px;font-size:13px;line-height:1.35}.rechazo b{display:block;margin-bottom:2px}.rechazo button{margin-top:6px;border:0;background:#fff;color:#7A1A14;border-radius:8px;font-weight:800;font-size:13.5px;padding:7px 12px;min-height:34px}
 .modtabs{display:flex;gap:3px}
 .avbar{height:8px;border-radius:99px;background:var(--sunk);border:1px solid var(--line);overflow:hidden;margin-top:8px}.avbar i{display:block;height:100%;background:var(--accent);border-radius:99px}
 .avcard{width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;display:block}
@@ -549,6 +567,8 @@ select.combo-oculto{display:none}
 
 <div class="topnav" id="topnav">
   <div class="wrap">
+    <div class="netbar" id="netBar" role="status" hidden></div>
+    <div class="rechazo" id="avRech" role="alert" hidden></div>
     <nav class="modtabs" id="modTabs" role="tablist" aria-label="Módulos">
       <button type="button" role="tab" data-m="cob" aria-selected="true">Cobranzas</button>
       <button type="button" role="tab" data-m="av" aria-selected="false">Avance</button>
@@ -1290,7 +1310,7 @@ select.combo-oculto{display:none}
   new MutationObserver(()=>{ clearTimeout(combosAll._t); combosAll._t=setTimeout(combosAll,0); }).observe(document.body,{childList:true, subtree:true});
   document.addEventListener('change', ()=>setTimeout(combosAll,0), true);
   function limpiarFiltros(){ setTimeout(combosAll,0); }
-  function toast(msg, accion){ const t=$('#toast'); if(esRegistro() && window.__standalone && !accion && /guardad|registrad|activad/i.test(String(msg)) && !/no se|error|falt/i.test(String(msg))) msg='Enviado para aprobar: queda pendiente hasta que el dueño lo apruebe'; t.textContent=msg; if(accion){ const b=document.createElement('button'); b.type='button'; b.className='tact'; b.textContent=accion.label; b.onclick=()=>{ t.hidden=true; accion.fn(); }; t.appendChild(b); } t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true, accion?(accion.dur||6000):2600); }
+  function toast(msg, accion){ const t=$('#toast'); let enCola=false; if(enColaAviso){ enColaAviso=0; if(!/no se |no hay|error|falt|revisa|rechaz/i.test(String(msg))){ msg=/eliminad|borrad|quitad/i.test(String(msg))?TXT_COLA_DEL:TXT_COLA; enCola=true; } } if(!enCola && esRegistro() && window.__standalone && !accion && /guardad|registrad|activad/i.test(String(msg)) && !/no se|error|falt/i.test(String(msg))) msg='Enviado para aprobar: queda pendiente hasta que el dueño lo apruebe'; t.textContent=msg; if(accion){ const b=document.createElement('button'); b.type='button'; b.className='tact'; b.textContent=accion.label; b.onclick=()=>{ t.hidden=true; accion.fn(); }; t.appendChild(b); } t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true, accion?(accion.dur||6000):enCola?6000:2600); }
   function byClient(){ return docs.filter(d => !cliente || (d.cliente||'')===cliente); }
 
   function renderStats(){
@@ -1380,7 +1400,7 @@ select.combo-oculto{display:none}
     const btn=$('#btnNewUni'); btn.disabled=true;
     try{
       const nueva={cliente:cli, unidad:nombre};
-      await uniRef.set({lista:[...unidadesExtra.filter(u=>!(u.cliente===cli&&norm(u.unidad)===norm(nombre))), nueva]});
+      await conLimite(uniRef.set({lista:[...unidadesExtra.filter(u=>!(u.cliente===cli&&norm(u.unidad)===norm(nombre))), nueva]}), 0, 'la unidad nueva');
       unidadesExtra=[...unidadesExtra, nueva];
       fillUnidadSelect(nombre); $('#newUni').hidden=true; toast(`Unidad «${nombre}» agregada a ${cli}`);
     }catch(err){ $('#newUniMsg').textContent=errMsg(err); }
@@ -1414,7 +1434,7 @@ select.combo-oculto{display:none}
     if(!cfgRef) return;
     const btn=$('#btnNewCli'); btn.disabled=true;
     try{
-      await cfgRef.set({lista:[...clientesExtra.filter(c=>norm(c)!==norm(nombre)), nombre]});
+      await conLimite(cfgRef.set({lista:[...clientesExtra.filter(c=>norm(c)!==norm(nombre)), nombre]}), 0, 'el cliente nuevo');
       if(!clientesExtra.includes(nombre)) clientesExtra=[...clientesExtra, nombre];
       fillClienteSelect(nombre); $('#newCli').hidden=true; renderClientes(); toast(`Cliente «${nombre}» agregado`);
     }catch(err){ $('#newCliMsg').textContent=errMsg(err); }
@@ -1762,7 +1782,7 @@ select.combo-oculto{display:none}
   function render(){ renderTabs(); renderStats(); renderList(); renderSelbar(); if(typeof renderGas==='function' && modulo==='gas') renderGas(); if(typeof renderRes==='function' && modulo==='res') renderRes(); if(modulo==='av') renderAv(); }
 
   /* ---------- hojas ---------- */
-  function openSheet(id){ if(id==='#shareSheet'){ const b=$('#btnCurva'); if(b) b.hidden=!avCurvaOn; avCurvaOn=false; } $('#scrim').hidden=false; $(id).hidden=false; $(id).dataset.dirty=''; cierreArmado=0; $('#toast').hidden=true; document.body.style.overflow='hidden'; }
+  function openSheet(id){ soltarIntento(id); if(id==='#shareSheet'){ const b=$('#btnCurva'); if(b) b.hidden=!avCurvaOn; avCurvaOn=false; } $('#scrim').hidden=false; $(id).hidden=false; $(id).dataset.dirty=''; cierreArmado=0; $('#toast').hidden=true; document.body.style.overflow='hidden'; }
   /* Lo escrito en una hoja no se pierde por un toque fuera: la primera vez avisa, la segunda descarta */
   let cierreArmado=0;
   document.addEventListener('input', e=>{ const sh=e.target.closest&&e.target.closest('section.sheet'); if(sh && sh.id!=='shareSheet' && !e.target.classList.contains('combo-in')) sh.dataset.dirty='1'; }, true);
@@ -1771,8 +1791,103 @@ select.combo-oculto{display:none}
     if(sucia && Date.now()-cierreArmado>4000){ cierreArmado=Date.now(); toast('Tienes datos sin guardar. Toca otra vez para descartarlos.'); return; }
     cierreArmado=0; closeSheets();
   }
-  /* Una escritura que no responde en 20 segundos se da por fallida: con mala señal, mejor avisar que esperar para siempre */
-  const conLimite = (p, ms) => Promise.race([p, new Promise((_,rej)=>setTimeout(()=>rej(new Error('No hay respuesta de la base de datos (sin señal).')), ms||20000))]);
+  /* =====================================================================
+     GUARDADO SEGURO: todo o nada, identificadores estables por intento, cola del teléfono y causa real de cada error
+     ===================================================================== */
+  const APP_VERSION='144';
+  let dbRaiz=null;                                       /* la base de datos (se asigna al arrancar) */
+  const cacheActiva = () => !!window.__persistencia;     /* versión independiente con la caché del teléfono activa: lo escrito queda en cola y sube solo */
+  const sinRed = () => typeof navigator!=='undefined' && navigator.onLine===false;
+  const EN_COLA={enCola:true}, TXT_COLA='Guardado en el teléfono. Se sube solo cuando vuelva la señal.', TXT_COLA_DEL='Eliminado en el teléfono. Se sube solo cuando vuelva la señal.';
+  let enColaAviso=0, nPend=0, pendDesde=0, redT=null;
+  const lsLeer = k => { try{ const v=JSON.parse(localStorage.getItem(k)||'[]'); return Array.isArray(v)?v:[]; }catch(_){ return []; } };
+  const lsPoner = (k,v) => { try{ localStorage.setItem(k, JSON.stringify(v)); }catch(_){} };
+  /* Lo que quedó en cola se anota en el teléfono: si el servidor lo rechaza después (aunque la app se haya cerrado), el dueño se entera */
+  function colaAnotar(que){ const q=que&&typeof que==='object'?que:{que}, k='c'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); lsPoner('wkCola', [...lsLeer('wkCola'), {k, que:q.que||'un guardado', docs:q.docs||[], t:new Date().toISOString()}].slice(-80)); return k; }
+  const colaQuitar = k => lsPoner('wkCola', lsLeer('wkCola').filter(x=>x.k!==k));
+  function avisoRechazo(que, e){ const q=que&&typeof que==='object'?que.que:que; lsPoner('wkRechazos', [...lsLeer('wkRechazos'), {que:q||'un guardado', causa:typeof e==='string'?e:errMsg(e), t:new Date().toISOString()}].slice(-20)); pintarRechazos(); }
+  /* Aviso que no desaparece solo: un cambio que quedó en el teléfono y el servidor no aceptó */
+  /* Si la pantalla está arriba del todo, sigue arriba cuando aparece o se quita un aviso de la barra (algunos navegadores la corren hacia abajo y el título queda tapado) */
+  function sinCorrer(fn){ const arriba=(window.scrollY||0)<4; fn(); if(!arriba) return; const subir=()=>{ if((window.scrollY||0)>0) window.scrollTo(0,0); }; void document.body.offsetHeight; subir(); if(window.requestAnimationFrame) requestAnimationFrame(()=>{ subir(); requestAnimationFrame(subir); }); }
+  function pintarRechazos(){ sinCorrer(pintarRechazos0); }
+  function pintarRechazos0(){ const el=$('#avRech'); if(!el) return; const l=lsLeer('wkRechazos'); if(!l.length){ el.hidden=true; el.innerHTML=''; return; }
+    const hora=t=>{ const d=new Date(t); return isNaN(d)?'':`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
+    el.innerHTML=`<b>${l.length===1?'Un cambio guardado en el teléfono NO subió':l.length+' cambios guardados en el teléfono NO subieron'}</b>${l.slice(-3).map(x=>`<div>${esc(x.que)}${hora(x.t)?' ('+hora(x.t)+')':''}. ${esc(x.causa||'')}</div>`).join('')}<div>Revisa cómo quedó y vuelve a cargarlo.</div><button type="button" id="avRechOk">Entendido</button>`; el.hidden=false; }
+  document.addEventListener('click', e=>{ if(e.target.closest&&e.target.closest('#avRechOk')){ lsPoner('wkRechazos', []); pintarRechazos(); } });
+  /* Indicador fijo de la barra superior: sin conexión y cambios que todavía no llegan al servidor */
+  function pintarRed(){ const el=$('#netBar'); if(!el) return; const n=window.__standalone?(+window.__pendientes||0):nPend, off=sinRed();
+    if(n>0 && !pendDesde) pendDesde=Date.now(); if(!n) pendDesde=0;
+    const visible=n>0 && (off || Date.now()-pendDesde>=2000); clearTimeout(redT); if(n>0 && !visible) redT=setTimeout(pintarRed, 2050-(Date.now()-pendDesde));
+    const txt=[off?'Sin conexión':'', visible?`${n} ${n===1?'cambio':'cambios'} por subir`:(!n&&window.__pendViejos?'Cambios por subir':'')].filter(Boolean).join(' · ');
+    if(el.hidden===!txt){ el.textContent=txt; el.classList.toggle('off', off); } else sinCorrer(()=>{ el.textContent=txt; el.hidden=!txt; el.classList.toggle('off', off); }); }
+  window.addEventListener('online', pintarRed); window.addEventListener('offline', pintarRed); window.addEventListener('wk-red', pintarRed);
+  /* Límite de espera de una escritura. Con la caché del teléfono activa, lo que no se confirma a tiempo NO es una falla: quedó en cola y sube solo
+     (se da por guardado y se avisa). Sin caché (o dentro de Claude) el vencimiento sí es una falla, de resultado incierto: reintentar es seguro porque
+     cada intento reutiliza los mismos identificadores. */
+  function conLimite(p, ms, que){
+    p=Promise.resolve(p);
+    if(!window.__standalone){ nPend++; pintarRed(); const baja=()=>{ nPend=Math.max(0,nPend-1); pintarRed(); }; p.then(baja, baja); }
+    return new Promise((ok,no)=>{ let fin=false;
+      const lim = ms || (cacheActiva() ? (sinRed()?1500:8000) : 20000);
+      const t=setTimeout(()=>{ if(fin) return; fin=true;
+        if(cacheActiva()){ const k=colaAnotar(que); p.then(()=>colaQuitar(k), e=>{ colaQuitar(k); avisoRechazo(que, e); });
+          enColaAviso=Date.now(); setTimeout(()=>{ if(enColaAviso){ enColaAviso=0; toast(TXT_COLA); } }, 600); ok(EN_COLA); }
+        else { p.catch(()=>{}); no(Object.assign(new Error('sin respuesta'), {code:'sin_respuesta', dudoso:true})); } }, lim);
+      p.then(v=>{ if(fin) return; fin=true; clearTimeout(t); ok(v); }, e=>{ if(fin) return; fin=true; clearTimeout(t); no(e); }); });
+  }
+  /* Identificadores estables por intento: el documento nuevo recibe su identificador una vez (por hoja abierta) y cada toque en Guardar lo reutiliza,
+     así un reintento escribe encima y nunca crea un segundo registro */
+  const idsIntento={}, dudosos={};
+  const nuevoId = col => dbRaiz.collection(col).doc().id;
+  const idEstable = (clave, col) => idsIntento[clave] || (idsIntento[clave]=nuevoId(col));
+  const soltarIntento = pref => { [idsIntento, dudosos].forEach(o=>Object.keys(o).forEach(k=>{ if(k===pref || k.startsWith(pref+'|')) delete o[k]; })); };
+  /* Tras un intento de resultado incierto (sin respuesta, o a medias sin poder deshacer), el mismo Guardar reenvía exactamente lo mismo;
+     si entre tanto cambió lo escrito, se avisa una vez para revisar antes de repetir */
+  const TXT_DUDA='El intento anterior quedó sin respuesta y puede haberse guardado. Cierra, revisa cómo quedó y vuelve a cargarlo solo si falta. Si ya revisaste, toca Guardar otra vez.';
+  function reintento(clave, firma){ const d=dudosos[clave]; if(!d) return null; if(d.firma===firma) return d; delete dudosos[clave]; return {cambio:true}; }
+  const QUE_COL={facturas:'el trabajo', movimientos:'el movimiento de Gastos', adelantos:'el adelanto', cortes:'el corte de nómina', trabajadores:'la ficha del trabajador', asistencia:'el día de asistencia', inventario:'el ítem de inventario', invMovs:'el movimiento de inventario', activos:'el equipo', papelera:'la copia en la papelera', cambios:'la anotación del cambio', config:'los ajustes'};
+  const queOp = o => o.que || QUE_COL[o.col] || 'un registro';
+  const listaQue = os => { const c={}; os.forEach(o=>{ const q=queOp(o); c[q]=(c[q]||0)+1; }); return Object.entries(c).map(([q,n])=>n>1?`${q} (${n})`:q).join(', '); };
+  /* Cómo estaba un documento antes de escribirlo (para deshacer): null = no existía; undefined = no se sabe */
+  function memDoc(col, id){ const L={facturas:docs, trabajadores:trabs, adelantos:adels, cortes:cortes, movimientos:movs, inventario:items, invMovs:invMovs, activos:activos}[col];
+    let d = col==='asistencia' ? (asis[id]||null) : Array.isArray(L) ? (L.find(x=>x.id===id)||null) : undefined; if(!d) return d; d=JSON.parse(JSON.stringify(d)); delete d.id; return d; }
+  const opSet=(col,id,datos,que)=>({op:'set',col,id,datos,que}), opUpd=(col,id,datos,que)=>({op:'update',col,id,datos,que}), opDel=(col,id,que)=>({op:'delete',col,id,que});
+  /* Escribe varios documentos «todo o nada». ops: [{op:'set'|'update'|'delete', col, id, datos, que}].
+     Versión independiente (dueño): un lote de Firestore, atómico. Dentro de Claude no hay lotes ni transacciones: se escribe en secuencia y,
+     si un paso es rechazado, se deshacen los anteriores; el aviso dice con exactitud qué quedó. */
+  async function escribirJuntos(ops, que){
+    ops=(ops||[]).filter(Boolean); if(!ops.length) return;
+    if(!dbRaiz) throw Object.assign(new Error('La base de datos no está lista.'), {code:'unavailable'});
+    const metaDe = os => ({que:que||queOp(os[0]), docs:os.map(o=>({col:o.col, id:o.id, op:o.op, m:(o.datos&&o.datos.actualizado)||''}))});
+    const ref = o => dbRaiz.collection(o.col).doc(o.id);
+    const una = o => o.op==='set' ? (o.merge?ref(o).set(o.datos,{merge:true}):ref(o).set(o.datos)) : o.op==='update' ? ref(o).update(o.datos) : ref(o).delete();
+    if(ops.length===1) return conLimite(una(ops[0]), 0, metaDe(ops));
+    if(typeof dbRaiz.lote==='function') return conLimite(dbRaiz.lote(ops.map(o=>({op:o.op, col:o.col, id:o.id, datos:o.datos, merge:!!o.merge}))), 0, metaDe(ops));
+    const invitado=esRegistro()&&!!window.__standalone, hechos=[];
+    for(let i=0;i<ops.length;i++){ const o=ops[i], antes = o.nuevo ? null : o.antes!==undefined ? o.antes : memDoc(o.col, o.id);
+      try{ await conLimite(una(o), 0, metaDe([o])); hechos.push({o, antes}); }
+      catch(e){
+        const falta=ops.slice(i), causa=errMsg(e), E=(msg,dudoso)=>Object.assign(new Error(msg), {code:e&&e.code, wkMsg:msg, dudoso});
+        if(!hechos.length) throw E(causa+(ops.length>1&&!(e&&e.dudoso)?' No se guardó nada.':''), !!(e&&e.dudoso));
+        if(e&&e.code==='sin_respuesta') throw E(`El servidor dejó de responder a mitad del guardado. Ya quedó guardado: ${listaQue(hechos.map(h=>h.o))}. Falta: ${listaQue(falta)}. Toca Guardar otra vez sin cambiar nada: se completa lo que falta y no se repite nada.`, true);
+        if(invitado) throw E(`${causa} Ya se envió para aprobar: ${listaQue(hechos.map(h=>h.o))}. Faltó: ${listaQue(falta)}. Toca Guardar otra vez sin cambiar nada para enviar lo que falta.`, true);
+        const noDes=[];
+        for(const h of hechos.slice().reverse()){ if(h.antes===undefined){ noDes.push(h.o); continue; } try{ await conLimite(h.antes===null?ref(h.o).delete():ref(h.o).set(h.antes)); }catch(_){ noDes.push(h.o); } }
+        if(!noDes.length) throw E(`${causa} No se guardó nada: lo que alcanzó a entrar se deshizo. Toca Guardar otra vez.`, false);
+        throw E(`${causa} El guardado quedó a medias y no se pudo deshacer. Sí quedó guardado: ${listaQue(noDes)}. Faltó: ${listaQue(falta)}. Toca Guardar otra vez sin cambiar nada para completarlo (no se repite nada).`, true);
+      } }
+  }
+  /* Guardado con reintento seguro: recuerda las operaciones de un intento incierto para reenviarlas idénticas */
+  async function guardarOps(clave, firma, ops, que, fin){ try{ const r=await escribirJuntos(ops, que); delete dudosos[clave]; return r; }catch(e){ if(e&&e.dudoso) dudosos[clave]={firma, ops, fin}; else delete dudosos[clave]; throw e; } }
+  /* Al volver a abrir la app: lo que quedó en cola en una sesión anterior se comprueba contra el servidor cuando termina de subir */
+  async function revisarColaVieja(){ const q=lsLeer('wkCola'); if(!q.length || !dbRaiz || typeof dbRaiz.esperarSubida!=='function' || typeof dbRaiz.enServidor!=='function') return;
+    try{ await dbRaiz.esperarSubida(); }catch(_){ return; }
+    /* Por cada documento cuenta lo último que se le hizo en la cola (si se creó y después se borró, lo correcto es que no esté) */
+    const fin={}; q.forEach(x=>(x.docs||[]).forEach(d=>{ const k=d.col+'/'+d.id; if(d.op==='update'){ if(fin[k]) fin[k].m=''; return; } fin[k]={col:d.col, id:d.id, op:d.op, m:d.m||'', que:x.que}; }));
+    const malos=new Set();
+    for(const d of Object.values(fin)){ try{ const s=await dbRaiz.enServidor(d.col, d.id);
+        if(d.op==='delete' ? s.existe : (!s.existe || (d.m && String((s.datos||{}).actualizado||'')<String(d.m)))) malos.add(d.que); }catch(_){ return; } }
+    q.forEach(x=>colaQuitar(x.k)); malos.forEach(que=>avisoRechazo(que, 'Al volver a abrir la app no aparece así en el servidor: puede que no lo haya aceptado.')); }
   /* Aviso que se queda en pantalla (no desaparece como el flotante) hasta que se vuelva a dibujar la vista */
   function avisoFijo(sel, msg){ const el=document.querySelector(sel); if(!el){ toast(msg); return; } let b=el.querySelector('.avfijo'); if(!b){ b=document.createElement('div'); b.className='avfijo'; el.prepend(b); } b.textContent=msg; }
   function closeSheets(){ document.querySelectorAll('section.sheet').forEach(s=>s.hidden=true); $('#scrim').hidden=true; document.body.style.overflow=''; draft=null; editingId=null; }
@@ -1882,7 +1997,7 @@ select.combo-oculto{display:none}
     if(!cliSel || cliSel==='__nuevo'){ $('#formErr').textContent = cliSel==='__nuevo' ? 'Termina de agregar el cliente nuevo o elige uno de la lista.' : 'Elige el cliente.'; return; }
     if($('#iUnidad').value==='__nuevo'){ $('#formErr').textContent='Termina de agregar la unidad nueva o elige una de la lista.'; return; }
     if(isNaN(monto)||monto<=0){ $('#formErr').textContent='Escribe un monto mayor que cero (por ejemplo 1.435,00).'; return; }
-    if(!editingId){ const dupT=docs.find(d=>!d.cancelado && norm(d.descripcion||'')===norm(desc) && (d.cliente||'')===$('#iCliente').value.trim() && (d.unidad||'')===$('#iUnidad').value.trim() && Math.abs(num(d.monto)-monto)<0.005); const kD=desc+'|'+monto;
+    if(!editingId){ const dupT=docs.find(d=>d.id!==idsIntento['#sheet|trabajo'] && !d.cancelado && norm(d.descripcion||'')===norm(desc) && (d.cliente||'')===$('#iCliente').value.trim() && (d.unidad||'')===$('#iUnidad').value.trim() && Math.abs(num(d.monto)-monto)<0.005); const kD=desc+'|'+monto;
       if(dupT && $('#formErr').dataset.dup!==kD){ $('#formErr').dataset.dup=kD; $('#formErr').textContent=`Ya existe un trabajo igual para esta unidad${dupT.ods?' ('+dupT.ods+')':''}. Si es otro, toca Guardar otra vez.`; return; } }
     if(pagoPendiente() && !addPago()) return;   // el pago escrito y no agregado se agrega solo; si tiene un error, no se guarda nada
     const ej=$('#iEjecutado').checked;
@@ -1895,17 +2010,37 @@ select.combo-oculto{display:none}
         c.dePago?{dePago:c.dePago}:{}, c.fechaFactura?{fechaFactura:c.fechaFactura}:{}, (num(c.montoBs)>0 && Math.abs(num(c.montoBs)-num(c.monto)*num(c.tasa))<=5)?{montoBs:num(c.montoBs)}:{})),
       creado:draft.creado||new Date().toISOString(), actualizado:new Date().toISOString() };
     { const old0=editingId?docs.find(x=>x.id===editingId):null; if(old0) ['actividades','avanceHist','avanceSnap','avInicio','avCompromiso','avSabado','avDomingo','avHorasDia','avDiasEsp'].forEach(k=>{ if(old0[k]!==undefined) body[k]=old0[k]; }); }   /* el avance de la orden se lleva en su módulo: editar el trabajo no lo borra */
-    const btn=$('#btnSave'); btn.disabled=true; btn.textContent='Guardando…';
-    if(editingId){ const old=docs.find(x=>x.id===editingId); if(old){ diffCampos('facturas', editingId, old.descripcion||'trabajo', old, body, [['monto','monto',v=>nf.format(num(v))],['cliente','cliente'],['unidad','unidad'],['ods','orden de servicio'],['cancelado','cancelado',v=>v?'sí':'no'],['ejecutado','ejecutado',v=>v?'sí':'no']]);
-      const resumenC=ls=>(ls||[]).map(c=>`${nf.format(num(c.monto))}${num(c.tasa)>0?' a '+nfT.format(num(c.tasa)):''} (${c.fecha||''})`).join('; '); if(resumenC(old.cobros)!==resumenC(body.cobros)) registrarCambio('facturas', editingId, `${old.descripcion||'trabajo'}: pagos`, resumenC(old.cobros), resumenC(body.cobros)); } }
-    try{ await (editingId?coll.doc(editingId):coll.doc()).set(body); (draft.cobros||[]).filter(c=>c._nuevo).forEach(c=>{ if(num(c.tasa)>0 && c.fecha && c.fecha<=today()) aprenderTasa(c.fecha, num(c.tasa), 'cobro'); }); { const nb=(draft.cobros||[]).filter(c=>c._nuevo && modoDe(c)==='banco' && num(c.tasa)>0), bsT=r2(sum(nb,c=>num(c.monto)*num(c.tasa)));
+    const btn=$('#btnSave'); if(btn.dataset.busy) return; btn.dataset.busy='1'; btn.disabled=true; btn.textContent='Guardando…';
+    /* El registro de cambios se anota después de guardar bien (se compara contra lo que había antes de escribir) */
+    let anotar=null;
+    if(editingId){ const old=docs.find(x=>x.id===editingId), idE=editingId; if(old) anotar=()=>{ diffCampos('facturas', idE, old.descripcion||'trabajo', old, body, [['monto','monto',v=>nf.format(num(v))],['cliente','cliente'],['unidad','unidad'],['ods','orden de servicio'],['cancelado','cancelado',v=>v?'sí':'no'],['ejecutado','ejecutado',v=>v?'sí':'no']]);
+      const resumenC=ls=>(ls||[]).map(c=>`${nf.format(num(c.monto))}${num(c.tasa)>0?' a '+nfT.format(num(c.tasa)):''} (${c.fecha||''})`).join('; '); if(resumenC(old.cobros)!==resumenC(body.cobros)) registrarCambio('facturas', idE, `${old.descripcion||'trabajo'}: pagos`, resumenC(old.cobros), resumenC(body.cobros)); }; }
+    try{ await escribirJuntos([opSet('facturas', editingId||idEstable('#sheet|trabajo','facturas'), body)], 'el trabajo «'+desc.slice(0,50)+'»'); if(anotar) anotar(); soltarIntento('#sheet'); (draft.cobros||[]).filter(c=>c._nuevo).forEach(c=>{ if(num(c.tasa)>0 && c.fecha && c.fecha<=today()) aprenderTasa(c.fecha, num(c.tasa), 'cobro'); }); { const nb=(draft.cobros||[]).filter(c=>c._nuevo && modoDe(c)==='banco' && num(c.tasa)>0), bsT=r2(sum(nb,c=>num(c.monto)*num(c.tasa)));
         closeSheets();
         if(bsT>0 && !esRegistro()) toast('Guardado', {label:'Comprar USDT', fn:()=>{ setModulo('gas'); openMov('cambio', null); $('#mvOrig').value='banco'; $('#mvDest').value='binance'; $('#mvFecha').value=nb[nb.length-1].fecha||today(); $('#mvOrigMonto').value=nf.format(bsT); syncMvMoneda(); renderMvConv(); }});
         else toast('Guardado'); } }
     catch(err){ $('#formErr').textContent=errMsg(err); if(err&&err.code==='invalid_argument'){ canWrite=false; render(); } }
-    finally{ btn.disabled=false; btn.textContent='Guardar'; }
+    finally{ delete btn.dataset.busy; btn.disabled=false; btn.textContent='Guardar'; }
   }
-  function errMsg(err){ return err&&err.code==='invalid_argument' ? 'No tienes permiso para modificar este registro.' : err&&err.code==='quota_exceeded' ? 'El registro llegó a su capacidad máxima. Elimina trabajos viejos para seguir.' : 'No se pudo guardar. Revisa la conexión e inténtalo otra vez.'; }
+  /* La causa real de un guardado que falló, dentro de Claude (códigos con guion bajo) y en la versión independiente (códigos de Firestore, con guion) */
+  function errMsg(err){
+    if(err&&err.wkMsg) return err.wkMsg;
+    const raw=String((err&&err.code)||'').replace(/^firestore\//,''), c=raw.toLowerCase(), m=String((err&&err.message)||(typeof err==='string'?err:'')).replace(/\s+/g,' ').trim().slice(0,140), det=m?` Detalle: ${m}`:'';
+    const volver=window.__cerrarSesion?'Vuelve a entrar con tu cuenta (Gastos › Ajustes › Cerrar sesión) y repite el guardado.':'Cierra la página, vuelve a abrirla desde tu cuenta y repite el guardado.';
+    if(c==='sin_respuesta') return sinRed() ? 'El teléfono está sin conexión: todavía no se guardó. Cuando vuelva la señal, toca Guardar otra vez (no se repite).' : 'El servidor no respondió en 20 segundos. Puede que sí se haya guardado: toca Guardar otra vez sin cambiar nada (no se repite).';
+    if(c==='permission-denied'||c==='unauthenticated') return 'El servidor no dio permiso para guardar: la sesión venció o esta cuenta no está autorizada. '+volver;
+    if(c==='revoked'||c==='not_granted') return 'Esta sesión perdió el acceso a los datos. '+volver;
+    if(c==='unavailable'||c==='deadline-exceeded'||/failed to fetch|network|offline|load failed/i.test(m)) return sinRed() ? 'El teléfono está sin conexión y no se guardó. Cuando vuelva la señal, toca Guardar otra vez.' : 'El servidor no respondió (sin conexión o servicio caído). No se guardó: inténtalo otra vez en un momento.';
+    if(c==='resource-exhausted') return 'Se agotó la cuota diaria del plan gratuito de la base de datos. No se guardó. La cuota se restablece sola cada día (en la madrugada de Venezuela); mientras tanto no se puede guardar.';
+    if(c==='resource_exhausted') return 'Demasiadas operaciones seguidas: la base pidió esperar. No se guardó; inténtalo otra vez en un minuto.';
+    if(c==='quota_exceeded') return 'La base de datos llegó a su capacidad máxima. No se guardó. Elimina registros viejos para seguir.'+det;
+    if(c==='not-found'||c==='not_found') return 'Ese registro ya no existe (se borró desde otro teléfono o en otra pantalla). No se guardó: cierra y revisa la lista.';
+    if(c==='invalid_argument'||c==='transform_error') return 'La base no aceptó el guardado: esta cuenta no tiene permiso para escribir, o un dato no es válido.'+det;
+    if(c==='invalid-argument'||c==='failed-precondition'||c==='out-of-range') return 'Dato inválido: la base no aceptó este registro. No se guardó.'+det;
+    if(c==='capability_disabled'||c==='capability_removed') return 'La base de datos no está disponible en esta vista. Recarga la página.';
+    if(c==='aborted'||c==='cancelled') return 'El guardado se interrumpió. No se guardó: inténtalo otra vez.';
+    return 'No se pudo guardar.'+(raw||m?` Detalle técnico: ${[raw,m].filter(Boolean).join(' · ')}`:' El sistema no informó la causa.');
+  }
 
   async function del(){
     const b=$('#btnDel');
@@ -1913,8 +2048,11 @@ select.combo-oculto{display:none}
     const vinc=[dias?`${dias} ${dias===1?'día':'días'} de asistencia`:'', mats?`${mats} ${mats===1?'movimiento':'movimientos'} de material`:'', gs?`${gs} ${gs===1?'gasto':'gastos'}`:''].filter(Boolean);
     if(!b.classList.contains('armed')){ b.classList.add('armed'); b.textContent='Toca otra vez para eliminar'; delTimer=setTimeout(disarmDel,vinc.length?9000:4000); if(vinc.length) $('#formErr').textContent=`Este trabajo tiene ${vinc.join(', ')}. Si el cliente desistió, marca «Cancelado» en vez de eliminarlo: así esos costos no pasan a las demás órdenes.`; return; }
     if(!coll||!editingId) return;
-    try{ const oldD=docs.find(x=>x.id===editingId); const pap=oldD?alPapelera('facturas', editingId, oldD, `Trabajo: ${oldD.descripcion||''}${oldD.cliente?' · '+oldD.cliente:''}`):null; await coll.doc(editingId).delete(); if(oldD) registrarCambio('facturas', editingId, `Trabajo eliminado: ${oldD.descripcion||''}`, `${nf.format(num(oldD.monto))} · ${oldD.cliente||''} · ${(oldD.cobros||[]).length} pagos`, ''); closeSheets(); toastBorrado(vinc.length?'Trabajo eliminado · sus costos quedaron sin orden':'Trabajo eliminado', pap); }
-    catch(err){ $('#formErr').textContent='No se pudo eliminar. Inténtalo otra vez.'; }
+    clearTimeout(delTimer);
+    await conBoton(b, 'Eliminar', async()=>{
+      try{ const oldD=docs.find(x=>x.id===id); const pap=oldD?alPapelera('facturas', id, oldD, `Trabajo: ${oldD.descripcion||''}${oldD.cliente?' · '+oldD.cliente:''}`):null; await escribirJuntos([opPap(pap), opDel('facturas', id)], 'la eliminación del trabajo'); if(oldD) registrarCambio('facturas', id, `Trabajo eliminado: ${oldD.descripcion||''}`, `${nf.format(num(oldD.monto))} · ${oldD.cliente||''} · ${(oldD.cobros||[]).length} pagos`, ''); closeSheets(); toastBorrado(vinc.length?'Trabajo eliminado · sus costos quedaron sin orden':'Trabajo eliminado', pap); }
+      catch(err){ $('#formErr').textContent='No se eliminó. '+errMsg(err); } }, 'Eliminando…');
+    disarmDel();
   }
 
   /* ---------- varios trabajos a la vez ---------- */
@@ -1947,8 +2085,12 @@ select.combo-oculto{display:none}
   async function confirmBulk(){
     if(!coll||!canWrite) return;
     const items=docs.filter(d=>sel.has(d.id));
-    const btn=$('#bConfirm');
+    const btn=$('#bConfirm'); if(btn.dataset.busy) return;
     if(bulkMode==='fact'){
+      /* Reintento tras un intento sin respuesta: se reenvía exactamente lo mismo (no se vuelve a sumar el abono) */
+      const firmaB=JSON.stringify([items.map(d=>[d.id, String((document.querySelector(`#bList [data-bm="${d.id}"]`)||{}).value||'')]), $('#bTasa').value, $('#bModo').value, $('#bNum').value, $('#bFecha').value]);
+      { const du=reintento('#bulkSheet', firmaB); if(du&&du.cambio){ $('#bErr').textContent=TXT_DUDA; return; }
+        if(du){ await conBoton(btn, 'Confirmar', async()=>{ try{ await guardarOps('#bulkSheet', firmaB, du.ops, 'el cobro de varios trabajos', du.fin); du.fin(); }catch(err){ $('#bErr').textContent=errMsg(err); } }); return; } }
       const clis=[...new Set(items.map(d=>d.cliente||''))]; if(clis.length>1){ $('#bErr').textContent=`Una factura es para un solo cliente; la selección mezcla ${clis.map(c=>c||'sin cliente').join(', ')}.`; return; }
       const sinOrden=items.filter(d=>!tieneOrden(d));
       if(sinOrden.length){ $('#bErr').textContent=`No se puede facturar sin orden de servicio: ${sinOrden.map(d=>d.descripcion).join('; ')}. Quítalos de la selección o cárgales la orden.`; return; }
@@ -1960,22 +2102,18 @@ select.combo-oculto{display:none}
       const conSaldo=items.filter(d=>saldo(d)>0 && montoBulk(d)>0);
       if(!conSaldo.length){ $('#bErr').textContent='Escribe el monto a cobrar de al menos un trabajo.'; return; }
       const pago={tasa:md==='banco'?t:0, cuenta:md, numFactura:$('#bNum').value.trim(), fecha:$('#bFecha').value||today(), ref:''};
-      btn.disabled=true; btn.textContent='Guardando…';
-      try{
-        const montos=conSaldo.map(d=>[d,r2(montoBulk(d))]);
-        const parciales=montos.filter(([d,m])=>m<saldo(d)-0.004).length;
-        for(const [d,m] of montos){ await coll.doc(d.id).update({cobros:[...(d.cobros||[]), {...pago, monto:m}], actualizado:new Date().toISOString()}); }
-        sel.clear(); selMode=false; closeSheets(); render(); toast(parciales ? `Cobro registrado · ${parciales} ${parciales===1?'abono parcial':'abonos parciales'}` : `${conSaldo.length} ${conSaldo.length===1?'trabajo cobrado':'trabajos cobrados'}`);
-      }catch(err){ $('#bErr').textContent=errMsg(err); }
-      finally{ btn.disabled=false; btn.textContent='Confirmar'; }
+      const montos=conSaldo.map(d=>[d,r2(montoBulk(d))]);
+      const parciales=montos.filter(([d,m])=>m<saldo(d)-0.004).length, ah=new Date().toISOString();
+      /* Todos los abonos de la factura entran juntos o no entra ninguno */
+      const ops=montos.map(([d,m])=>opUpd('facturas', d.id, {cobros:[...(d.cobros||[]), {...pago, monto:m}], actualizado:ah}, `el abono a «${String(d.descripcion||'').slice(0,40)}»`));
+      const fin=()=>{ sel.clear(); selMode=false; closeSheets(); render(); toast(parciales ? `Cobro registrado · ${parciales} ${parciales===1?'abono parcial':'abonos parciales'}` : `${conSaldo.length} ${conSaldo.length===1?'trabajo cobrado':'trabajos cobrados'}`); };
+      await conBoton(btn, 'Confirmar', async()=>{ try{ await guardarOps('#bulkSheet', firmaB, ops, 'el cobro de varios trabajos', fin); fin(); }catch(err){ $('#bErr').textContent=errMsg(err); } });
     } else {
-      const f=$('#bFechaEj').value||today();
-      btn.disabled=true; btn.textContent='Guardando…';
-      try{
-        for(const d of items){ await coll.doc(d.id).update({ejecutado:true, fechaEjecucion:d.ejecutado&&d.fechaEjecucion?d.fechaEjecucion:f, actualizado:new Date().toISOString()}); }
-        sel.clear(); selMode=false; closeSheets(); render(); toast('Marcados como ejecutados');
-      }catch(err){ $('#bErr').textContent=errMsg(err); }
-      finally{ btn.disabled=false; btn.textContent='Confirmar'; }
+      const f=$('#bFechaEj').value||today(), ah=new Date().toISOString();
+      await conBoton(btn, 'Confirmar', async()=>{
+        try{ await escribirJuntos(items.map(d=>opUpd('facturas', d.id, {ejecutado:true, fechaEjecucion:d.ejecutado&&d.fechaEjecucion?d.fechaEjecucion:f, actualizado:ah})), 'marcar como ejecutados');
+          sel.clear(); selMode=false; closeSheets(); render(); toast('Marcados como ejecutados');
+        }catch(err){ $('#bErr').textContent=errMsg(err); } });
     }
   }
 
@@ -2675,8 +2813,8 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
     const btn=$('#aiApply'); btn.disabled=true; btn.textContent='Guardando…';
     let ok=0;
     try{
-      for(const [id,body] of Object.entries(copias)){ const sinCambio={...body}; delete sinCambio.actualizado; const a0=JSON.parse(antes[id]||'{}'); delete a0.actualizado; if(JSON.stringify(sinCambio)===JSON.stringify(a0)) continue; const old=docs.find(x=>x.id===id); await coll.doc(id).set(body); ok++; if(old) diffCampos('facturas', id, `${old.descripcion||'trabajo'} (asistente)`, old, body, [['monto','monto',v=>nf.format(num(v))],['ods','orden de servicio'],['cliente','cliente'],['unidad','unidad'],['ejecutado','ejecutado',v=>v?'sí':'no'],['cancelado','cancelado',v=>v?'sí':'no']]); }
-      for(const body of nuevos){ if(!body.descripcion||body.monto<=0){ fallas.push('un trabajo nuevo sin descripción o monto'); continue; } await coll.doc().set(body); ok++; }
+      for(const [id,body] of Object.entries(copias)){ const sinCambio={...body}; delete sinCambio.actualizado; const a0=JSON.parse(antes[id]||'{}'); delete a0.actualizado; if(JSON.stringify(sinCambio)===JSON.stringify(a0)) continue; const old=docs.find(x=>x.id===id); await conLimite(coll.doc(id).set(body), 0, 'un trabajo (asistente)'); ok++; if(old) diffCampos('facturas', id, `${old.descripcion||'trabajo'} (asistente)`, old, body, [['monto','monto',v=>nf.format(num(v))],['ods','orden de servicio'],['cliente','cliente'],['unidad','unidad'],['ejecutado','ejecutado',v=>v?'sí':'no'],['cancelado','cancelado',v=>v?'sí':'no']]); }
+      for(const body of nuevos){ if(!body.descripcion||body.monto<=0){ fallas.push('un trabajo nuevo sin descripción o monto'); continue; } await conLimite(coll.doc().set(body), 0, 'un trabajo nuevo (asistente)'); ok++; }
       const base=Object.fromEntries(Object.entries(copias).map(([id,b])=>[id, b.cobros||[]]));
       for(const r of repartos){ const x=await repartirPago(r.m, r.as, r.nf, r.ff, base); if(x&&x.error) fallas.push(x.error); else ok+=r.as.length; }
       if(!fallas.length){ $('#aiRes').innerHTML=''; $('#aiApplyRow').hidden=true; $('#aiReplyBox').hidden=true; aiLast=null; aiActs=[]; $('#aiText').value=''; aiFiles=[]; renderChips(); }
@@ -2917,7 +3055,7 @@ Responde solo con un objeto JSON:
         const ca=ctaDe(x.exist), cb2=ctaDe(body), fct=c=>c?`${c.numero} · ${c.titular} · C.I. ${c.cedula}`:''; if(fct(ca)!==fct(cb2)) registrarCambio('trabajadores', x.exist.id, `${nombre}: cuenta bancaria (asistente)`, fct(ca), fct(cb2)); }
       if(x.tarifa && cargo!==SUP) body.tarifa=x.tarifa;
       if(!pmOk({telefono:pmTel, cedula:pmCed, banco:pmBanco})) incompletos++;
-      try{ await (x.exist?nDb.collection('trabajadores').doc(x.exist.id):nDb.collection('trabajadores').doc()).set(body); ok++; chk.checked=false; chk.closest('.act').style.opacity='.5'; }
+      try{ await conLimite((x.exist?nDb.collection('trabajadores').doc(x.exist.id):nDb.collection('trabajadores').doc()).set(body), 0, 'la ficha de un trabajador (asistente)'); ok++; chk.checked=false; chk.closest('.act').style.opacity='.5'; }
       catch(e){ errEl.textContent=errMsg(e); conErr++; }
     }
     btn.disabled=false; btn.textContent='Guardar trabajadores marcados';
@@ -3067,16 +3205,16 @@ Responde solo con un objeto JSON:
           regs[r.id]={tipo:e('tipo').value, horasExtra:isNaN(hx)?0:Math.max(0,hx), trabajoId:tjN, ...(antes.dividir&&antes.trabajoId2&&antes.trabajoId===tjN?{dividir:true, trabajoId2:antes.trabajoId2}:{})};   /* la división del día entre dos órdenes se conserva si la orden no cambió */
           const t=trabs.find(w=>w.id===r.id); if(t&&t.activo===false&&e('tipo').value!=='no') activar.add(t.id); });
         const fin=regsDe(regs), ref=nDb.collection('asistencia').doc(x.fecha);
-        if(Object.keys(fin).length) await ref.set({fecha:x.fecha, registros:fin, actualizado:new Date().toISOString()}); else await ref.delete();
+        if(Object.keys(fin).length) await conLimite(ref.set({fecha:x.fecha, registros:fin, actualizado:new Date().toISOString()}), 0, 'el día '+fdate(x.fecha)+' (asistente)'); else await conLimite(ref.delete(), 0, 'el día '+fdate(x.fecha)+' (asistente)');
         chk.checked=false; chk.closest('.act').style.opacity='.5'; nd++;
       }
       for(let i=0;i<aiAdels.length;i++){
         const a=aiAdels[i], chk=document.querySelector(`[data-achk="${i}"]`); if(!chk||!chk.checked) continue;
         const cs=document.querySelector(`[data-acta="${i}"]`), cta=(cs&&cs.value)||a.cuenta||'efectivo'; try{ localStorage.setItem('adCuenta',cta); }catch(_){}
-        await nDb.collection('adelantos').doc().set({trabajadorId:a.t.id, fecha:a.fecha, monto:a.monto, nota:a.nota, cuenta:cta, tasa:0, corteId:'', creado:new Date().toISOString()});
+        await conLimite(nDb.collection('adelantos').doc().set({trabajadorId:a.t.id, fecha:a.fecha, monto:a.monto, nota:a.nota, cuenta:cta, tasa:0, corteId:'', creado:new Date().toISOString()}), 0, 'un adelanto (asistente)');
         chk.checked=false; chk.closest('.act').style.opacity='.5'; na++;
       }
-      for(const id of activar) await nDb.collection('trabajadores').doc(id).update({activo:true, actualizado:new Date().toISOString()});
+      for(const id of activar) await conLimite(nDb.collection('trabajadores').doc(id).update({activo:true, actualizado:new Date().toISOString()}), 0, 'activar a un trabajador');
       if(!dayDirty) dayDraft=null;
       $('#aiStat').textContent = `Guardado: ${nd} ${nd===1?'día':'días'}${na?` y ${na} ${na===1?'adelanto':'adelantos'}`:''}${activar.size?` · ${activar.size} ${activar.size===1?'trabajador activado':'trabajadores activados'}`:''}.`+(fallas.length?` No se guardó: ${fallas.join('; ')}.`:'');
       $('#aiApplyRow').hidden=true; toast('Asistencia guardada'); delete $('#aiSheet').dataset.dirty; renderNom();
@@ -3152,7 +3290,7 @@ Responde solo con un objeto JSON:
   $('#regMain').addEventListener('click', e=>{
     const rf=e.target.closest('[data-regf]'); if(rf){ regF=rf.dataset.regf; return renderReg(); }
     const ir=e.target.closest('[data-irdia]'); if(ir){ nView='dia'; diaSel=ir.dataset.irdia; dayDraft=null; return setModulo('nom'); }
-    const rt=e.target.closest('[data-retirar]'); if(rt){ if(!rt.dataset.armed){ rt.dataset.armed='1'; rt.textContent='Toca otra vez para retirar'; return; } return gDb.collection('solicitudes').doc(rt.dataset.retirar).update({estado:'retirada', decidido:new Date().toISOString()}).then(()=>{ toast('Retirado'); renderReg(); }, err=>toast(errMsg(err))); }
+    const rt=e.target.closest('[data-retirar]'); if(rt){ if(!rt.dataset.armed){ rt.dataset.armed='1'; rt.textContent='Toca otra vez para retirar'; return; } if(rt.disabled) return; rt.disabled=true; return conLimite(gDb.collection('solicitudes').doc(rt.dataset.retirar).update({estado:'retirada', decidido:new Date().toISOString()}), 0, 'retirar una solicitud').then(()=>{ toast('Retirado'); renderReg(); }, err=>toast(errMsg(err))); }
     const b=e.target.closest('[data-reg]'); if(!b) return; const k=b.dataset.reg;
     if(k==='asis'){ nView='dia'; return setModulo('nom'); } if(k==='adel') return openAdelanto(); if(k==='gasto') return openMov('gasto', null);
     if(k==='retiro') return openIMov('salida', null); if(k==='conteo') return openConteoLista(); if(k==='compra') return openCompra(); if(k==='devol') return openIMov('devolucion', null); if(k==='herr'){ iView='eq'; setModulo('inv'); return; } if(k==='ai'){ nView='dia'; setModulo('nom'); return abrirAI('asis'); } });
@@ -3198,7 +3336,7 @@ Responde solo con un objeto JSON:
   function diaLocal(iso){ const d=new Date(iso); if(isNaN(d)) return String(iso||'').slice(0,10); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
   function esDuplicada(x){ return !!yaRegistrada(x) || solicitudes.some(y=>y.id!==x.id && y.estado==='pendiente' && y.col===x.col && String(y.fecha)<String(x.fecha) && x.op!=='delete' && y.op!=='delete' && ((y.docId&&y.docId===x.docId) || parecidos(x.col, y.datos, x.datos))); }
   async function decidirSolicitud(id, aprobar, motivo){
-    let x=solicitudes.find(z=>z.id===id); if(!x||!gDb) return;
+    let x=solicitudes.find(z=>z.id===id); if(!x||!gDb||decidiendo.has(id)) return; decidiendo.add(id);
     try{
       let aviso='';
       if(aprobar && x.op!=='delete'){
@@ -3223,13 +3361,17 @@ Responde solo con un objeto JSON:
         if(c.moneda!=='VES' && num(d.montoBs)>0 && !(num(d.monto)>0)){ const tu=tasaUsdt(d.fecha)||tasaDelDia(d.fecha); if(tu&&tu.tasa>0){ d.tasa=tu.tasa; d.monto=r2(num(d.montoBs)/tu.tasa); } }
         x={...x, datos:d}; }
       if(aprobar && x.col==='adelantos' && x.op!=='delete' && x.datos && cuentaDe(x.datos.cuenta).moneda==='VES' && !(num(x.datos.tasa)>0)) x={...x, datos:{...x.datos, tasa:(tasaDelDia(x.datos.fecha)||{}).tasa||tasaSugerida()||0}};
-      if(aprobar){ const ref=gDb.collection(x.col).doc(x.docId);
+      /* El registro aprobado y la marca de «aprobada» en la solicitud entran juntos: todo o nada */
+      let opReg=null;
+      if(aprobar){
         if(x.col==='invMovs' && (x.datos||{}).tipo==='salida'){ const e=estadoItem(x.datos.itemId); if(num(x.datos.cantidad)>e.existencia+0.0005) aviso=` · ${(itemDe(x.datos.itemId)||{}).nombre||'El ítem'} queda en negativo: haz un conteo`; }
-        if(x.op==='delete') await ref.delete(); else if(x.op==='update') await ref.update(x.datos||{}); else await ref.set(x.datos||{}); }
-      await gDb.collection('solicitudes').doc(id).update({estado:aprobar?'aprobada':'rechazada', decidido:new Date().toISOString(), motivo:aprobar?'':String(motivo||'')});
-      toast((aprobar?'Aprobado y registrado':'Rechazado')+aviso, aprobar?null:{label:'Deshacer', fn:()=>gDb.collection('solicitudes').doc(id).update({estado:'pendiente', decidido:'', motivo:''}).catch(()=>{})});
-    }catch(e){ toast(aprobar&&e&&e.code==='not_found'?'Ese registro ya no existe: rechaza la solicitud.':errMsg(e)); }
+        opReg = x.op==='delete' ? opDel(x.col, x.docId) : x.op==='update' ? opUpd(x.col, x.docId, x.datos||{}) : opSet(x.col, x.docId, x.datos||{}); }
+      await escribirJuntos([opReg, opUpd('solicitudes', id, {estado:aprobar?'aprobada':'rechazada', decidido:new Date().toISOString(), motivo:aprobar?'':String(motivo||'')}, 'la marca de la solicitud')], aprobar?'la aprobación de una solicitud':'el rechazo de una solicitud');
+      toast((aprobar?'Aprobado y registrado':'Rechazado')+aviso, aprobar?null:{label:'Deshacer', fn:()=>conLimite(gDb.collection('solicitudes').doc(id).update({estado:'pendiente', decidido:'', motivo:''}), 0, 'deshacer el rechazo').catch(()=>{})});
+    }catch(e){ toast(aprobar&&e&&(e.code==='not_found'||e.code==='not-found')?'Ese registro ya no existe: rechaza la solicitud.':errMsg(e)); }
+    finally{ decidiendo.delete(id); }
   }
+  const decidiendo=new Set();
   const TIPO_SOL={asistencia:'Asistencia', adelantos:'Adelantos', movimientos:'Gastos y pagos', invMovs:'Material', trabajadores:'Trabajadores', facturas:'Trabajos', inventario:'Catálogo'};
   /* Lo que una solicitud mueve de dinero, para los totales del grupo */
   function montoSol(x){ const d=x.datos||{}; if(x.op==='delete') return 0; if(x.col==='movimientos') return usdDe({...d, tipo:d.tipo||'gasto'}, tasaSugerida())*(d.tipo==='ingreso'?1:-1); if(x.col==='adelantos') return -num(d.monto); if(x.col==='invMovs'&&d.tipo==='salida'){ const e=estadoItem(d.itemId); return -(num(d.cantidad)*(e.promedio||num((itemDe(d.itemId)||{}).precioRef))); } return 0; }
@@ -3322,10 +3464,11 @@ Responde solo con un objeto JSON:
       adels.filter(esAjuste).forEach(a=>(a.dias||[]).forEach(x=>{ const k=a.trabajadorId+'|'+x.f; if(m[k]!=null) m[k]+=num(x.m); })); return m; });
     const v=mp[id+'|'+f]; return v==null ? null : r2(v); }
   /* Diferencias de días ya pagados (corrección del día o tarifa con fecha hacia atrás): un ajuste por persona para el próximo corte */
-  async function crearAjuste(t, dias, nota){ const ds=dias.filter(x=>Math.abs(x.m)>=0.005); const tot=r2(sum(ds,x=>x.m)); if(Math.abs(tot)<0.01) return 0;
-    await nDb.collection('adelantos').doc().set({tipo:'ajuste', trabajadorId:t.id, fecha:today(), monto:tot, nota, dias:ds.map(x=>({f:x.f, m:r2(x.m)})), cuenta:'', tasa:0, corteId:'', creado:new Date().toISOString()}); return tot; }
-  async function ajustesRetro(t, desde, nota){ const dias=[]; Object.values(asis).filter(a=>a.fecha>=desde).forEach(a=>{ const r=(a.registros||{})[t.id]; if(!r) return; const pv=valorPagado(t.id, a.fecha); if(pv==null) return; const p=pagoDia(t,r,a.fecha); dias.push({f:a.fecha, m:r2(p.montoDias+p.montoExtra+p.montoBono-pv)}); });
-    return crearAjuste(t, dias, nota); }
+  /* No se escribe suelto: devuelve la operación para que entre en el mismo guardado que lo origina (el día, la ficha o los ajustes), todo o nada */
+  function opAjuste(t, dias, nota, id){ const ds=dias.filter(x=>Math.abs(x.m)>=0.005); const tot=r2(sum(ds,x=>x.m)); if(Math.abs(tot)<0.01) return null;
+    return {tot, op:{op:'set', col:'adelantos', id, nuevo:true, que:`el ajuste de ${t.nombre||'un trabajador'} para el próximo corte`, datos:{tipo:'ajuste', trabajadorId:t.id, fecha:today(), monto:tot, nota, dias:ds.map(x=>({f:x.f, m:r2(x.m)})), cuenta:'', tasa:0, corteId:'', creado:new Date().toISOString()}}}; }
+  function opAjusteRetro(t, desde, nota, id){ const dias=[]; Object.values(asis).filter(a=>a.fecha>=desde).forEach(a=>{ const r=(a.registros||{})[t.id]; if(!r) return; const pv=valorPagado(t.id, a.fecha); if(pv==null) return; const p=pagoDia(t,r,a.fecha); dias.push({f:a.fecha, m:r2(p.montoDias+p.montoExtra+p.montoBono-pv)}); });
+    return opAjuste(t, dias, nota, id); }
   const ultimoCorte = () => cortes.slice().sort((a,b)=>String(b.hasta).localeCompare(String(a.hasta)))[0]||null;
   const pagadoHasta = () => { const u=ultimoCorte(); return u?u.hasta:''; };
 
@@ -3627,8 +3770,8 @@ Responde solo con un objeto JSON:
     if(saved[id]){
       delete saved[id];
       const ref=nDb.collection('asistencia').doc(diaSel);
-      if(Object.keys(saved).length){ const v={fecha:diaSel, registros:saved, actualizado:new Date().toISOString()}; await ref.set(v); asis[diaSel]=v; }
-      else { await ref.delete(); delete asis[diaSel]; }
+      if(Object.keys(saved).length){ const v={fecha:diaSel, registros:saved, actualizado:new Date().toISOString()}; await conLimite(ref.set(v), 0, 'quitar a una persona del día '+fdate(diaSel)); asis[diaSel]=v; }
+      else { await conLimite(ref.delete(), 0, 'quitar a una persona del día '+fdate(diaSel)); delete asis[diaSel]; }
     }
     dayDirty=hayCambiosDia();
     return true;
@@ -3642,18 +3785,19 @@ Responde solo con un objeto JSON:
     const difPagados=[...diaCorregir].map(id=>{ const t=trabs.find(x=>x.id===id); const pv=t?valorPagado(id,diaSel):null; if(!t||pv==null) return null; const p=regs[id]?pagoDia(t,regs[id],diaSel):{montoDias:0,montoExtra:0,montoBono:0}; return {t, m:r2(p.montoDias+p.montoExtra+p.montoBono-pv)}; }).filter(x=>x&&Math.abs(x.m)>=0.01);
     const btn=$('#dSave'); if(btn){ if(btn.dataset.busy) return; btn.dataset.busy='1'; btn.disabled=true; btn.textContent='Guardando…'; }
     try{
-      const ref=nDb.collection('asistencia').doc(diaSel);
-      if(Object.keys(regs).length || (esRegistro() && Object.keys(saved).length)) await conLimite(ref.set({fecha:diaSel, registros:regs, ...(esRegistro()?{base:saved}:{}), actualizado:new Date().toISOString()}));
-      else await conLimite(ref.delete());
-      { const dsc=r=>!r?'no trabajó':[r.tipo==='completo'?'día completo':r.tipo==='medio'?'medio día':'no trabajó', num(r.horasExtra)?`${nf.format(num(r.horasExtra)).replace(/,00$/,'')} ${num(r.horasExtra)===1?'hora extra':'horas extra'}`:'', r.trabajoId?nombreCorto(docs.find(d=>d.id===r.trabajoId)||{}):''].filter(Boolean).join(', ');
-        if(Object.keys(saved).length) [...new Set([...Object.keys(saved),...Object.keys(regs)])].forEach(id=>{ const a=dsc(saved[id]), b=dsc(regs[id]); if(a!==b) registrarCambio('asistencia', diaSel, `Día ${fdate(diaSel)}: ${nombreT(id)}`, a, b); }); }
+      /* El día, las personas que se reactivan y las diferencias de días ya pagados entran juntos: todo o nada */
+      const kD='dia|'+diaSel, ah=new Date().toISOString();
       /* Quien trabajó está activo: si estaba inactivo, se activa solo para que siga saliendo los días siguientes */
       const reactivar = diaSel<today() ? [] : Object.entries(regs).filter(([id,r])=>r.tipo!=='no'||num(r.horasExtra)>0).map(([id])=>trabs.find(t=>t.id===id)).filter(t=>t&&t.activo===false);
-      for(const t of reactivar){ await nDb.collection('trabajadores').doc(t.id).update({activo:true, actualizado:new Date().toISOString()}); t.activo=true; }
-      for(const x of difPagados) await crearAjuste(x.t, [{f:diaSel, m:x.m}], `Corrección del ${fdate(diaSel)}`);
+      const ajs=difPagados.map(x=>opAjuste(x.t, [{f:diaSel, m:x.m}], `Corrección del ${fdate(diaSel)}`, idEstable(kD+'|aj|'+x.t.id,'adelantos'))).filter(Boolean);
+      await escribirJuntos([(Object.keys(regs).length || (esRegistro() && Object.keys(saved).length)) ? opSet('asistencia', diaSel, {fecha:diaSel, registros:regs, ...(esRegistro()?{base:saved}:{}), actualizado:ah}) : opDel('asistencia', diaSel),
+        ...reactivar.map(t=>opUpd('trabajadores', t.id, {activo:true, actualizado:ah}, `activar a ${t.nombre}`)), ...ajs.map(a=>a.op)], 'el día '+fdate(diaSel));
+      soltarIntento(kD); reactivar.forEach(t=>{ t.activo=true; });
+      { const dsc=r=>!r?'no trabajó':[r.tipo==='completo'?'día completo':r.tipo==='medio'?'medio día':'no trabajó', num(r.horasExtra)?`${nf.format(num(r.horasExtra)).replace(/,00$/,'')} ${num(r.horasExtra)===1?'hora extra':'horas extra'}`:'', r.trabajoId?nombreCorto(docs.find(d=>d.id===r.trabajoId)||{}):''].filter(Boolean).join(', ');
+        if(Object.keys(saved).length) [...new Set([...Object.keys(saved),...Object.keys(regs)])].forEach(id=>{ const a=dsc(saved[id]), b=dsc(regs[id]); if(a!==b) registrarCambio('asistencia', diaSel, `Día ${fdate(diaSel)}: ${nombreT(id)}`, a, b); }); }
       diaCorregir=new Set();
       dayDirty=false; try{ localStorage.removeItem('borradorDia'); }catch(_){} toast(`Día ${fdate(diaSel)} guardado${difPagados.length?' · '+difPagados.map(x=>`${x.t.nombre.split(' ')[0]} ${x.m<0?'− ':'+ '}${usd(Math.abs(x.m))}`).join(', ')+' en el próximo corte':''}${reactivar.length?` · ${reactivar.map(t=>t.nombre.split(' ')[0]).join(' y ')} ${reactivar.length===1?'queda activo':'quedan activos'}`:''}`);
-    }catch(err){ avisoFijo('#dSum', `No se guardó el día: ${errMsg(err)} Revisa la señal y toca “Guardar día” otra vez.`); }
+    }catch(err){ avisoFijo('#dSum', `No se guardó el día: ${errMsg(err)}`); }
     finally{ if(btn){ delete btn.dataset.busy; btn.disabled=false; btn.textContent='Guardar día'; } }
   }
 
@@ -3663,7 +3807,7 @@ Responde solo con un objeto JSON:
     /* Si ya se pagó a todos hasta hoy, no hay nada que cortar todavía: se muestra el aviso y el historial, sin armar un corte a futuro */
     if(ph && today()<=ph && !calcCorte(today(), TODOS_F).lineas.length){
       const pend=adels.filter(a=>!a.corteId).sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha)));
-      el.innerHTML = `<div class="lock" style="margin-top:14px">Ya pagaste la nómina hasta el ${fdate(ph)}. El próximo corte se arma a partir del ${fdate(sumarDias(ph,1))}.</div>
+      el.innerHTML = `${avisoCorteHtml()}<div class="lock" style="margin-top:14px">Ya pagaste la nómina hasta el ${fdate(ph)}. El próximo corte se arma a partir del ${fdate(sumarDias(ph,1))}.</div>
         <div class="sech">Adelantos pendientes <button type="button" class="btn sec" id="adNew">Registrar adelanto</button></div>
         ${pend.length?`<div class="lns">${pend.map(a=>`<div class="ln"><div class="h"><b>${esc(nombreT(a.trabajadorId))}</b><span class="money num"><small>USD</small>${esAjuste(a)&&num(a.monto)<0?'− ':''}${nf.format(Math.abs(num(a.monto)))}</span></div><div class="d">${esAjuste(a)?(num(a.monto)<0?'Descuento':'Pago extra')+' · ':''}${fdate(a.fecha)}${a.nota?' · '+esc(a.nota):''}</div><div class="acts"><button type="button" class="btn del" data-adel="${esc(a.id)}">${nDelArmed==='ad:'+a.id?'Toca otra vez para eliminar':'Eliminar'}</button></div></div>`).join('')}</div>`:'<div class="tip">No hay adelantos pendientes.</div>'}
         ${historialCortes()}<div style="height:20px"></div>`;
@@ -3677,7 +3821,7 @@ Responde solo con un objeto JSON:
     const ls=conBs(c.lineas, tasaOk?tasa:0);
     const totUsd=sum(ls,l=>Math.max(0,l.totalUsd)), totBs=sum(ls,l=>l.totalBs);
     const pend=adels.filter(a=>!a.corteId).sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha)));
-    el.innerHTML = `
+    el.innerHTML = `${avisoCorteHtml()}
       <div class="cfg">
         <label class="f">Desde<input type="date" value="${c.desde}" disabled></label>
         <label class="f">Hasta<input type="date" id="cHasta" value="${corteHasta}"></label>
@@ -3763,35 +3907,47 @@ Responde solo con un objeto JSON:
         <div class="row-btns"><button type="button" class="btn sec" data-hres="${esc(k.id)}">Copiar resumen</button>${anulable(k)?`<button type="button" class="btn del" data-anular="${esc(k.id)}">${nDelArmed==='co:'+k.id?'Toca otra vez para anular'+(efectosAnular(k).texto?' ('+efectosAnular(k).texto+')':''):'Anular corte'}</button>`:''}</div></details>`).join('')}</div>`:'<div class="tip">Todavía no hay cortes pagados.</div>'}`;
   }
   /* soloId: pagar solo a un trabajador; se guarda como un corte con su sola línea y los demás siguen pendientes */
+  let corteAviso='', anulando=false;
+  /* Aviso del corte que no desaparece solo, y botón para completar un guardado que quedó sin respuesta */
+  const avisoCorteHtml = () => (corteAviso?`<div class="avfijo" id="cAviso" style="margin-top:12px">${esc(corteAviso)}</div>`:'') + (Object.keys(dudosos).some(k=>k.startsWith('corte|'))?`<div class="row-btns"><button type="button" class="btn pri" id="cCompletar">Completar el guardado del corte</button></div>`:'');
+  function falloCorte(msg, corto){ corteAviso=msg; renderNom(); const a=$('#cAviso'); if(a&&a.scrollIntoView) a.scrollIntoView({block:'center'}); toast(corto||'No se guardó el corte: mira el aviso'); }
+  async function completarCorte(btn){ const k=Object.keys(dudosos).find(x=>x.startsWith('corte|')); if(!k) return; const d=dudosos[k];
+    await conBoton(btn, 'Completar el guardado del corte', async()=>{ try{ await guardarOps(k, d.firma, d.ops, 'el corte de nómina', d.fin); d.fin(); }catch(err){ falloCorte('No se guardó el corte. '+errMsg(err)); } }); }
   async function marcarPagado(soloId, btnEl){
+    const btn=btnEl||$('#cPagar'); if(!btn||btn.dataset.busy) return;
     const tasa=parseNum(corteTasa); if(!(tasa>0)) return;
+    /* Reintento tras un intento sin respuesta: se reenvía exactamente el mismo corte, con el mismo identificador */
+    const clave='corte|'+(soloId||'todos'), firma=JSON.stringify([corteHasta, corteTasa, corteCuenta, corteFechaPago||'', corteF, supMontos]);
+    const du=reintento(clave, firma); if(du&&du.cambio){ falloCorte(TXT_DUDA); return; }
+    if(du) return conBoton(btn, btn.dataset.lbl||btn.textContent, async()=>{ try{ await guardarOps(clave, firma, du.ops, 'el corte de nómina', du.fin); du.fin(); }catch(err){ falloCorte('No se guardó el corte. '+errMsg(err)); } });
     const c=calcCorte(corteHasta), ls=conBs(c.lineas,tasa).filter(l=>!soloId||l.trabajadorId===soloId); if(!ls.length) return;
-    const btn=btnEl||$('#cPagar'), lbl0=btn.textContent; if(!btn.dataset.armed){ btn.dataset.armed='1'; btn.textContent=`Confirmar pago${soloId?' a '+nombreT(soloId):''} de ${corteCuenta==='efectivo'?usd(sum(ls,l=>Math.max(0,l.totalUsd))):bs(sum(ls,l=>l.totalBs))} a ${nfT.format(tasa)} desde ${cuentaDe(corteCuenta).nombre}`; setTimeout(()=>{ if(btn.isConnected){ delete btn.dataset.armed; btn.textContent=lbl0; } },5000); return; }
-    btn.disabled=true; btn.textContent='Guardando…';
+    if(!btn.dataset.armed){ const lbl0=btn.textContent; btn.dataset.lbl=lbl0; btn.dataset.armed='1'; btn.textContent=`Confirmar pago${soloId?' a '+nombreT(soloId):''} de ${corteCuenta==='efectivo'?usd(sum(ls,l=>Math.max(0,l.totalUsd))):bs(sum(ls,l=>l.totalBs))} a ${nfT.format(tasa)} desde ${cuentaDe(corteCuenta).nombre}`; setTimeout(()=>{ if(btn.isConnected && !btn.dataset.busy){ delete btn.dataset.armed; btn.textContent=lbl0; } },5000); return; }
     const lineas=ls.map(l=>{ const t=trabs.find(x=>x.id===l.trabajadorId)||{}; const pm=pmDe(t), cta=ctaDe(t); return {trabajadorId:l.trabajadorId, nombre:t.nombre||'', cargo:t.cargo||'', cedula:String(pm.cedula||''), telefono:String(pm.telefono||''), banco:pm.banco||'', titular:pm.titular||'', ...(cta?{ctaNumero:cta.numero, ctaTipo:cta.tipo, ctaTitular:cta.titular, ctaCedula:cta.cedula}:{}), completos:l.completos, medios:l.medios, horasExtra:r2(l.horasExtra), especiales:l.especiales, montoDias:r2(l.montoDias), montoExtra:r2(l.montoExtra), montoBono:r2(num(l.montoBono)), sueldoFijo:r2(l.sueldoFijo), semanas:l.semanas||[], dias:l.dias||[], adelantos:r2(l.adelantos), bruto:l.bruto, totalUsd:l.totalUsd, totalBs:l.totalBs}; });
     const adIds=ls.flatMap(l=>l.adelantoIds);
     const body={fecha:corteFechaPago||today(), cuenta:corteCuenta, desde:c.desde, hasta:c.hasta, tasa, lineas, adelantoIds:adIds, totalUsd:r2(sum(ls,l=>Math.max(0,l.totalUsd))), totalBs:r2(sum(ls,l=>l.totalBs)), creado:new Date().toISOString()};
-    try{
-      const ref=nDb.collection('cortes').doc();
-      await ref.set(body); aprenderTasa(body.fecha, tasa, 'corte de nómina');
-      for(const id of adIds) await nDb.collection('adelantos').doc(id).update({corteId:ref.id});
-      /* Si a alguien el adelanto le superó lo devengado, el resto queda como adelanto pendiente para el próximo corte */
-      let arrastres=0;
-      for(const l of ls){ if(l.totalUsd<-0.004){ await nDb.collection('adelantos').doc().set({trabajadorId:l.trabajadorId, fecha:sumarDias(c.hasta,1), monto:r2(-l.totalUsd), nota:`Resto del adelanto no descontado en el corte del ${fdate(body.fecha)}`, corteId:'', origenCorteId:ref.id, resto:true, creado:new Date().toISOString()}); arrastres++; } }
+    /* El corte, los adelantos que descuenta y los restos que pasan al próximo corte se guardan juntos: todo o nada.
+       Si a alguien el adelanto le superó lo devengado, el resto queda como adelanto pendiente para el próximo corte */
+    const idC=idEstable(clave+'|corte','cortes'), restos=ls.filter(l=>l.totalUsd<-0.004), arrastres=restos.length;
+    const ops=[opSet('cortes', idC, body), ...adIds.map(id=>opUpd('adelantos', id, {corteId:idC}, `marcar como descontado el adelanto de ${nombreT((adels.find(a=>a.id===id)||{}).trabajadorId)}`)),
+      ...restos.map(l=>({op:'set', col:'adelantos', id:idEstable(clave+'|resto|'+l.trabajadorId,'adelantos'), nuevo:true, que:`el resto de adelanto de ${nombreT(l.trabajadorId)}`, datos:{trabajadorId:l.trabajadorId, fecha:sumarDias(c.hasta,1), monto:r2(-l.totalUsd), nota:`Resto del adelanto no descontado en el corte del ${fdate(body.fecha)}`, corteId:'', origenCorteId:idC, resto:true, creado:new Date().toISOString()}}))];
+    const fin=()=>{ soltarIntento(clave); corteAviso=''; aprenderTasa(body.fecha, tasa, 'corte de nómina');
       if(soloId){ delete supMontos[soloId]; toast(`${nombreT(soloId)} quedó pagado${arrastres?' · su resto de adelanto pasa al próximo corte':''}. Los demás siguen pendientes`); renderNom(); return; }
-      supMontos={}; corteF={cargos:null, semanasSup:null}; corteTasa=''; corteTasaToco=false; toast(arrastres?`Corte guardado como pagado · ${arrastres} ${arrastres===1?'adelanto pasa':'adelantos pasan'} al próximo corte`:'Corte guardado como pagado'); renderNom();
-    }catch(err){ toast(errMsg(err)); btn.disabled=false; btn.textContent='Marcar pagado'; }
+      supMontos={}; corteF={cargos:null, semanasSup:null}; corteTasa=''; corteTasaToco=false; toast(arrastres?`Corte guardado como pagado · ${arrastres} ${arrastres===1?'adelanto pasa':'adelantos pasan'} al próximo corte`:'Corte guardado como pagado'); renderNom(); };
+    await conBoton(btn, btn.dataset.lbl||'Marcar pagado', async()=>{ try{ await guardarOps(clave, firma, ops, 'el corte de nómina', fin); fin(); }catch(err){ falloCorte('No se guardó el corte. '+errMsg(err)); } });
+    delete btn.dataset.armed;
   }
   /* Qué deshace anular un corte: devuelve sus adelantos a pendientes y borra los restos que ese corte creó */
   function efectosAnular(k){ const dev=(k.adelantoIds||[]).filter(aid=>adels.some(a=>a.id===aid)).length, restos=adels.filter(a=>a.origenCorteId===k.id && !a.corteId).length; return {dev, restos, texto:[dev?`${dev} ${dev===1?'adelanto vuelve':'adelantos vuelven'} a pendientes`:'', restos?`se ${restos===1?'borra el resto':'borran los restos'} de adelanto que creó`:''].filter(Boolean).join('; ')}; }
   async function anularCorte(id){
-    const k=cortes.find(x=>x.id===id); if(!k) return;
+    const k=cortes.find(x=>x.id===id); if(!k||anulando) return; anulando=true;
     try{
-      for(const aid of (k.adelantoIds||[])) { const a=adels.find(x=>x.id===aid); if(a) await nDb.collection('adelantos').doc(aid).update({corteId:''}); }
-      for(const a of adels.filter(x=>x.origenCorteId===k.id && !x.corteId)) await nDb.collection('adelantos').doc(a.id).delete();
+      /* Devolver los adelantos a pendientes, borrar los restos que creó y borrar el corte: todo junto o nada */
+      await escribirJuntos([...(k.adelantoIds||[]).filter(aid=>adels.some(x=>x.id===aid)).map(aid=>opUpd('adelantos', aid, {corteId:''}, 'devolver un adelanto a pendientes')),
+        ...adels.filter(x=>x.origenCorteId===k.id && !x.corteId).map(a=>opDel('adelantos', a.id, 'el resto de adelanto que creó el corte')), opDel('cortes', id)], 'la anulación del corte');
       corteAnulado={hasta:k.hasta, dias:new Set((k.lineas||[]).flatMap(L=>(L.dias||[]).map(x=>L.trabajadorId+'|'+x.f)))}; corteTasa=num(k.tasa)>0?nfT.format(num(k.tasa)):corteTasa; corteTasaDe=null; corteHasta=k.hasta||corteHasta; corteFechaPago=k.fecha||corteFechaPago; corteFechasAuto=false;
-      await nDb.collection('cortes').doc(id).delete(); registrarCambio('cortes', id, `Corte anulado (pagado el ${fdate(k.fecha)}, ${fdate(k.desde)} al ${fdate(k.hasta)})`, `${nf.format(num(k.totalUsd))} USD · ${(k.lineas||[]).length} personas`, ''); nDelArmed=''; toast('Corte anulado');
-    }catch(err){ toast(errMsg(err)); }
+      registrarCambio('cortes', id, `Corte anulado (pagado el ${fdate(k.fecha)}, ${fdate(k.desde)} al ${fdate(k.hasta)})`, `${nf.format(num(k.totalUsd))} USD · ${(k.lineas||[]).length} personas`, ''); nDelArmed=''; corteAviso=''; toast('Corte anulado'); renderNom();
+    }catch(err){ nDelArmed=''; falloCorte('No se anuló el corte. '+errMsg(err), 'No se anuló el corte: mira el aviso'); }
+    finally{ anulando=false; }
   }
 
   function renderTrab(el){
@@ -3838,28 +3994,34 @@ Responde solo con un objeto JSON:
     if(ctaNum && ctaNum.length!==20){ $('#wErr').textContent=`El número de cuenta debe tener 20 dígitos (tiene ${ctaNum.length}).`; return; }
     if(ctaNum && !BANCOS.some(b=>b[0]===ctaNum.slice(0,4))){ $('#wErr').textContent=`Los 4 primeros dígitos de la cuenta (${ctaNum.slice(0,4)}) no son de ningún banco conocido. Revísala.`; return; }
     if(ctaNum && !ctaMismo && (!ctaTit || ctaCed.length<5)){ $('#wErr').textContent='Escribe el titular y la cédula de la cuenta.'; return; }
-    if(ced && trabs.some(x=>x.id!==wEditId && soloDig(x.cedula)===ced)){ $('#wErr').textContent='Ya hay otro trabajador con esa cédula.'; return; }
+    if(ced && trabs.some(x=>x.id!==wEditId && x.id!==idsIntento['#wSheet|trab'] && soloDig(x.cedula)===ced)){ $('#wErr').textContent='Ya hay otro trabajador con esa cédula.'; return; }
     const cargo=$('#wCargo').value, tar=parseNum($('#wTarifa').value), sue=parseNum($('#wSueldo').value), hx=parseNum($('#wHx').value);
     const body={nombre, cedula:ced, telefono:tel, cargo, tarifa: cargo!==SUP && tar>0 ? r2(tar) : 0, horaExtra: cargo!==SUP && hx>0 ? r2(hx) : 0,
       ...Object.fromEntries([['factorSabado','#wFSab'],['factorDomingo','#wFDom'],['factorFeriado','#wFFer']].map(([k,sel])=>{ const v=parseNum($(sel).value); return [k, cargo!==SUP && v>0 ? r2(v) : 0]; })), sueldoSemanal: cargo===SUP && sue>0 && Math.abs(sue-num(cfgN.sueldoSupervisor))>0.004 ? r2(sue) : 0, activo:$('#wActivo').checked,
       pmMismo:mismo, pmTitular:pmTit, pmCedula:pmCed, pmTelefono:pmTel, pmBanco, ctaNumero:ctaNum, ctaTipo:$('#wCtaTipo').value, ctaMismo, ctaTitular:ctaNum&&!ctaMismo?ctaTit:'', ctaCedula:ctaNum&&!ctaMismo?ctaCed:'', actualizado:new Date().toISOString()};
-    const old=wEditId?trabs.find(x=>x.id===wEditId):null; body.creado = old&&old.creado || new Date().toISOString(); body.fechaIngreso=$('#wIngreso').value||'';
+    const old=wEditId?trabs.find(x=>x.id===wEditId):null, idW=wEditId, anot=[]; body.creado = old&&old.creado || new Date().toISOString(); body.fechaIngreso=$('#wIngreso').value||'';
     /* Si cambia lo que cobra, la tarifa vieja sigue valiendo para los días anteriores a "vale desde" */
     if(old){ const desde=$('#wDesde').value||today(); body.tarifasAnt=Array.isArray(old.tarifasAnt)?old.tarifasAnt.slice():[];
       const tarOld=esSup(old)?sueldoSup(old):tarifaDe(old), tarNew=cargo===SUP?(sue>0?r2(sue):num(cfgN.sueldoSupervisor)):(tar>0?r2(tar):num((cfgN.cargos.find(c=>c.nombre===cargo)||{}).tarifa));
-      if(Math.abs(tarOld-tarNew)>0.004 && desde>'2000-01-01'){ body.tarifasAnt.push({hasta:sumarDias(desde,-1), tarifa:tarOld, sup:esSup(old)}); registrarCambio('trabajadores', wEditId, `${old.nombre}: ${esSup(old)?'sueldo semanal':'tarifa por día'}`, nf.format(tarOld), `${nf.format(tarNew)} desde el ${fdate(desde)}`); }
-      diffCampos('trabajadores', wEditId, old.nombre, old, body, [['cargo','cargo'],['horaExtra','hora extra',v=>nf.format(num(v))],['activo','activo',v=>v===false?'no':'sí']]); }
-    try{ await (wEditId?nDb.collection('trabajadores').doc(wEditId):nDb.collection('trabajadores').doc()).set(body);
-      let aj=0; if(old && !esSup(old) && cargo!==SUP){ const desde=$('#wDesde').value||today(); const t2={...old, ...body, id:wEditId}; if(Math.abs(tarifaDe(old)-tarifaDe(t2))>0.004 || Math.abs(horaExtraDe(old)-horaExtraDe(t2))>0.004) aj=await ajustesRetro(t2, desde, `Tarifa nueva desde el ${fdate(desde)}`); }
-      closeSheets(); setTimeout(renderNom,50); toast((pmOk({telefono:pmTel,cedula:pmCed,banco:pmBanco})?'Trabajador guardado':'Guardado; faltan datos de pago móvil')+(aj?` · diferencia de días ya pagados ${aj<0?'− ':''}${usd(Math.abs(aj))} en el próximo corte`:'')); }
-    catch(err){ $('#wErr').textContent=errMsg(err); }
+      if(Math.abs(tarOld-tarNew)>0.004 && desde>'2000-01-01'){ body.tarifasAnt.push({hasta:sumarDias(desde,-1), tarifa:tarOld, sup:esSup(old)}); anot.push(()=>registrarCambio('trabajadores', idW, `${old.nombre}: ${esSup(old)?'sueldo semanal':'tarifa por día'}`, nf.format(tarOld), `${nf.format(tarNew)} desde el ${fdate(desde)}`)); }
+      anot.push(()=>diffCampos('trabajadores', idW, old.nombre, old, body, [['cargo','cargo'],['horaExtra','hora extra',v=>nf.format(num(v))],['activo','activo',v=>v===false?'no':'sí']])); }
+    /* La ficha y la diferencia de días ya pagados (si cambió la tarifa) se guardan juntas; el botón queda bloqueado mientras guarda */
+    await conBoton($('#wSave'), 'Guardar', async()=>{
+      try{ let aj=0, opAj=null; if(old && !esSup(old) && cargo!==SUP){ const desde=$('#wDesde').value||today(); const t2={...old, ...body, id:idW}; if(Math.abs(tarifaDe(old)-tarifaDe(t2))>0.004 || Math.abs(horaExtraDe(old)-horaExtraDe(t2))>0.004){ const a=opAjusteRetro(t2, desde, `Tarifa nueva desde el ${fdate(desde)}`, idEstable('#wSheet|aj','adelantos')); if(a){ opAj=a.op; aj=a.tot; } } }
+        await escribirJuntos([opSet('trabajadores', idW||idEstable('#wSheet|trab','trabajadores'), body), opAj], 'la ficha de '+nombre);
+        anot.forEach(f=>f()); soltarIntento('#wSheet');
+        closeSheets(); setTimeout(renderNom,50); toast((pmOk({telefono:pmTel,cedula:pmCed,banco:pmBanco})?'Trabajador guardado':'Guardado; faltan datos de pago móvil')+(aj?` · diferencia de días ya pagados ${aj<0?'− ':''}${usd(Math.abs(aj))} en el próximo corte`:'')); }
+      catch(err){ $('#wErr').textContent=errMsg(err); } });
   }
   async function eliminarTrab(){
     const b=$('#wDel'); if(!wEditId) return;
     const usado=Object.values(asis).some(a=>a.registros&&a.registros[wEditId]) || cortes.some(k=>(k.lineas||[]).some(l=>l.trabajadorId===wEditId));
     if(usado){ $('#wErr').textContent='Tiene días o pagos registrados. Desmarca “Activo” en vez de eliminarlo, así se conserva su historial.'; return; }
     if(!b.dataset.armed){ b.dataset.armed='1'; b.textContent='Toca otra vez para eliminar'; return; }
-    try{ const wO=trabs.find(x=>x.id===wEditId), pap=wO?alPapelera('trabajadores', wEditId, wO, `Trabajador: ${wO.nombre||''}`):null; await nDb.collection('trabajadores').doc(wEditId).delete(); closeSheets(); toastBorrado('Trabajador eliminado', pap); }catch(err){ $('#wErr').textContent=errMsg(err); }
+    const idW=wEditId;
+    await conBoton(b, 'Eliminar', async()=>{
+      try{ const wO=trabs.find(x=>x.id===idW), pap=wO?alPapelera('trabajadores', idW, wO, `Trabajador: ${wO.nombre||''}`):null; await escribirJuntos([opPap(pap), opDel('trabajadores', idW)], 'la eliminación del trabajador'); closeSheets(); toastBorrado('Trabajador eliminado', pap); }catch(err){ $('#wErr').textContent='No se eliminó. '+errMsg(err); } }, 'Eliminando…');
+    delete b.dataset.armed;
   }
   let adTipo='adelanto';
   function syncAdTipo(){ document.querySelectorAll('#adTipo [data-at]').forEach(b=>b.classList.toggle('on', b.dataset.at===adTipo)); const aj=adTipo!=='adelanto';
@@ -3879,23 +4041,24 @@ Responde solo con un objeto JSON:
     adTipo='adelanto'; syncAdTipo(); limpiarFiltros('#adSheet'); openSheet('#adSheet');
   }
   /* Un botón que guarda: se bloquea mientras escribe, y si la base no responde en 20 segundos avisa en vez de quedarse colgado */
-  async function conBoton(btn, lbl, fn){ if(!btn || btn.dataset.busy) return; btn.dataset.busy='1'; btn.disabled=true; btn.textContent='Guardando…'; try{ await fn(); } finally{ delete btn.dataset.busy; btn.disabled=false; btn.textContent=lbl; } }
+  /* Bloquea el botón mientras guarda: un segundo toque no hace nada hasta que termine */
+  async function conBoton(btn, lbl, fn, mientras){ if(!btn || btn.dataset.busy) return; btn.dataset.busy='1'; btn.disabled=true; btn.textContent=mientras||'Guardando…'; try{ await fn(); } finally{ delete btn.dataset.busy; btn.disabled=false; btn.textContent=lbl; } }
   async function guardarAdelanto(){
     const m=parseNum($('#adMonto').value);
     if(!(m>0)){ $('#adErr').textContent='Escribe el monto en dólares.'; return; }
     if(adTipo!=='adelanto'){ const t=trabs.find(x=>x.id===$('#adTrab').value); if(!t) return;
-      await conBoton($('#adSave'), 'Guardar', async()=>{ try{ await conLimite(nDb.collection('adelantos').doc().set({tipo:'ajuste', trabajadorId:t.id, fecha:$('#adFecha').value||today(), monto:adTipo==='descuento'?-r2(m):r2(m), nota:$('#adNota').value.trim(), cuenta:'', tasa:0, corteId:'', creado:new Date().toISOString()})); closeSheets(); toast(adTipo==='descuento'?'Descuento para el próximo corte':'Pago extra para el próximo corte'); }catch(err){ $('#adErr').textContent=errMsg(err); } });
+      await conBoton($('#adSave'), 'Guardar', async()=>{ try{ await escribirJuntos([opSet('adelantos', idEstable('#adSheet|adel','adelantos'), {tipo:'ajuste', trabajadorId:t.id, fecha:$('#adFecha').value||today(), monto:adTipo==='descuento'?-r2(m):r2(m), nota:$('#adNota').value.trim(), cuenta:'', tasa:0, corteId:'', creado:new Date().toISOString()})], adTipo==='descuento'?'el descuento para el próximo corte':'el pago extra para el próximo corte'); soltarIntento('#adSheet'); closeSheets(); toast(adTipo==='descuento'?'Descuento para el próximo corte':'Pago extra para el próximo corte'); }catch(err){ $('#adErr').textContent=errMsg(err); } });
       return; }
     const f=$('#adFecha').value||today(), cta=$('#adCuenta').value, tA=parseNum($('#adTasa').value);
     /* Mismo trabajador, misma fecha y mismo monto: casi siempre es un toque repetido */
-    { const igual=adels.find(a=>a.trabajadorId===$('#adTrab').value && a.fecha===f && Math.abs(num(a.monto)-m)<0.005); const k='adDup|'+(igual?igual.id:''); if(igual && tasaArmada!==k){ tasaArmada=k; $('#adErr').textContent=`Ya hay un adelanto igual a ${nombreT(igual.trabajadorId)} el ${fdate(f)} por ${usd(m)}. Si de verdad es otro, toca Guardar otra vez.`; return; } if(igual) tasaArmada=''; }
+    { const igual=adels.find(a=>a.id!==idsIntento['#adSheet|adel'] && a.trabajadorId===$('#adTrab').value && a.fecha===f && Math.abs(num(a.monto)-m)<0.005); const k='adDup|'+(igual?igual.id:''); if(igual && tasaArmada!==k){ tasaArmada=k; $('#adErr').textContent=`Ya hay un adelanto igual a ${nombreT(igual.trabajadorId)} el ${fdate(f)} por ${usd(m)}. Si de verdad es otro, toca Guardar otra vez.`; return; } if(igual) tasaArmada=''; }
     if(!cta){ $('#adErr').textContent='Elige de qué cuenta sale el dinero.'; return; }
     if(cta==='banco' && !(tA>0) && !esRegistro()){ $('#adErr').textContent='Escribe la tasa para llevar el adelanto a bolívares.'; return; }
     if(cta==='banco' && !esRegistro() && !confirmarTasa(tA, f, x=>{ $('#adErr').textContent=x; })) return;
     try{ localStorage.setItem('adCuenta',cta); }catch(_){}
     { const h=pagadoHastaDe($('#adTrab').value); if(h && f<=h){ $('#adErr').textContent=`A esa persona ya se le pagó hasta el ${fdate(h)}. Usa una fecha posterior.`; return; } }
     await conBoton($('#adSave'), 'Guardar adelanto', async()=>{
-      try{ await conLimite(nDb.collection('adelantos').doc().set({trabajadorId:$('#adTrab').value, fecha:f, monto:r2(m), cuenta:cta, tasa:cta==='banco'?tA:0, nota:$('#adNota').value.trim(), corteId:'', creado:new Date().toISOString()})); closeSheets(); toast('Adelanto registrado'); }
+      try{ await escribirJuntos([opSet('adelantos', idEstable('#adSheet|adel','adelantos'), {trabajadorId:$('#adTrab').value, fecha:f, monto:r2(m), cuenta:cta, tasa:cta==='banco'?tA:0, nota:$('#adNota').value.trim(), corteId:'', creado:new Date().toISOString()})], 'el adelanto de '+usd(r2(m))); soltarIntento('#adSheet'); closeSheets(); toast('Adelanto registrado'); }
       catch(err){ $('#adErr').textContent=errMsg(err); } });
   }
 
@@ -3934,15 +4097,23 @@ Responde solo con un objeto JSON:
     if(n.cargos.some(g=>g.nombre===SUP)){ $('#aErr').textContent='“Supervisor” ya existe como cargo de sueldo semanal; usa otro nombre.'; return; }
     for(const k of ['horasJornada','factorHoraExtra','factorSabado','factorDomingo','factorFeriado','sueldoSupervisor']) if(!(n[k]>0)){ $('#aErr').textContent='Revisa los valores: todos deben ser mayores que cero.'; return; }
     const renombres = cfgN.cargos.map((g,i)=>[g.nombre, (n.cargos[i]||{}).nombre]).filter(([a,b])=>b&&a!==b);
+    await conBoton($('#aSave'), 'Guardar ajustes', async()=>{ const cfg0=cfgN;
     try{
       const desdeAj=aDesde||today(), cambiaron=cfgN.cargos.map((g,i)=>[g, n.cargos[i]]).filter(([g,b])=>b && Math.abs(num(g.tarifa)-num(b.tarifa))>0.004).map(([g,b])=>b.nombre);
-      cfgN.cargos.forEach((g,i)=>{ const b=n.cargos[i]; if(b && Math.abs(num(g.tarifa)-num(b.tarifa))>0.004) registrarCambio('config','nomina',`Tarifa del cargo ${g.nombre}`, nf.format(num(g.tarifa)), `${nf.format(num(b.tarifa))} desde el ${fdate(aDesde||today())}`); });
-      [['sueldoSupervisor','sueldo de supervisor'],['factorHoraExtra','hora extra'],['factorSabado','sábado'],['factorDomingo','domingo'],['factorFeriado','feriado'],['horasJornada','horas de jornada']].forEach(([k,l])=>{ if(Math.abs(num(cfgN[k])-num(n[k]))>0.0001) registrarCambio('config','nomina',`Ajuste de nómina: ${l}`, nf.format(num(cfgN[k])), nf.format(num(n[k]))); });
-      await nCfgRef.set(n);
-      for(const [a,b] of renombres) for(const t of trabs.filter(t=>t.cargo===a)) await nDb.collection('trabajadores').doc(t.id).update({cargo:b});
-      let ajT=0, ajN=0; if(cambiaron.length && desdeAj<=today()){ cfgN=n; for(const t of trabs.filter(t=>!esSup(t) && cambiaron.includes(t.cargo) && !(num(t.tarifa)>0))){ const v=await ajustesRetro(t, desdeAj, `Tarifa nueva desde el ${fdate(desdeAj)}`); if(v){ ajT+=v; ajN++; } } }
+      /* El registro de cambios se anota después de guardar bien */
+      const anot=[];
+      cfgN.cargos.forEach((g,i)=>{ const b=n.cargos[i]; if(b && Math.abs(num(g.tarifa)-num(b.tarifa))>0.004){ const a0=nf.format(num(g.tarifa)), b0=`${nf.format(num(b.tarifa))} desde el ${fdate(aDesde||today())}`; anot.push(()=>registrarCambio('config','nomina',`Tarifa del cargo ${g.nombre}`, a0, b0)); } });
+      [['sueldoSupervisor','sueldo de supervisor'],['factorHoraExtra','hora extra'],['factorSabado','sábado'],['factorDomingo','domingo'],['factorFeriado','feriado'],['horasJornada','horas de jornada']].forEach(([k,l])=>{ if(Math.abs(num(cfgN[k])-num(n[k]))>0.0001){ const a0=nf.format(num(cfgN[k])), b0=nf.format(num(n[k])); anot.push(()=>registrarCambio('config','nomina',`Ajuste de nómina: ${l}`, a0, b0)); } });
+      /* Los ajustes, el cambio de nombre de los cargos en cada ficha y las diferencias de días ya pagados entran juntos: todo o nada.
+         Las diferencias se calculan con los ajustes nuevos y los cargos ya renombrados, igual que antes */
+      const ren=Object.fromEntries(renombres), opsRen=renombres.flatMap(([a,b])=>trabs.filter(t=>t.cargo===a).map(t=>opUpd('trabajadores', t.id, {cargo:b}, `el cargo de ${t.nombre}`)));
+      let ajT=0, ajN=0; const opsAj=[];
+      if(cambiaron.length && desdeAj<=today()){ cfgN=n; try{ for(const t0 of trabs){ const t=ren[t0.cargo]?{...t0, cargo:ren[t0.cargo]}:t0; if(esSup(t) || !cambiaron.includes(t.cargo) || num(t.tarifa)>0) continue; const a=opAjusteRetro(t, desdeAj, `Tarifa nueva desde el ${fdate(desdeAj)}`, idEstable('ajNom|aj|'+t.id,'adelantos')); if(a){ opsAj.push(a.op); ajT+=a.tot; ajN++; } } } finally{ cfgN=cfg0; } }
+      await escribirJuntos([{op:'set', col:'config', id:'nomina', datos:n, antes:JSON.parse(JSON.stringify(cfg0)), que:'los ajustes de nómina'}, ...opsRen, ...opsAj], 'los ajustes de nómina');
+      if(cambiaron.length && desdeAj<=today()) cfgN=n;
+      anot.forEach(f=>f()); soltarIntento('ajNom');
       aDesde=''; toast(ajN?`Ajustes guardados · ${ajN} ${ajN===1?'persona':'personas'} con diferencia de días ya pagados (${ajT<0?'− ':''}${usd(Math.abs(r2(ajT)))}) en el próximo corte`:'Ajustes guardados');
-    }catch(err){ $('#aErr').textContent=errMsg(err); }
+    }catch(err){ $('#aErr').textContent=errMsg(err); } });
   }
 
   /* ---------- eventos de nómina ---------- */
@@ -3964,8 +4135,8 @@ Responde solo con un objeto JSON:
       /* Dos toques, y lo ya registrado se conserva: desactivar solo lo saca de los días siguientes */
       if(!des.dataset.armed){ des.dataset.armed='1'; des.textContent='¿Desactivar? Toca otra vez'; setTimeout(()=>{ if(des.isConnected){ delete des.dataset.armed; des.textContent='Desactivar'; } },4000); return; }
       des.disabled=true;
-      nDb.collection('trabajadores').doc(w.id).update({activo:false, actualizado:new Date().toISOString()})
-        .then(()=>{ w.activo=false; renderNom(); toast(`${w.nombre} desactivado: ya no sale en los días siguientes`, {label:'Deshacer', fn:()=>nDb.collection('trabajadores').doc(w.id).update({activo:true, actualizado:new Date().toISOString()}).then(()=>{ w.activo=true; renderNom(); toast(`${w.nombre} activo otra vez`); })}); })
+      conLimite(nDb.collection('trabajadores').doc(w.id).update({activo:false, actualizado:new Date().toISOString()}), 0, `desactivar a ${w.nombre}`)
+        .then(()=>{ w.activo=false; renderNom(); toast(`${w.nombre} desactivado: ya no sale en los días siguientes`, {label:'Deshacer', fn:()=>conLimite(nDb.collection('trabajadores').doc(w.id).update({activo:true, actualizado:new Date().toISOString()}), 0, `activar a ${w.nombre}`).then(()=>{ w.activo=true; renderNom(); toast(`${w.nombre} activo otra vez`); }, err=>toast(errMsg(err)))}); })
         .catch(err=>{ des.disabled=false; toast(errMsg(err)); });
       return;
     }
@@ -3973,17 +4144,18 @@ Responde solo con un objeto JSON:
     const act=t.closest('[data-activar]'); if(act){
       const w=trabs.find(x=>x.id===act.dataset.activar); if(!w) return;
       act.disabled=true; act.textContent='Activando…';
-      nDb.collection('trabajadores').doc(w.id).update({activo:true, actualizado:new Date().toISOString()})
+      conLimite(nDb.collection('trabajadores').doc(w.id).update({activo:true, actualizado:new Date().toISOString()}), 0, `activar a ${w.nombre}`)
         .then(()=>{ w.activo=true; if(nView==='dia') diaAgregados.add(w.id); renderNom(); toast(`${w.nombre} activado`); }, err=>{ act.disabled=false; act.textContent='Activar'; toast(errMsg(err)); });
       return;
     }
     if(t.closest('#dTodos')||t.closest('#dMedio')||t.closest('#dNinguno')){ const tipo=t.closest('#dTodos')?'completo':t.closest('#dMedio')?'medio':'no'; todosTocado=true; document.querySelectorAll('.wrow[data-w]:not([data-bloq])').forEach(w=>{ const id=w.dataset.w; dayDraft[id]={...(dayDraft[id]||defReg(id)), tipo}; }); dayDirty=true; renderNom(); return; }
     const sb=t.closest('.seg button'); if(sb){ const id=sb.closest('[data-w]').dataset.w; dayDraft[id]={...(dayDraft[id]||defReg(id)), tipo:sb.dataset.t}; dayDirty=true; sb.parentElement.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===sb)); renderDiaSum(); sincronizarTodos(); return; }
     if(t.closest('#cPagar')) return marcarPagado();
+    if(t.closest('#cCompletar')) return completarCorte(t.closest('#cCompletar'));
     if(t.closest('#semResCp')){ const w=($('#semRes')||{}).value||semRes; return copyPlain(resumenSemana(w), 'Resumen de la semana copiado. Pégalo en WhatsApp', 'Resumen semanal'); }
     const p1=t.closest('[data-pagar1]'); if(p1) return marcarPagado(p1.dataset.pagar1, p1);
     if(t.closest('#dCopiarAnt')) return copiarDiaAnterior();
-    const nd=t.closest('[data-nadie]'); if(nd){ (async()=>{ for(const d of nd.dataset.nadie.split(',')) if(!asis[d]) await nDb.collection('asistencia').doc(d).set({fecha:d, registros:{}, nadie:true, actualizado:new Date().toISOString()}); toast('Anotado: nadie trabajó'); renderNom(); })(); return; }
+    const nd=t.closest('[data-nadie]'); if(nd){ if(nd.disabled) return; nd.disabled=true; (async()=>{ try{ const ah=new Date().toISOString(); await escribirJuntos(nd.dataset.nadie.split(',').filter(d=>!asis[d]).map(d=>({op:'set', col:'asistencia', id:d, nuevo:true, datos:{fecha:d, registros:{}, nadie:true, actualizado:ah}, que:'el día '+fdate(d)})), 'anotar que nadie trabajó'); toast('Anotado: nadie trabajó'); renderNom(); }catch(err){ nd.disabled=false; falloCorte('No se anotó que nadie trabajó. '+errMsg(err), 'No se anotó: mira el aviso'); } })(); return; }
     const cg=t.closest('[data-corregir]'); if(cg){ diaCorregir.add(cg.dataset.corregir); renderNom(); return; }
     const ag=t.closest('[data-agregardia]'); if(ag){ const id=ag.dataset.agregardia; diaAgregados.add(id); dayDraft[id]={...(dayDraft[id]||defReg(id)), tipo:'completo'}; dayDirty=true; renderNom(); return; }
     if(t.closest('#dVerTodos')){ diaVerTodos.add(diaSel); renderNom(); return; }
@@ -3998,7 +4170,7 @@ Responde solo con un objeto JSON:
     const hr=t.closest('[data-hres]'); if(hr){ const k=cortes.find(x=>x.id===hr.dataset.hres); if(k) copyPlain(resumenCorte(k), 'Resumen copiado. Pégalo en WhatsApp', 'Resumen del corte'); return; }
     const an=t.closest('[data-anular]'); if(an){ const key='co:'+an.dataset.anular; if(nDelArmed!==key){ nDelArmed=key; renderNom(); return; } return anularCorte(an.dataset.anular); }
     if(t.closest('#adNew')) return openAdelanto();
-    const ad=t.closest('[data-adel]'); if(ad){ const key='ad:'+ad.dataset.adel; if(nDelArmed!==key){ nDelArmed=key; renderNom(); return; } nDelArmed=''; const aO=adels.find(x=>x.id===ad.dataset.adel), pap=aO?alPapelera('adelantos', aO.id, aO, `Adelanto a ${nombreT(aO.trabajadorId)} · ${fdate(aO.fecha)} · ${m$(num(aO.monto))}`):null; nDb.collection('adelantos').doc(ad.dataset.adel).delete().then(()=>toastBorrado('Adelanto eliminado', pap), err=>toast(errMsg(err))); return; }
+    const ad=t.closest('[data-adel]'); if(ad){ const key='ad:'+ad.dataset.adel; if(nDelArmed!==key){ nDelArmed=key; renderNom(); return; } if(ad.disabled) return; ad.disabled=true; ad.textContent='Eliminando…'; nDelArmed=''; const aO=adels.find(x=>x.id===ad.dataset.adel), pap=aO?alPapelera('adelantos', aO.id, aO, `Adelanto a ${nombreT(aO.trabajadorId)} · ${fdate(aO.fecha)} · ${m$(num(aO.monto))}`):null; escribirJuntos([opPap(pap), opDel('adelantos', ad.dataset.adel)], 'la eliminación del adelanto').then(()=>toastBorrado('Adelanto eliminado', pap), err=>{ renderNom(); toast('No se eliminó. '+errMsg(err)); }); return; }
     if(t.closest('#wNew')) return openTrab(null);
     if(t.closest('#wAI')) return abrirAI('trab');
     const wc=t.closest('[data-wid]'); if(wc) return openTrab(wc.dataset.wid);
@@ -4030,7 +4202,7 @@ Responde solo con un objeto JSON:
     if(t.matches('[data-tj]')){ const id=t.closest('[data-w]').dataset.w; dayDraft[id]={...(dayDraft[id]||defReg(id)), trabajoId:t.value}; dayDirty=true; renderDiaSum(); sincronizarTodos(); }
     if(t.matches('[data-tj2]')){ const id=t.closest('[data-w]').dataset.w; dayDraft[id]={...(dayDraft[id]||defReg(id)), trabajoId2:t.value, dividir:true}; dayDirty=true; renderDiaSum(); }
     if(t.id==='dTodosTrab' && t.value){ const v=t.value==='__ninguno'?'':t.value; document.querySelectorAll('.wrow[data-w]:not([data-bloq])').forEach(w=>{ const id=w.dataset.w; dayDraft[id]={...(dayDraft[id]||defReg(id)), trabajoId:v}; }); dayDirty=true; renderNom(); toast(v?'Orden asignada a todos los de este día':'Orden quitada a todos'); }
-    if(t.dataset.adcta && t.value){ const a=adels.find(x=>x.id===t.dataset.adcta); if(a) nDb.collection('adelantos').doc(a.id).update({cuenta:t.value, actualizado:new Date().toISOString()}).then(()=>toast('Adelanto completado: ya sale de '+cuentaDe(t.value).nombre), err=>toast(errMsg(err))); return; }
+    if(t.dataset.adcta && t.value){ const a=adels.find(x=>x.id===t.dataset.adcta); if(a) conLimite(nDb.collection('adelantos').doc(a.id).update({cuenta:t.value, actualizado:new Date().toISOString()}), 0, 'la cuenta de un adelanto').then(()=>toast('Adelanto completado: ya sale de '+cuentaDe(t.value).nombre), err=>toast(errMsg(err))); return; }
     if(t.id==='cHasta' && t.value){ corteHasta=t.value; corteFechasAuto=false; if(corteFechaPago<corteHasta) corteFechaPago=corteHasta; renderNom(); }
   });
   $('#wCargo').addEventListener('change', syncCargo);
@@ -4068,8 +4240,14 @@ Responde solo con un objeto JSON:
   let cambios=[];
   /* Papelera: todo lo que se borra queda guardado y se puede recuperar con un toque */
   let papelera=[];
-  function alPapelera(col, id, datos, que){ if(!gDb||!datos||!id||esRegistro()) return null; const d=JSON.parse(JSON.stringify(datos)); delete d.id; const x={col, docId:id, datos:d, que:String(que||'').slice(0,160), fecha:new Date().toISOString(), quien:document.documentElement.dataset.user||''}; const ref=gDb.collection('papelera').doc(); x.pid=ref.id; ref.set(x).catch(()=>{}); return x; }
-  async function recuperar(x){ if(!x||!gDb) return; try{ await gDb.collection(x.col).doc(x.docId).set(x.datos); if(x.col==='invMovs'&&x.datos.movId){ try{ await gDb.collection('movimientos').doc(x.datos.movId).update({inventario:true, actualizado:new Date().toISOString()}); }catch(_){} } try{ await gDb.collection('papelera').doc(x.pid||x.id).delete(); }catch(_){} registrarCambio(x.col, x.docId, 'Recuperado: '+x.que, '', ''); toast('Recuperado: '+x.que); }catch(e){ toast(errMsg(e)); } }
+  /* La copia para la papelera ya no se escribe suelta: quien borra la incluye en el mismo guardado (opPap), así copia y borrado entran juntos */
+  function alPapelera(col, id, datos, que){ if(!gDb||!datos||!id||esRegistro()) return null; const d=JSON.parse(JSON.stringify(datos)); delete d.id; const x={col, docId:id, datos:d, que:String(que||'').slice(0,160), fecha:new Date().toISOString(), quien:document.documentElement.dataset.user||''}; x.pid=nuevoId('papelera'); return x; }
+  const opPap = x => x ? {op:'set', col:'papelera', id:x.pid, datos:x, nuevo:true, que:'la copia en la papelera'} : null;
+  let recuperando=false;
+  async function recuperar(x){ if(!x||!gDb||recuperando) return; recuperando=true;
+    try{ const conMov=x.col==='invMovs'&&x.datos.movId&&movs.some(m=>m.id===x.datos.movId);
+      await escribirJuntos([opSet(x.col, x.docId, x.datos), conMov?opUpd('movimientos', x.datos.movId, {inventario:true, actualizado:new Date().toISOString()}):null, opDel('papelera', x.pid||x.id)], 'recuperar «'+String(x.que||'').slice(0,60)+'»');
+      registrarCambio(x.col, x.docId, 'Recuperado: '+x.que, '', ''); toast('Recuperado: '+x.que); }catch(e){ toast('No se recuperó. '+errMsg(e)); } finally{ recuperando=false; } }
   function toastBorrado(msg, x){ toast(msg, x?{label:'Deshacer', fn:()=>recuperar(x), dur:15000}:null); }
   document.addEventListener('click', e=>{ const b=e.target.closest('[data-recup]'); if(!b) return; const x=papelera.find(p=>p.id===b.dataset.recup); if(x){ b.disabled=true; recuperar(x); } });
   function registrarCambio(col, docId, que, antes, despues){ if(!gDb||!esDueno()) return; try{ gDb.collection('cambios').doc().set({fecha:new Date().toISOString(), quien:document.documentElement.dataset.user||'', col, docId:docId||'', que:String(que||'').slice(0,160), antes:String(antes==null?'':antes).slice(0,200), despues:String(despues==null?'':despues).slice(0,200)}).catch(()=>{}); }catch(_){} }
@@ -4234,7 +4412,7 @@ Responde solo con un objeto JSON:
     if(cur && typeof cur==='object' && Math.abs(num(cur.t)-tasa)<0.005) return;
     { const rango=x=>({'cambio entre cuentas':3,'corte de nómina':2,'ingreso':1,'cobro':1}[x]||0); if(cur && typeof cur==='object' && rango(cur.de)>rango(de)) return; }   // un cambio de verdad manda sobre el corte, y el corte sobre la tasa acordada con un cliente
     const T2={...T, [fecha]:{t:r2(tasa), de:de||'registro'}}; const ks=Object.keys(T2).sort(); while(ks.length>400) delete T2[ks.shift()];
-    gcfg={...gcfg, tasas:T2}; try{ await gCfgRef.set(JSON.parse(JSON.stringify(gcfg))); }catch(_){}
+    gcfg={...gcfg, tasas:T2}; try{ await conLimite(gCfgRef.set(JSON.parse(JSON.stringify(gcfg))), 0, 'la tasa aprendida'); }catch(_){}
   }
   /* Aviso cuando una tasa escrita se aleja más de 20 % de la del día (o de la última usada): devuelve la referencia o 0 */
   function tasaDesviada(t, fecha){ const ref=(tasaDelDia(fecha)||{}).tasa || tasaSugerida(); return ref>0 && t>0 && Math.abs(t-ref)/ref>0.2 ? ref : 0; }
@@ -4248,7 +4426,7 @@ Responde solo con un objeto JSON:
     const td=tasaDelDia(), hoy=today(); const vieja=td && td.fecha<hoy;
     return `<div class="tdia num"><label>Tasa del día (Bs. por USD)<input id="tasaDiaIn" inputmode="decimal" value="${td?nfT.format(td.tasa):''}" placeholder="Ej.: 230,00"></label><small>${td?`${vieja?'Última registrada el '+fdate(td.fecha):'De hoy'} · ${td.de==='escrita'?'escrita por ti':'tomada de un '+esc(td.de)}${vieja?'. Escribe la de hoy si cambió.':''}`:'Sin tasa registrada: escribe la de hoy. Con ella se llevan a dólares los bolívares en todas las pantallas.'}</small></div>`;
   }
-  async function guardarTasaDia(v){ const t=parseNum(v); if(!(t>0)||!gCfgRef||!esDueno()) return; const T={...((gcfg&&gcfg.tasas)||{}), [today()]:{t:r2(t), de:'escrita'}}; gcfg={...gcfg, tasas:T}; try{ await gCfgRef.set(JSON.parse(JSON.stringify(gcfg))); toast(`Tasa del día: ${nfT.format(t)}`); }catch(e){ toast(errMsg(e)); } }
+  async function guardarTasaDia(v){ const t=parseNum(v); if(!(t>0)||!gCfgRef||!esDueno()) return; const T={...((gcfg&&gcfg.tasas)||{}), [today()]:{t:r2(t), de:'escrita'}}; gcfg={...gcfg, tasas:T}; try{ await conLimite(gCfgRef.set(JSON.parse(JSON.stringify(gcfg))), 0, 'la tasa del día'); toast(`Tasa del día: ${nfT.format(t)}`); }catch(e){ toast(errMsg(e)); } }
   document.addEventListener('change', e=>{ if(e.target.id==='tasaDiaIn') guardarTasaDia(e.target.value); });
   function renderMov(el){
     const hoy=today(), sinSaldos=!gcfg.cuentas.some(c=>((gcfg.saldos||{})[c.id]||{}).fecha);
@@ -4395,7 +4573,8 @@ Responde solo con un objeto JSON:
       <div class="sech">Excel</div>
       <div class="tip">Lo mismo en una hoja de cálculo, una hoja por tipo de dato, para revisarlo o archivarlo. No sirve para importar.</div>
       <div class="row-btns"><button type="button" class="btn sec" id="datExcel">Descargar en Excel</button></div>
-      <div class="err" id="datErr"></div>`;
+      <div class="err" id="datErr"></div>
+      <div class="tip" id="datVer" style="border:0;text-align:center;margin-top:18px">Versión ${APP_VERSION}</div>`;
   }
   $('#datMain').addEventListener('click', e=>{ const t=e.target; if(t.closest('#datExp')) return descargarJSON(); const x=t.closest('#datExcel'); if(x) return exportarExcel(x); });
   $('#datMain').addEventListener('change', e=>{ const t=e.target; if(t.id==='datImp'){ const f=t.files&&t.files[0]; t.value=''; return restaurarJSON(f); } });
@@ -4432,13 +4611,17 @@ Responde solo con un objeto JSON:
   }
   async function guardarGAj(){
     const n=leerGAj();
+    await conBoton($('#gAjSave'), 'Guardar ajustes', async()=>{
     try{
-      gcfg.cuentas.forEach(c=>{ const a=(gcfg.saldos||{})[c.id]||{}, b=(n.saldos||{})[c.id]||{}; diffCampos('config', 'gastos', `Saldo inicial de ${c.nombre}`, a, b, [['monto','monto',v=>nf.format(num(v))],['fecha','fecha'],['tasa','tasa',v=>nfT.format(num(v))]]); });
-      await gCfgRef.set(n); gcfg=n;
+      /* El registro de cambios se anota después de guardar bien */
+      const g0=gcfg, anotar=()=>g0.cuentas.forEach(c=>{ const a=(g0.saldos||{})[c.id]||{}, b=(n.saldos||{})[c.id]||{}; diffCampos('config', 'gastos', `Saldo inicial de ${c.nombre}`, a, b, [['monto','monto',v=>nf.format(num(v))],['fecha','fecha'],['tasa','tasa',v=>nfT.format(num(v))]]); });
+      let ia=null;
       if(window.__standalone && $('#iaClave')){ const cr=parseNum(($('#iaCredito')||{value:''}).value); if(isNaN(cr)||cr<0){ $('#gAjErr').textContent='El crédito de Claude IA debe ser un número.'; return; }
-        const ia={clave:$('#iaClave').value.trim(), modelo:($('#iaModelo')||{value:''}).value.trim(), credito:r2(cr)}; if(ia.clave!==iaCfg.clave||ia.modelo!==iaCfg.modelo||ia.credito!==num(iaCfg.credito)){ await gDb.doc('config/ia').set(ia,{merge:true}); iaCfg={...iaCfg, ...ia}; publicarIA(); } }
+        ia={clave:$('#iaClave').value.trim(), modelo:($('#iaModelo')||{value:''}).value.trim(), credito:r2(cr)}; if(!(ia.clave!==iaCfg.clave||ia.modelo!==iaCfg.modelo||ia.credito!==num(iaCfg.credito))) ia=null; }
+      await conLimite(gCfgRef.set(n), 0, 'los ajustes de Gastos'); gcfg=n; anotar();
+      if(ia){ await conLimite(gDb.doc('config/ia').set(ia,{merge:true}), 0, 'los ajustes del asistente'); iaCfg={...iaCfg, ...ia}; publicarIA(); }
       toast('Ajustes guardados'); renderGas();
-    }catch(err){ $('#gAjErr').textContent=errMsg(err); }
+    }catch(err){ $('#gAjErr').textContent=errMsg(err); } });
   }
 
   /* ---------- hoja de movimiento ---------- */
@@ -4573,21 +4756,21 @@ Responde solo con un objeto JSON:
   $('#mvCredF1').addEventListener('change', ()=>{ $('#mvCredF1').dataset.manual='1'; renderMvConv(); });
   /* Guarda una compra a crédito: la inicial como gasto (si la hubo) y el resto como cuenta por pagar con cuotas.
      Si se está editando un gasto de contado, ese registro pasa a ser la inicial (o la cuenta por pagar, si no hubo inicial). */
-  async function guardarCredito(body, old, D){
+  function armarCredito(body, old, D){
     const ah=new Date().toISOString(), concepto=body.concepto;
     const credito={acreedor:D.acreedor, totalUsd:D.totalUsd, totalBs:D.totalBs, inicialUsd:D.inicialUsd, inicialBs:D.inicialBs, inicialMovId:'', cada:D.dias, cuotas:D.cuotas};
     const deuda={...body, tipo:'deuda', pagado:false, monto:D.enBs&&D.cuenta.moneda==='VES'?D.restoBs:D.restoUsd, tasa:D.tasa, credito, creado:old&&old.creado||ah, actualizado:ah};
     if(D.enBs && D.cuenta.moneda!=='VES') deuda.montoBs=D.restoBs; else delete deuda.montoBs;
     const ini = D.inicialUsd>0 ? {...body, tipo:'gasto', monto:D.cuenta.moneda==='VES'?D.inicialBs:D.inicialUsd, tasa:D.tasa, concepto:/inicial/i.test(concepto)?concepto:`${concepto} · inicial ${D.acreedor}`, creado:old&&old.creado||ah, actualizado:ah} : null;
     if(ini){ if(D.enBs && D.cuenta.moneda!=='VES') ini.montoBs=D.inicialBs; else delete ini.montoBs; }
-    const col=gDb.collection('movimientos'), refMv=mvEditId?col.doc(mvEditId):null;
-    const refD = (refMv && !ini) ? refMv : col.doc(), refI = ini ? (refMv||col.doc()) : null;
-    deuda.credito.inicialMovId = refI?refI.id:''; if(ini) ini.credito={deudaId:refD.id, parte:'inicial'};
-    await conLimite(refD.set(deuda)); if(refI) await conLimite(refI.set(ini));
-    if(old) registrarCambio('movimientos', mvEditId, `Pasado a compra a crédito: ${concepto}`, `${old.fecha} · ${nf.format(num(old.monto))} ${cuentaDe(old.cuenta).nombre}`, `${D.acreedor}: inicial ${m$(D.inicialUsd)} + ${D.n} ${D.n===1?'cuota':'cuotas'} (${m$(D.restoUsd)})`);
-    closeSheets();
-    toast(`${D.inicialUsd>0?`Inicial ${m$(D.inicialUsd)} salió de ${D.cuenta.nombre}. `:''}Quedan ${D.n} ${D.n===1?'cuota':'cuotas'} con ${D.acreedor} (${m$(D.restoUsd)}) en Cuentas por pagar`);
-    if(ini){ const cS=ini.cuenta; setTimeout(()=>{ const sl=saldoCuenta(cS,today()), cc=cuentaDe(cS); if(sl<-0.004) toast(`${cc.nombre} queda en − ${cc.moneda==='VES'?bs(-sl):usd(-sl)}. ¿Falta un cobro o un cambio?`); },900); }
+    /* La cuenta por pagar y la inicial se guardan juntas (todo o nada), con identificadores que se reutilizan si se vuelve a tocar Guardar */
+    const idEd=mvEditId, idD = (idEd && !ini) ? idEd : idEstable('#mvSheet|deuda','movimientos'), idI = ini ? (idEd||idEstable('#mvSheet|ini','movimientos')) : '';
+    deuda.credito.inicialMovId = idI; if(ini) ini.credito={deudaId:idD, parte:'inicial'};
+    return {ops:[opSet('movimientos', idD, deuda, 'la cuenta por pagar'), ini?opSet('movimientos', idI, ini, 'la inicial de la compra'):null], que:'la compra a crédito', fin:()=>{
+      if(old) registrarCambio('movimientos', idEd, `Pasado a compra a crédito: ${concepto}`, `${old.fecha} · ${nf.format(num(old.monto))} ${cuentaDe(old.cuenta).nombre}`, `${D.acreedor}: inicial ${m$(D.inicialUsd)} + ${D.n} ${D.n===1?'cuota':'cuotas'} (${m$(D.restoUsd)})`);
+      soltarIntento('#mvSheet'); closeSheets();
+      toast(`${D.inicialUsd>0?`Inicial ${m$(D.inicialUsd)} salió de ${D.cuenta.nombre}. `:''}Quedan ${D.n} ${D.n===1?'cuota':'cuotas'} con ${D.acreedor} (${m$(D.restoUsd)}) en Cuentas por pagar`);
+      if(ini){ const cS=ini.cuenta; setTimeout(()=>{ const sl=saldoCuenta(cS,today()), cc=cuentaDe(cS); if(sl<-0.004) toast(`${cc.nombre} queda en − ${cc.moneda==='VES'?bs(-sl):usd(-sl)}. ¿Falta un cobro o un cambio?`); },900); } }};
   }
   let mvDeuda=null;
   function pagarDeuda(o){
@@ -4635,29 +4818,33 @@ Responde solo con un objeto JSON:
   $('#rpList').addEventListener('input', rpQueda);
   $('#rpList').addEventListener('click', e=>{ const b=e.target.closest('[data-rptodo]'); if(!b) return; const m=movs.find(x=>x.id===rpId), d=docs.find(x=>x.id===b.dataset.rptodo); if(!m||!d) return;
     const inp=[...document.querySelectorAll('#rpList [data-rp]')].find(i=>i.dataset.rp===d.id); inp.value=''; inp.value=nf.format(Math.max(0, Math.min(saldo(d), r2(rpUsd(m)-rpSum())))); rpQueda(); });
-  $('#rpSave').addEventListener('click', async ()=>{ const m=movs.find(x=>x.id===rpId); if(!m) return; const err=x=>{ $('#rpErr').textContent=x; };
+  $('#rpSave').addEventListener('click', async ()=>{ const b=$('#rpSave'); if(b.dataset.busy) return; const err=x=>{ $('#rpErr').textContent=x; };
+    /* Reintento tras un intento sin respuesta: se reenvía exactamente el mismo reparto (los abonos no se suman otra vez) */
+    const firma=JSON.stringify([rpId, [...document.querySelectorAll('#rpList [data-rp]')].map(i=>[i.dataset.rp, i.value])]);
+    const enviar=(ops, fin)=>conBoton(b, 'Guardar reparto', async()=>{ try{ await guardarOps('#rpSheet', firma, ops, 'el reparto del pago', fin); fin(); }catch(e){ err(errMsg(e)); } });
+    { const du=reintento('#rpSheet', firma); if(du&&du.cambio) return err(TXT_DUDA); if(du) return enviar(du.ops, du.fin); }
+    const m=movs.find(x=>x.id===rpId); if(!m) return;
     const tot=rpUsd(m), enBs=cuentaDe(m.cuenta).moneda==='VES', t=num(m.tasa);
     const as=[...document.querySelectorAll('#rpList [data-rp]')].map(i=>({d:docs.find(x=>x.id===i.dataset.rp), u:r2(parseNum(i.value)||0)})).filter(x=>x.d&&x.u>0);
     if(!as.length) return err('Escribe cuánto va a cada orden.');
     const malo=as.find(x=>x.u>saldo(x.d)+0.005); if(malo) return err(`«${malo.d.descripcion}» solo debe ${m$(saldo(malo.d))}.`);
     const s=r2(sum(as,x=>x.u)); if(s>tot+0.005) return err(`Repartiste ${m$(s)} y el pago es de ${m$(tot)}.`);
-    const b=$('#rpSave'); if(b.dataset.busy) return; b.dataset.busy='1'; b.disabled=true; b.textContent='Guardando…';
-    try{ const r=await repartirPago(m, as, ''); if(r.error) return err(r.error);
-      closeSheets(); toast(r.todo?`Pago repartido en ${as.length} ${as.length===1?'orden':'órdenes'}`:`Repartido ${m$(r.s)}; quedan ${m$(r.q)} por repartir`); }
-    catch(e){ err(errMsg(e)); } finally{ delete b.dataset.busy; b.disabled=false; b.textContent='Guardar reparto'; } });
-  /* Reparte un pago suelto en abonos a los trabajos (as: [{d, u}]); numFactura opcional cuando el reparto viene con su factura */
-  async function repartirPago(m, as, numFactura, fechaFactura, base){   /* base: {idTrabajo: cobros recién guardados} para no pisar cambios aún no leídos */
+    const r=armarReparto(m, as, '');
+    return enviar(r.ops, ()=>{ r.anotar(); closeSheets(); toast(r.todo?`Pago repartido en ${as.length} ${as.length===1?'orden':'órdenes'}`:`Repartido ${m$(r.s)}; quedan ${m$(r.q)} por repartir`); }); });
+  /* Reparte un pago suelto en abonos a los trabajos (as: [{d, u}]); numFactura opcional cuando el reparto viene con su factura.
+     Los abonos a las órdenes y la rebaja (o el retiro) del pago suelto se guardan juntos: todo o nada */
+  async function repartirPago(m, as, numFactura, fechaFactura, base){ const r=armarReparto(m, as, numFactura, fechaFactura, base); await escribirJuntos(r.ops, 'el reparto del pago'); r.anotar(); return r; }
+  function armarReparto(m, as, numFactura, fechaFactura, base){   /* base: {idTrabajo: cobros recién guardados} para no pisar cambios aún no leídos */
     const tot=rpUsd(m), enBs=cuentaDe(m.cuenta).moneda==='VES', t=num(m.tasa), s=r2(sum(as,x=>x.u));
     const ah=new Date().toISOString(), q=r2(tot-s), todo=q<0.005;
     /* En bolívares, cada abono lleva sus bolívares exactos y el último se lleva el resto, para que la caja cuadre al céntimo */
     let bsUsados=0; as.forEach((x,i)=>{ if(enBs){ x.bs = (todo && i===as.length-1) ? r2(num(m.monto)-bsUsados) : r2(x.u*t); bsUsados=r2(bsUsados+x.bs); } });
-    for(const x of as){ const prev=(base&&base[x.d.id]) || (docs.find(y=>y.id===x.d.id)||x.d).cobros || []; const nuevo={monto:x.u, tasa:enBs?t:0, ...(enBs?{montoBs:x.bs}:{}), cuenta:m.cuenta, numFactura:String(numFactura||''), ...(fechaFactura?{fechaFactura}:{}), fecha:m.fecha, ref:m.referencia||'', dePago:m.id};
-      const cs=[...prev, nuevo]; if(base) base[x.d.id]=cs; await conLimite(coll.doc(x.d.id).update({cobros:cs, actualizado:ah})); }
-    try{ if(todo) await conLimite(gDb.collection('movimientos').doc(m.id).delete());
-      else await conLimite(gDb.collection('movimientos').doc(m.id).update({monto: enBs ? r2(num(m.monto)-bsUsados) : q, montoOriginal: num(m.montoOriginal)||num(m.monto), repartido:[...(m.repartido||[]), ...as.map(x=>({trabajoId:x.d.id, usd:x.u, fecha:ah}))], actualizado:ah})); }
-    catch(e2){ return {error:'Los abonos quedaron en las órdenes, pero el pago suelto no se pudo rebajar. Ábrelo en Gastos y ajústalo: '+errMsg(e2)}; }
-    registrarCambio('movimientos', m.id, `Pago repartido${numFactura?' con la factura N° '+numFactura:''}: ${m.concepto||''}`, m$(tot), as.map(x=>`${x.d.descripcion}: ${m$(x.u)}`).join(' · '));
-    return {todo, s, q};
+    const ops=[], local={};
+    for(const x of as){ const prev=local[x.d.id] || (base&&base[x.d.id]) || (docs.find(y=>y.id===x.d.id)||x.d).cobros || []; const nuevo={monto:x.u, tasa:enBs?t:0, ...(enBs?{montoBs:x.bs}:{}), cuenta:m.cuenta, numFactura:String(numFactura||''), ...(fechaFactura?{fechaFactura}:{}), fecha:m.fecha, ref:m.referencia||'', dePago:m.id};
+      const cs=[...prev, nuevo]; local[x.d.id]=cs; if(base) base[x.d.id]=cs; ops.push(opUpd('facturas', x.d.id, {cobros:cs, actualizado:ah}, `el abono a «${String(x.d.descripcion||'').slice(0,40)}»`)); }
+    ops.push(todo ? opDel('movimientos', m.id, 'retirar el pago ya repartido')
+      : opUpd('movimientos', m.id, {monto: enBs ? r2(num(m.monto)-bsUsados) : q, montoOriginal: num(m.montoOriginal)||num(m.monto), repartido:[...(m.repartido||[]), ...as.map(x=>({trabajoId:x.d.id, usd:x.u, fecha:ah}))], actualizado:ah}, 'rebajar el pago por repartir'));
+    return {ops, todo, s, q, anotar:()=>registrarCambio('movimientos', m.id, `Pago repartido${numFactura?' con la factura N° '+numFactura:''}: ${m.concepto||''}`, m$(tot), as.map(x=>`${x.d.descripcion}: ${m$(x.u)}`).join(' · '))};
   }
   document.addEventListener('click', e=>{ const b=e.target.closest('[data-repartir]'); if(b) openRepartir(b.dataset.repartir); });
   $('#mvRepartir').addEventListener('click', ()=>{ const id=mvEditId; closeSheets(); setTimeout(()=>openRepartir(id), 60); });
@@ -4687,8 +4874,15 @@ Responde solo con un objeto JSON:
     limpiarFiltros('#mvSheet'); fillCats(m&&m.categoria); syncMvTipo();
     openSheet('#mvSheet');
   }
+  /* Lo escrito en una hoja, para saber si un reintento es «lo mismo» */
+  const firmaHoja = sel => JSON.stringify([...document.querySelectorAll(sel+' input,'+sel+' select,'+sel+' textarea')].map(x=>x.type==='checkbox'||x.type==='radio'?x.checked:x.value));
   async function guardarMov(){
+    const btnMv=$('#mvSave'); if(btnMv&&btnMv.dataset.busy) return;   /* un segundo toque mientras guarda no hace nada, en ningún camino */
     const f=$('#mvFecha').value, t=parseNum($('#mvTasa').value), err=x=>{ $('#mvErr').textContent=x; };
+    /* Todos los caminos (uno o varios documentos) guardan por aquí: botón bloqueado, todo o nada y reintento seguro */
+    const firma=[mvTipo, mvEditId||'', mvVia, firmaHoja('#mvSheet')].join('|');
+    const enviar=(ops, que, fin)=>conBoton(btnMv, 'Guardar', async()=>{ try{ await guardarOps('#mvSheet', firma, ops, que, fin); fin(); }catch(e){ err(errMsg(e)); } });
+    { const du=reintento('#mvSheet', firma); if(du&&du.cambio) return err(TXT_DUDA); if(du) return enviar(du.ops, 'el movimiento', du.fin); }
     if(!f) return err('Pon la fecha.');
     let body={tipo:mvTipo, fecha:f, referencia:$('#mvRef').value.trim(), actualizado:new Date().toISOString()};
     if(mvTipo==='cambio'){
@@ -4705,12 +4899,13 @@ Responde solo con un objeto JSON:
       const md=$('#mvModo').value;
       if(md==='banco' && !(t>0)) return err('Escribe la tasa a la que se cobró.');
       if(m>saldo(d)+0.005) return err(`El monto pasa del saldo del trabajo (${usd(saldo(d))}).`);
-      try{ await coll.doc(d.id).update({cobros:[...(d.cobros||[]), {monto:r2(m), tasa:md==='banco'?t:0, cuenta:md, numFactura:$('#mvFactNum').value.trim(), fecha:f, ref:$('#mvRef').value.trim()}], actualizado:new Date().toISOString()});
-        const suelto=mvEditId&&movs.find(x=>x.id===mvEditId&&x.tipo==='ingreso'); if(suelto){ await gDb.collection('movimientos').doc(mvEditId).delete(); closeSheets(); toast('Pago registrado en Cobranzas; el ingreso suelto se reemplazó'); return; }
+      /* El abono al trabajo y el retiro del ingreso suelto que reemplaza entran juntos */
+      const suelto=mvEditId&&movs.find(x=>x.id===mvEditId&&x.tipo==='ingreso');
+      return enviar([opUpd('facturas', d.id, {cobros:[...(d.cobros||[]), {monto:r2(m), tasa:md==='banco'?t:0, cuenta:md, numFactura:$('#mvFactNum').value.trim(), fecha:f, ref:$('#mvRef').value.trim()}], actualizado:new Date().toISOString()}, `el cobro en «${String(d.descripcion||'').slice(0,40)}»`),
+        suelto?opDel('movimientos', mvEditId, 'retirar el ingreso suelto que se reemplaza'):null], 'el cobro del trabajo', ()=>{
+        if(suelto){ closeSheets(); toast('Pago registrado en Cobranzas; el ingreso suelto se reemplazó'); return; }
         if(md==='banco' && t>0 && f<=today()) aprenderTasa(f, t, 'cobro');
-        closeSheets(); toast('Cobro registrado en Cobranzas'); }
-      catch(e){ err(errMsg(e)); }
-      return;
+        closeSheets(); toast('Cobro registrado en Cobranzas'); });
     } else {
       const concepto=$('#mvConcepto').value.trim(), m=parseNum($('#mvMonto').value), cta=$('#mvCuenta').value;
       if(!concepto) return err('Escribe el concepto.');
@@ -4720,11 +4915,10 @@ Responde solo con un objeto JSON:
       if(mvTipo==='ingreso' && !mvEditId && mvVia==='bs' && cuentaDe(cta).moneda!=='VES' && !esRegistro()){ const vb=parseNum($('#mvViaBs').value)||0, vt=parseNum($('#mvViaTasa').value)||0, usdt=m>0?r2(m):(vt>0?r2(vb/vt):0);
         if(!(vb>0)) return err('Escribe los bolívares que entraron.'); if(!(usdt>0)) return err('Escribe la tasa de compra o los USDT recibidos.');
         const bco=(gcfg.cuentas.find(c=>c.moneda==='VES')||{}).id||'banco', tR=Math.round(vb/usdt*10000)/10000, ah=new Date().toISOString(), ref=$('#mvRef').value.trim();
-        try{ await conLimite(gDb.collection('movimientos').doc().set({tipo:'ingreso', fecha:f, concepto, categoria:$('#mvCat').value, aCargo:'Empresa', cuenta:bco, monto:r2(vb), tasa:tR, referencia:ref, creado:ah, actualizado:ah}));
-          await conLimite(gDb.collection('movimientos').doc().set({tipo:'cambio', fecha:f, cuentaOrigen:bco, montoOrigen:r2(vb), cuentaDestino:cta, montoDestino:usdt, tasa:tR, concepto:`Compra de USDT · ${concepto}`, referencia:ref, creado:new Date(Date.now()+1).toISOString(), actualizado:ah}));
-          if(f<=today()) aprenderTasa(f, tR, 'cambio entre cuentas'); closeSheets(); toast(`Ingreso registrado: Bs. ${nf.format(r2(vb))} → ${nf.format(usdt)} USDT a ${nfT.format(r2(tR))}`); }
-        catch(e){ err(errMsg(e)); }
-        return; }
+        /* El ingreso al banco y la compra de USDT entran juntos (todo o nada) y con identificadores fijos: reintentar no suma otro ingreso */
+        return enviar([opSet('movimientos', idEstable('#mvSheet|bsIng','movimientos'), {tipo:'ingreso', fecha:f, concepto, categoria:$('#mvCat').value, aCargo:'Empresa', cuenta:bco, monto:r2(vb), tasa:tR, referencia:ref, creado:ah, actualizado:ah}, 'el ingreso en bolívares al banco'),
+          opSet('movimientos', idEstable('#mvSheet|bsCam','movimientos'), {tipo:'cambio', fecha:f, cuentaOrigen:bco, montoOrigen:r2(vb), cuentaDestino:cta, montoDestino:usdt, tasa:tR, concepto:`Compra de USDT · ${concepto}`, referencia:ref, creado:new Date(Date.now()+1).toISOString(), actualizado:ah}, 'la compra de USDT')], 'el ingreso comprado con bolívares',
+          ()=>{ soltarIntento('#mvSheet'); if(f<=today()) aprenderTasa(f, tR, 'cambio entre cuentas'); closeSheets(); toast(`Ingreso registrado: Bs. ${nf.format(r2(vb))} → ${nf.format(usdt)} USDT a ${nfT.format(r2(tR))}`); }); }
       const bsReg=esRegistro() && cuentaDe(cta).moneda!=='VES' ? (parseNum($('#mvBs').value)||0) : 0;
       if(!(m>0) && !(bsReg>0)) return err(esRegistro()&&cuentaDe(cta).moneda!=='VES'?'Escribe el monto en dólares o en bolívares.':'Escribe el monto.');
       if(cuentaDe(cta).moneda==='VES' && !(t>0) && !esRegistro()) return err('Escribe la tasa para llevar los bolívares a dólares.');
@@ -4734,7 +4928,7 @@ Responde solo con un objeto JSON:
         if(tasaArmada===kN) tasaArmada=''; }
       Object.assign(body,{concepto, categoria:$('#mvCat').value, aCargo: mvTipo==='gasto'?$('#mvACargo').value:'Empresa', cuenta:cta, monto:r2(m), tasa:t>0?t:0, trabajoId: mvTipo==='gasto'&&$('#mvACargo').value==='Empresa'?$('#mvTrab').value:''});
       if(!mvEditId && (mvTipo==='gasto'||mvTipo==='ingreso')){ const dias=(a,b)=>Math.abs(new Date(a+'T12:00:00')-new Date(b+'T12:00:00'))/864e5, cN=normTxt(concepto);
-        const igual=movs.find(x=>x.tipo===mvTipo && (x.cuenta||'')===cta && Math.abs(num(x.monto)-r2(m))<0.005 && dias(x.fecha,f)<=3 && (normTxt(x.concepto)===cN || (cN.length>3 && (normTxt(x.concepto).includes(cN)||cN.includes(normTxt(x.concepto))))));
+        const igual=movs.find(x=>x.id!==idsIntento['#mvSheet|mov'] && x.tipo===mvTipo && (x.cuenta||'')===cta && Math.abs(num(x.monto)-r2(m))<0.005 && dias(x.fecha,f)<=3 && (normTxt(x.concepto)===cN || (cN.length>3 && (normTxt(x.concepto).includes(cN)||cN.includes(normTxt(x.concepto))))));
         const kD='mvDup|'+(igual?igual.id:''); if(igual && tasaArmada!==kD){ tasaArmada=kD; return err(`Ya hay uno igual el ${fdate(igual.fecha)}: «${igual.concepto||igual.categoria}» por ${enMoneda(num(igual.monto),cuentaDe(cta).moneda)}. Si de verdad es otro, toca Guardar otra vez.`); } if(igual) tasaArmada=''; }
       if(esRegistro()){ body.tasa=0; if(bsReg>0){ body.montoBs=r2(bsReg); if(!(m>0)) body.monto=0; } }
       else if(mvTipo==='gasto' && cuentaDe(cta).moneda!=='VES'){ const bG=parseNum($('#mvBs').value)||0, tuG=tasaBsBinance(f); body.tasa=0; delete body.montoBs; if(bG>0&&m>0){ body.montoBs=r2(bG); body.tasa=r4(bG/m); } else if(bG>0&&tuG){ body.montoBs=r2(bG); body.tasa=tuG.tasa; } }
@@ -4747,38 +4941,50 @@ Responde solo con un objeto JSON:
     if(credito && credito.error) return err(credito.error);
     if(old && old.credito) body.credito=old.credito;   /* un gasto que es inicial o cuota conserva su enlace al editarlo */
     if(old && body.tipo==='gasto'){ if(old.inventario) body.inventario=true; if(old.activoId) body.activoId=old.activoId; }   /* editar un gasto no le quita su enlace a inventario o herramientas */
-    const btnMv=$('#mvSave'); if(btnMv&&btnMv.dataset.busy) return; if(btnMv){ btnMv.dataset.busy='1'; btnMv.disabled=true; }
-    if(credito){ try{ await guardarCredito(body, old, credito); }catch(e){ err(errMsg(e)); } finally{ if(btnMv){ delete btnMv.dataset.busy; btnMv.disabled=false; } } return; }
+    if(credito){ const C=armarCredito(body, old, credito); return enviar(C.ops, C.que, C.fin); }
     if(mvDeuda && mvDeuda.ids && !mvEditId && body.tipo==='gasto'){ body.inventario=true; body.aCargo='Empresa'; }
     if(mvDeuda && mvDeuda.cuotas && !mvEditId && body.tipo==='gasto') body.credito={deudaId:mvDeuda.deudaId, cuotas:[...mvDeuda.cuotas]};
-    try{ const refMv=mvEditId?gDb.collection('movimientos').doc(mvEditId):gDb.collection('movimientos').doc(); await conLimite(refMv.set(body)); registrarCambioMov(body, old);
-      /* Pago de cuotas de una compra a crédito: se marcan pagadas; con la última, la cuenta por pagar queda saldada */
-      if(mvDeuda && mvDeuda.deudaId && mvDeuda.cuotas && !mvEditId && body.tipo==='gasto'){ const d=movs.find(x=>x.id===mvDeuda.deudaId);
-        if(d && d.credito){ const cu=(d.credito.cuotas||[]).map(c=>mvDeuda.cuotas.includes(c.n)?{...c, pagado:true, movId:refMv.id, fechaPago:body.fecha, usdPagado:usdDe(body, tasaSugerida())}:c), todas=cu.every(c=>c.pagado);
-          await gDb.collection('movimientos').doc(d.id).update({credito:{...d.credito, cuotas:cu}, pagado:todas, movId:todas?refMv.id:'', actualizado:new Date().toISOString()});
-          const quedan=cu.filter(c=>!c.pagado); setTimeout(()=>toast(quedan.length?`Quedan ${quedan.length} ${quedan.length===1?'cuota':'cuotas'} con ${d.credito.acreedor||'el acreedor'}: ${m$(r2(sum(quedan,c=>num(c.usd))))}`:`Compra saldada con ${d.credito.acreedor||'el acreedor'}`),50); }
-        mvDeuda=null; }
-      /* Pago de una compra a crédito: el gasto queda enlazado a sus entradas y el costo de cada una pasa a ser lo que de verdad se pagó */
-      if(mvDeuda && mvDeuda.deudaId && !mvEditId && body.tipo==='gasto'){ await gDb.collection('movimientos').doc(mvDeuda.deudaId).update({pagado:true, movId:refMv.id, actualizado:new Date().toISOString()}); mvDeuda=null; }
+    /* El movimiento y todo lo que arrastra (cuotas pagadas, cuenta por pagar saldada, entradas de inventario enlazadas) se guardan juntos: todo o nada.
+       El movimiento nuevo recibe su identificador una vez por hoja abierta: tocar Guardar otra vez escribe encima, no crea otro */
+    const idEd=mvEditId, idMv=idEd||idEstable('#mvSheet|mov','movimientos'), ops=[opSet('movimientos', idMv, body, body.tipo==='deuda'?'la cuenta por pagar':body.tipo==='cambio'?'el cambio entre cuentas':body.tipo==='ingreso'?'el ingreso':'el gasto')], avisos=[];
+    let D = (mvDeuda && !idEd && body.tipo==='gasto') ? mvDeuda : null; const esPago=!!D;
+    /* Pago de cuotas de una compra a crédito: se marcan pagadas; con la última, la cuenta por pagar queda saldada */
+    if(D && D.deudaId && D.cuotas){ const d=movs.find(x=>x.id===D.deudaId);
+      if(d && d.credito){ const cu=(d.credito.cuotas||[]).map(c=>D.cuotas.includes(c.n)?{...c, pagado:true, movId:idMv, fechaPago:body.fecha, usdPagado:usdDe(body, tasaSugerida())}:c), todas=cu.every(c=>c.pagado);
+        ops.push(opUpd('movimientos', d.id, {credito:{...d.credito, cuotas:cu}, pagado:todas, movId:todas?idMv:'', actualizado:new Date().toISOString()}, 'marcar las cuotas como pagadas'));
+        const quedan=cu.filter(c=>!c.pagado); avisos.push(()=>setTimeout(()=>toast(quedan.length?`Quedan ${quedan.length} ${quedan.length===1?'cuota':'cuotas'} con ${d.credito.acreedor||'el acreedor'}: ${m$(r2(sum(quedan,c=>num(c.usd))))}`:`Compra saldada con ${d.credito.acreedor||'el acreedor'}`),50)); }
+      D=null; }
+    /* Pago de una compra a crédito: el gasto queda enlazado a sus entradas y el costo de cada una pasa a ser lo que de verdad se pagó */
+    if(D && D.deudaId){ ops.push(opUpd('movimientos', D.deudaId, {pagado:true, movId:idMv, actualizado:new Date().toISOString()}, 'marcar la cuenta por pagar como pagada')); D=null; }
+    if(D && D.ids){ const pagU=usdDe(body, tasaSugerida()), f0=D.usd>0?pagU/D.usd:1;
+      for(const id of D.ids){ const e=invMovs.find(x=>x.id===id); if(!e) continue; const upd={movId:idMv, porPagar:false, actualizado:new Date().toISOString()}; if(num(e.costoUnit)>0 && Math.abs(f0-1)>0.0001) upd.costoUnit=r4(num(e.costoUnit)*f0); ops.push(opUpd('invMovs', id, upd, 'enlazar la entrada de inventario con su pago')); }
+      avisos.push(()=>setTimeout(()=>{ if(gView==='mov') renderGas(); },300)); D=null; }
+    return enviar(ops, ops[0].que, ()=>{
+      if(idEd){ const o=old||movs.find(x=>x.id===idEd); if(o) diffCampos('movimientos', idEd, o.concepto||o.tipo, o, body, [['monto','monto',v=>nf.format(num(v))],['tasa','tasa',v=>nfT.format(num(v))],['fecha','fecha'],['cuenta','cuenta'],['categoria','categoría'],['montoOrigen','monto que sale',v=>nf.format(num(v))],['montoDestino','monto que entra',v=>nf.format(num(v))],['trabajoId','orden']]); }
+      soltarIntento('#mvSheet'); if(esPago) mvDeuda=null;
       if(body.tipo==='deuda') setTimeout(()=>toast('Quedó en cuentas por pagar: no salió dinero todavía'),50);
-      if(mvDeuda && mvDeuda.ids && !mvEditId && body.tipo==='gasto'){ const pagU=usdDe(body, tasaSugerida()), f0=mvDeuda.usd>0?pagU/mvDeuda.usd:1;
-        for(const id of mvDeuda.ids){ const e=invMovs.find(x=>x.id===id); if(!e) continue; const upd={movId:refMv.id, porPagar:false, actualizado:new Date().toISOString()}; if(num(e.costoUnit)>0 && Math.abs(f0-1)>0.0001) upd.costoUnit=r4(num(e.costoUnit)*f0); await iDb.collection('invMovs').doc(id).update(upd); }
-        mvDeuda=null; setTimeout(()=>{ if(gView==='mov') renderGas(); },300); } /* La tasa del día se aprende de operaciones de mercado (cambios e ingresos), no de gastos: la tasa de un gasto en bolívares es la de llegada de esos bolívares */ if(num(body.tasa)>0 && body.fecha<=today() && (body.tipo==='cambio' || (body.tipo==='ingreso' && cuentaDe(body.cuenta).moneda==='VES'))) aprenderTasa(body.fecha, num(body.tasa), body.tipo==='cambio'?'cambio entre cuentas':'ingreso'); closeSheets(); toast('Movimiento guardado');
-      if(body.tipo==='gasto'||body.tipo==='cambio'){ const cS=body.tipo==='cambio'?body.cuentaOrigen:body.cuenta; setTimeout(()=>{ const sl=saldoCuenta(cS,today()), cc=cuentaDe(cS); if(sl<-0.004) toast(`${cc.nombre} queda en − ${cc.moneda==='VES'?bs(-sl):usd(-sl)}. ¿Falta un cobro o un cambio?`); },900); } }
-    catch(e){ err(errMsg(e)); }
-    finally{ if(btnMv){ delete btnMv.dataset.busy; btnMv.disabled=false; } }
+      avisos.forEach(a=>a());
+      /* La tasa del día se aprende de operaciones de mercado (cambios e ingresos), no de gastos: la tasa de un gasto en bolívares es la de llegada de esos bolívares */
+      if(num(body.tasa)>0 && body.fecha<=today() && (body.tipo==='cambio' || (body.tipo==='ingreso' && cuentaDe(body.cuenta).moneda==='VES'))) aprenderTasa(body.fecha, num(body.tasa), body.tipo==='cambio'?'cambio entre cuentas':'ingreso'); closeSheets(); toast('Movimiento guardado');
+      if(body.tipo==='gasto'||body.tipo==='cambio'){ const cS=body.tipo==='cambio'?body.cuentaOrigen:body.cuenta; setTimeout(()=>{ const sl=saldoCuenta(cS,today()), cc=cuentaDe(cS); if(sl<-0.004) toast(`${cc.nombre} queda en − ${cc.moneda==='VES'?bs(-sl):usd(-sl)}. ¿Falta un cobro o un cambio?`); },900); } });
   }
   async function eliminarMov(){
     const b=$('#mvDel'); if(!mvEditId) return;
     const ent=invMovs.filter(m=>m.movId===mvEditId||(m.movIds||[]).includes(mvEditId));
     if(!b.dataset.armed){ b.dataset.armed='1'; b.textContent='Toca otra vez para eliminar'; if(ent.length) $('#mvErr').textContent=`Esta compra tiene ${ent.length} ${ent.length===1?'entrada':'entradas'} de inventario enlazadas. Si la borras, el material sigue en el almacén con su costo pero sin pago registrado.`; return; }
-    try{ const oldM=movs.find(x=>x.id===mvEditId); const pap=oldM?alPapelera('movimientos', mvEditId, oldM, `${oldM.tipo==='cambio'?`${cuentaDe(oldM.cuentaOrigen).nombre} → ${cuentaDe(oldM.cuentaDestino).nombre}`:(oldM.concepto||oldM.tipo)} · ${fdate(oldM.fecha)} · ${enMoneda(num(oldM.monto||oldM.montoOrigen), cuentaDe(oldM.cuenta||oldM.cuentaOrigen).moneda)}`):null; await gDb.collection('movimientos').doc(mvEditId).delete(); if(oldM) registrarCambio('movimientos', mvEditId, `Movimiento eliminado: ${oldM.concepto||oldM.tipo}`, `${oldM.fecha} · ${nf.format(num(oldM.monto||oldM.montoOrigen))} ${cuentaDe(oldM.cuenta||oldM.cuentaOrigen).nombre}`, '');
-      /* Si era la inicial o una cuota de una compra a crédito, la cuenta por pagar vuelve a mostrar esas cuotas como pendientes */
+    const idM=mvEditId;
+    await conBoton(b, 'Eliminar', async()=>{
+    try{ const oldM=movs.find(x=>x.id===idM); const pap=oldM?alPapelera('movimientos', idM, oldM, `${oldM.tipo==='cambio'?`${cuentaDe(oldM.cuentaOrigen).nombre} → ${cuentaDe(oldM.cuentaDestino).nombre}`:(oldM.concepto||oldM.tipo)} · ${fdate(oldM.fecha)} · ${enMoneda(num(oldM.monto||oldM.montoOrigen), cuentaDe(oldM.cuenta||oldM.cuentaOrigen).moneda)}`):null;
+      /* Si era la inicial o una cuota de una compra a crédito, la cuenta por pagar vuelve a mostrar esas cuotas como pendientes (en el mismo guardado que el borrado) */
+      let opD=null;
       if(oldM && oldM.credito && oldM.credito.deudaId){ const d=movs.find(x=>x.id===oldM.credito.deudaId); if(d && d.credito){ const upd={actualizado:new Date().toISOString()};
         if(oldM.credito.cuotas){ upd.credito={...d.credito, cuotas:(d.credito.cuotas||[]).map(c=>oldM.credito.cuotas.includes(c.n)?{...c, pagado:false, movId:'', fechaPago:'', usdPagado:0}:c)}; upd.pagado=false; upd.movId=''; }
         else upd.credito={...d.credito, inicialMovId:''};
-        try{ await gDb.collection('movimientos').doc(d.id).update(upd); }catch(_){} } }
-      closeSheets(); toastBorrado(ent.length?'Movimiento eliminado · las entradas de inventario quedaron sin gasto enlazado':'Movimiento eliminado', pap); }catch(e){ $('#mvErr').textContent=errMsg(e); }
+        opD=opUpd('movimientos', d.id, upd, 'devolver las cuotas a pendientes'); } }
+      await escribirJuntos([opPap(pap), opDel('movimientos', idM), opD], 'la eliminación del movimiento');
+      if(oldM) registrarCambio('movimientos', idM, `Movimiento eliminado: ${oldM.concepto||oldM.tipo}`, `${oldM.fecha} · ${nf.format(num(oldM.monto||oldM.montoOrigen))} ${cuentaDe(oldM.cuenta||oldM.cuentaOrigen).nombre}`, '');
+      closeSheets(); toastBorrado(ent.length?'Movimiento eliminado · las entradas de inventario quedaron sin gasto enlazado':'Movimiento eliminado', pap); }catch(e){ $('#mvErr').textContent='No se eliminó. '+errMsg(e); } }, 'Eliminando…');
+    delete b.dataset.armed;
   }
 
   /* ---------- balance y reportes ---------- */
@@ -5041,7 +5247,7 @@ Responde solo con un objeto JSON:
     if(t.closest('#gDup')){ gDup=!gDup; return renderGas(); }
     if(t.closest('#gDupOff')){ gDup=false; return renderGas(); }
     const yp=t.closest('[data-yapagada]'); if(yp){ openCuadrar(yp.dataset.yapagada); return; }
-    const bdd=t.closest('[data-borrardeuda]'); if(bdd){ if(!bdd.dataset.armed){ bdd.dataset.armed='1'; bdd.textContent='Toca otra vez'; return; } const id=bdd.dataset.borrardeuda.slice(3), dm=movs.find(x=>x.id===id); if(dm){ const pap=alPapelera('movimientos', id, dm, `Cuenta por pagar: ${dm.concepto||dm.categoria||''} · ${enMoneda(num(dm.monto),cuentaDe(dm.cuenta).moneda)}`); gDb.collection('movimientos').doc(id).delete().then(()=>toastBorrado('Cuenta por pagar borrada', pap), e=>toast(errMsg(e))); } return; }
+    const bdd=t.closest('[data-borrardeuda]'); if(bdd){ if(!bdd.dataset.armed){ bdd.dataset.armed='1'; bdd.textContent='Toca otra vez'; return; } const id=bdd.dataset.borrardeuda.slice(3), dm=movs.find(x=>x.id===id); if(dm){ if(bdd.disabled) return; bdd.disabled=true; bdd.textContent='Eliminando…'; const pap=alPapelera('movimientos', id, dm, `Cuenta por pagar: ${dm.concepto||dm.categoria||''} · ${enMoneda(num(dm.monto),cuentaDe(dm.cuenta).moneda)}`); escribirJuntos([opPap(pap), opDel('movimientos', id)], 'borrar la cuenta por pagar').then(()=>toastBorrado('Cuenta por pagar borrada', pap), e=>{ bdd.disabled=false; bdd.textContent='Borrar'; delete bdd.dataset.armed; toast('No se borró. '+errMsg(e)); }); } return; }
     const pd=t.closest('[data-pagardeuda]'); if(pd){ const o=comprasPorPagar().find(x=>x.k===pd.dataset.pagardeuda); if(o) pagarDeuda(o); return; }
     const pt=t.closest('[data-pagartodo]'); if(pt){ const o=comprasPorPagar().find(x=>x.k===pt.dataset.pagartodo); if(o) pagarDeuda({...o, todo:true}); return; }
     if(t.closest('#gNext')){ gSemana=sumarDias(gSemana,7); return renderGas(); }
@@ -5054,9 +5260,9 @@ Responde solo con un objeto JSON:
     if(t.closest('#gJson')) return descargarJSON();
     if(t.closest('#iaProbar')) return probarIA();
     if(t.closest('#iaReset')) return reiniciarUsoIA();
-    if(t.closest('#accAdd')){ const em=String(($('#accEmail')||{}).value||'').trim().toLowerCase(), nm=String(($('#accNombre')||{}).value||'').trim(); if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){ $('#gAjErr').textContent='Escribe un correo válido.'; return; } return gDb.collection('acceso').doc(em).set({rol:'registro', nombre:nm||em, activo:true, area:(($('#accArea')||{}).value)||'todo', creado:new Date().toISOString()}).then(()=>{ toast('Acceso dado a '+(nm||em)); renderGas(); }, e=>{ $('#gAjErr').textContent=errMsg(e); }); }
-    const aa=t.closest('[data-accact]'); if(aa){ const a=accesos.find(x=>x.id===aa.dataset.accact); if(a && a.activo!==false && !aa.dataset.armed){ aa.dataset.armed='1'; aa.textContent='Toca otra vez para quitar'; return; } if(a) return gDb.collection('acceso').doc(a.id).update({activo:a.activo===false}).then(()=>toast(a.activo===false?'Acceso dado':'Acceso quitado'), e=>toast(errMsg(e))); }
-    const ad=t.closest('[data-accdel]'); if(ad){ if(!ad.dataset.armed){ ad.dataset.armed='1'; ad.textContent='Toca otra vez'; return; } return gDb.collection('acceso').doc(ad.dataset.accdel).delete().then(()=>toast('Eliminado'), e=>toast(errMsg(e))); }
+    if(t.closest('#accAdd')){ const em=String(($('#accEmail')||{}).value||'').trim().toLowerCase(), nm=String(($('#accNombre')||{}).value||'').trim(); if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){ $('#gAjErr').textContent='Escribe un correo válido.'; return; } return conLimite(gDb.collection('acceso').doc(em).set({rol:'registro', nombre:nm||em, activo:true, area:(($('#accArea')||{}).value)||'todo', creado:new Date().toISOString()}), 0, 'el acceso de '+(nm||em)).then(()=>{ toast('Acceso dado a '+(nm||em)); renderGas(); }, e=>{ $('#gAjErr').textContent=errMsg(e); }); }
+    const aa=t.closest('[data-accact]'); if(aa){ const a=accesos.find(x=>x.id===aa.dataset.accact); if(a && a.activo!==false && !aa.dataset.armed){ aa.dataset.armed='1'; aa.textContent='Toca otra vez para quitar'; return; } if(a) return conLimite(gDb.collection('acceso').doc(a.id).update({activo:a.activo===false}), 0, 'el acceso de una persona').then(()=>toast(a.activo===false?'Acceso dado':'Acceso quitado'), e=>toast(errMsg(e))); }
+    const ad=t.closest('[data-accdel]'); if(ad){ if(!ad.dataset.armed){ ad.dataset.armed='1'; ad.textContent='Toca otra vez'; return; } return conLimite(gDb.collection('acceso').doc(ad.dataset.accdel).delete(), 0, 'quitar el acceso de una persona').then(()=>toast('Eliminado'), e=>toast(errMsg(e))); }
     if(t.closest('#gSalir') && window.__cerrarSesion) return window.__cerrarSesion();
     const bm=t.closest('[data-bmodo]'); if(bm){ balF.modo=bm.dataset.bmodo; return renderGas(); }
     const bf=t.closest('[data-bfmt]'); if(bf){ balF.formato=bf.dataset.bfmt; try{ localStorage.setItem('balFormato',balF.formato); }catch(_){} return renderGas(); }
@@ -5143,7 +5349,7 @@ Responde solo con un objeto JSON:
   async function reiniciarUsoIA(){
     if(!gDb||!window.__standalone) return;
     if(!confirm('¿Poner en cero el contador de consultas y gasto de Claude IA? El crédito registrado se mantiene.')) return;
-    try{ await gDb.doc('config/ia').set({uso:{llamadas:0, entrada:0, salida:0, costo:0, ultimo:'', ultimoCosto:0, ultimoModelo:''}},{merge:true}); if(window.__ia) window.__ia.uso=null; toast('Contador reiniciado'); }
+    try{ await conLimite(gDb.doc('config/ia').set({uso:{llamadas:0, entrada:0, salida:0, costo:0, ultimo:'', ultimoCosto:0, ultimoModelo:''}},{merge:true}), 0, 'reiniciar el contador'); if(window.__ia) window.__ia.uso=null; toast('Contador reiniciado'); }
     catch(err){ $('#gAjErr').textContent=errMsg(err); }
   }
   /* Prueba de conexión con la API de Claude usando lo que está escrito en Ajustes (sin guardar) */
@@ -5249,18 +5455,20 @@ Responde solo con un objeto JSON:
       errEl.textContent=''; body.creado=new Date().toISOString(); body.actualizado=body.creado;
       const dst = x.tipo==='gasto' && body.aCargo==='Empresa' ? v('destino') : '', q=parseNum(v('cantidad'))||1;
       if(dst==='inventario') body.inventario=true;
-      try{ const ref=gDb.collection('movimientos').doc(), usdG=usdDe(body, tasaSugerida()), ah=body.creado;
-        if(dst==='herramienta'){ const aRef=iDb.collection('activos').doc(); body.activoId=aRef.id; await ref.set(body);
-          await aRef.set({nombre:body.concepto, codigo:'', estado:'Bueno', responsableId:'taller', ubicacion:'', fechaCompra:body.fecha, costo:r2(usdG), nota:`Comprado con el gasto del ${fdate(body.fecha)}${body.referencia?' · referencia '+body.referencia:''}`, historial:[], movId:ref.id, creado:ah, actualizado:ah}); }
-        else if(dst==='inventario'){ await ref.set(body);
+      /* Cada propuesta (el gasto con su equipo, o con sus ítems y entradas) se guarda junta, todo o nada, con identificadores fijos mientras la lectura siga en pantalla */
+      try{ const idP=(k,col)=>{ const m=x._ids||(x._ids={}); return m[k]||(m[k]=nuevoId(col)); }, ref={id:idP('mov','movimientos')}, usdG=usdDe(body, tasaSugerida()), ah=body.creado, ops=[], itNuevos=[];
+        if(dst==='herramienta'){ const idAc=idP('activo','activos'); body.activoId=idAc; ops.push(opSet('movimientos', ref.id, body, 'el gasto'));
+          ops.push(opSet('activos', idAc, {nombre:body.concepto, codigo:'', estado:'Bueno', responsableId:'taller', ubicacion:'', fechaCompra:body.fecha, costo:r2(usdG), nota:`Comprado con el gasto del ${fdate(body.fecha)}${body.referencia?' · referencia '+body.referencia:''}`, historial:[], movId:ref.id, creado:ah, actualizado:ah}, 'el equipo')); }
+        else if(dst==='inventario'){ ops.push(opSet('movimientos', ref.id, body, 'el gasto'));
           const lst0=Array.isArray(x.items)?x.items.filter(y=>y&&String(y.nombre||'').trim()):[], lst=lst0.length>1?lst0:[{nombre:body.concepto, cantidad:q, unidad:v('unidad')||'und', costo_total:0}];
           const totC=sum(lst,y=>num(y.costo_total)), todosC=lst.every(y=>num(y.costo_total)>0); let acumU=0;
           for(let j=0;j<lst.length;j++){ const y=lst[j], nom=String(y.nombre).trim(), qj=num(y.cantidad)>0?num(y.cantidad):(lst.length>1?1:q), k=normTxt(nom);
           let usdJ = todosC&&totC>0 ? r2(usdG*num(y.costo_total)/totC) : r2(usdG/lst.length); if(j===lst.length-1) usdJ=r2(usdG-acumU); acumU=r2(acumU+usdJ);
-          let it=items.find(z=>z.activo!==false && normTxt(z.nombre)===k);
-          if(!it){ const r=iDb.collection('inventario').doc(), dI={nombre:nom, categoria:/consumib/i.test(body.categoria)?'Consumibles':(icfg.categorias.includes('Materiales')?'Materiales':icfg.categorias[0]||'Materiales'), unidad:(lst.length>1?(UNIDADES.some(u=>u[0]===y.unidad)?y.unidad:'und'):(v('unidad')||'und')), minimo:0, ubicacion:'', proveedor:'', activo:true, precioRef:0, creado:ah, actualizado:ah}; await r.set(dI); it={id:r.id, ...dI}; items.push(it); }
-          await iDb.collection('invMovs').doc().set({tipo:'entrada', fecha:body.fecha, itemId:it.id, cantidad:r2q(qj), costoUnit:r4(usdJ/qj), sinCosto:false, proveedor:'', referencia:body.referencia, movId:ref.id, porPagar:false, nota:body.concepto, registradoPor:quienRegistra(), creado:ah, actualizado:ah}); } }
-        else await ref.set(body);
+          let it=items.find(z=>z.activo!==false && normTxt(z.nombre)===k) || itNuevos.find(z=>normTxt(z.nombre)===k);
+          if(!it){ const r={id:idP('item|'+k,'inventario')}, dI={nombre:nom, categoria:/consumib/i.test(body.categoria)?'Consumibles':(icfg.categorias.includes('Materiales')?'Materiales':icfg.categorias[0]||'Materiales'), unidad:(lst.length>1?(UNIDADES.some(u=>u[0]===y.unidad)?y.unidad:'und'):(v('unidad')||'und')), minimo:0, ubicacion:'', proveedor:'', activo:true, precioRef:0, creado:ah, actualizado:ah}; ops.push(opSet('inventario', r.id, dI, `el ítem nuevo «${nom.slice(0,40)}»`)); it={id:r.id, ...dI}; itNuevos.push(it); }
+          ops.push(opSet('invMovs', idP('ent|'+j,'invMovs'), {tipo:'entrada', fecha:body.fecha, itemId:it.id, cantidad:r2q(qj), costoUnit:r4(usdJ/qj), sinCosto:false, proveedor:'', referencia:body.referencia, movId:ref.id, porPagar:false, nota:body.concepto, registradoPor:quienRegistra(), creado:ah, actualizado:ah}, `la entrada de ${nom.slice(0,40)}`)); } }
+        else ops.push(opSet('movimientos', ref.id, body));
+        await escribirJuntos(ops, 'un movimiento del asistente'); itNuevos.forEach(z=>{ if(!items.some(q0=>q0.id===z.id)) items.push(z); });
         ok++; chk.checked=false; chk.closest('.act').style.opacity='.5'; }catch(e){ errEl.textContent=errMsg(e); conErr++; }
     }
     btn.disabled=false; btn.textContent='Guardar movimientos marcados';
@@ -5478,23 +5686,29 @@ Responde solo con un objeto JSON:
   }
   async function guardarItem(){
     const nombre=$('#itNombre').value.trim(); if(!nombre){ $('#itErr').textContent='Escribe el nombre del ítem.'; return; }
-    const rep=items.find(x=>x.id!==itEditId && norm(x.nombre)===norm(nombre)); if(rep){ $('#itErr').textContent=`Ya existe «${rep.nombre}».`; return; }
+    const rep=items.find(x=>x.id!==itEditId && x.id!==idsIntento['#itSheet|item'] && norm(x.nombre)===norm(nombre)); if(rep){ $('#itErr').textContent=`Ya existe «${rep.nombre}».`; return; }
     const old=itEditId?itemDe(itEditId):null;
     let pUsd=parseNum($('#itPrecio').value)||0, pBs=parseNum($('#itPrecioBs').value)||0, pTasa=0;
     if(pBs>0 && !(pUsd>0)){ pTasa=tasaSugerida(); if(!(pTasa>0)){ $('#itErr').textContent='No hay tasa registrada para llevar los bolívares a dólares: pon el precio en dólares.'; return; } pUsd=r4(pBs/pTasa); }
     const body={nombre, precioRef:pUsd>0?pUsd:0, categoria:$('#itCat').value, unidad:$('#itUni').value, minimo:Math.max(0,parseNum($('#itMin').value)||0), ubicacion:$('#itUbi').value.trim(), proveedor:proveedorNormalizado($('#itProv').value), activo:$('#itActivo').checked, creado:old&&old.creado||new Date().toISOString(), actualizado:new Date().toISOString()};
-    try{ await (itEditId?iDb.collection('inventario').doc(itEditId):iDb.collection('inventario').doc()).set(body);
+    /* El ítem y las entradas sin precio que se costean con él se guardan juntos; el botón queda bloqueado mientras guarda */
+    await conBoton($('#itSave'), 'Guardar', async()=>{
+    try{ const ops=[opSet('inventario', itEditId||idEstable('#itSheet|item','inventario'), body)];
       let n=0;
       if(old && pUsd>0){ const ahora=new Date().toISOString();
-        for(const m of invMovs.filter(m=>m.itemId===old.id && m.tipo==='entrada' && !(num(m.costoUnit)>0))){ const g=m.movId&&movs.find(x=>x.id===m.movId); const t=pBs>0?pTasa:(g?tasaParaBs(m.fecha,0,g.cuenta).tasa:tasaSugerida()); await iDb.collection('invMovs').doc(m.id).update({costoUnit:pUsd, costoUnitBs:pBs>0?r2(pBs):(t>0?r2(pUsd*t):0), tasa:t>0?r4(t):0, sinCosto:false, actualizado:ahora}); n++; } }
+        for(const m of invMovs.filter(m=>m.itemId===old.id && m.tipo==='entrada' && !(num(m.costoUnit)>0))){ const g=m.movId&&movs.find(x=>x.id===m.movId); const t=pBs>0?pTasa:(g?tasaParaBs(m.fecha,0,g.cuenta).tasa:tasaSugerida()); ops.push(opUpd('invMovs', m.id, {costoUnit:pUsd, costoUnitBs:pBs>0?r2(pBs):(t>0?r2(pUsd*t):0), tasa:t>0?r4(t):0, sinCosto:false, actualizado:ahora}, 'costear una entrada sin precio')); n++; } }
+      await escribirJuntos(ops, 'el ítem «'+nombre.slice(0,50)+'»'); soltarIntento('#itSheet');
       closeSheets(); toast(n?`Ítem guardado · ${n} ${n===1?'entrada sin precio costeada':'entradas sin precio costeadas'} a ${usd(pUsd)}`:(old?'Ítem guardado':'Ítem agregado')); }
-    catch(e){ $('#itErr').textContent=errMsg(e); }
+    catch(e){ $('#itErr').textContent=errMsg(e); } });
   }
   async function eliminarItem(){
     const b=$('#itDel'); if(!itEditId) return;
     if(invMovs.some(m=>m.itemId===itEditId)){ $('#itErr').textContent='Tiene movimientos registrados. Márcalo como inactivo en vez de eliminarlo.'; return; }
     if(!b.dataset.armed){ b.dataset.armed='1'; b.textContent='Toca otra vez para eliminar'; return; }
-    try{ const iO=items.find(x=>x.id===itEditId), pap=iO?alPapelera('inventario', itEditId, iO, `Ítem del inventario: ${iO.nombre||''}`):null; await iDb.collection('inventario').doc(itEditId).delete(); closeSheets(); toastBorrado('Ítem eliminado', pap); }catch(e){ $('#itErr').textContent=errMsg(e); }
+    const idI=itEditId;
+    await conBoton(b, 'Eliminar', async()=>{
+      try{ const iO=items.find(x=>x.id===idI), pap=iO?alPapelera('inventario', idI, iO, `Ítem del inventario: ${iO.nombre||''}`):null; await escribirJuntos([opPap(pap), opDel('inventario', idI)], 'la eliminación del ítem'); closeSheets(); toastBorrado('Ítem eliminado', pap); }catch(e){ $('#itErr').textContent='No se eliminó. '+errMsg(e); } }, 'Eliminando…');
+    delete b.dataset.armed;
   }
 
   /* ---------- hoja: movimiento de inventario ---------- */
@@ -5574,11 +5788,13 @@ Responde solo con un objeto JSON:
   async function guardarIMov(otro){
     otro = otro===true;
     const err=x=>{ $('#imErr').textContent=x; };
-    let it=itemDe($('#imItem').value);
+    const btnIM=$('#imSave'), btnOtro=$('#imOtro'); if((btnIM&&btnIM.dataset.busy)||(btnOtro&&btnOtro.dataset.busy)) return;
+    let it=itemDe($('#imItem').value), opItem=null;
+    /* El ítem nuevo ya no se crea suelto: entra en el mismo guardado que su movimiento */
     if(!it && $('#imItem').value==='__nuevo'){ const nom=$('#imNuevo').value.trim(); if(!nom) return err('Escribe el nombre del ítem nuevo.');
       const ya=items.find(x=>normTxt(x.nombre)===normTxt(nom)); if(ya) it=ya;
-      else { const ah=new Date().toISOString(), r=iDb.collection('inventario').doc(), d={nombre:nom, categoria:$('#imNuevoC').value||icfg.categorias[0]||'Materiales', unidad:$('#imNuevoU').value||'und', minimo:0, ubicacion:'', proveedor:'', activo:true, precioRef:0, creado:ah, actualizado:ah};
-        try{ await conLimite(r.set(d)); }catch(e){ return err(errMsg(e)); } it={id:r.id, ...d}; } }
+      else { const ah=new Date().toISOString(), idN=idEstable('#imSheet|item','inventario'), d={nombre:nom, categoria:$('#imNuevoC').value||icfg.categorias[0]||'Materiales', unidad:$('#imNuevoU').value||'und', minimo:0, ubicacion:'', proveedor:'', activo:true, precioRef:0, creado:ah, actualizado:ah};
+        opItem=opSet('inventario', idN, d, 'el ítem nuevo'); it={id:idN, ...d}; } }
     if(!it) return err('Elige el ítem.');
     const f=$('#imFecha').value; if(!f) return err('Pon la fecha.');
     const q=parseNum($('#imCant').value); if(isNaN(q) || q<0 || (imTipo!=='conteo' && !(q>0))) return err(imTipo==='conteo'?'Escribe la cantidad contada.':'Escribe la cantidad.');
@@ -5595,47 +5811,59 @@ Responde solo con un objeto JSON:
       body.trabajoId=$('#imTrab').value||''; if(imTipo==='salida') body.quienId=$('#imQuien').value||'';
       try{ localStorage.setItem('imUltTrab', body.trabajoId); if(body.quienId) localStorage.setItem('imUltQuien', body.quienId); }catch(_){}
       if(imTipo==='salida'){ const e=estadoItem(it.id); let base=old&&old.itemId===it.id&&old.tipo==='salida'?e.existencia+num(old.cantidad):e.existencia;
+        /* Un reintento no cuenta contra sí mismo: si el retiro de este mismo intento ya está en la lista, su cantidad no se resta dos veces */
+        const propio=!imEditId?invMovs.find(x=>x.id===idsIntento['#imSheet|mov'] && x.itemId===it.id && x.tipo==='salida'):null; if(propio) base=r2q(base+num(propio.cantidad));
         const pendQ=r2q(sum(solicitudes.filter(x=>x.estado==='pendiente'&&x.col==='invMovs'&&x.op!=='delete'&&(x.datos||{}).tipo==='salida'&&(x.datos||{}).itemId===it.id&&x.docId!==imEditId),x=>num((x.datos||{}).cantidad)));
         if(pendQ>0) base=r2q(base-pendQ);
         { const pendE=r2q(sum(solicitudes.filter(x=>x.estado==='pendiente'&&x.col==='invMovs'&&x.op!=='delete'&&(x.datos||{}).tipo==='entrada'&&(x.datos||{}).itemId===it.id),x=>num((x.datos||{}).cantidad))); if(pendE>0) base=r2q(base+pendE); }
         if(q>base+0.0005) return err(`Solo hay ${cant(Math.max(0,base),it.unidad)}${pendQ>0?` (ya hay retiros por aprobar de ${cant(pendQ,it.unidad)})`:''}. Haz un conteo primero si salió más.`);
         /* A la fecha de la salida tiene que haber existencia: si la compra se registró después, mejor poner la fecha de la compra */
-        const ef=estadoItemCalc(it.id, f), baseF=old&&old.itemId===it.id&&old.tipo==='salida'&&old.fecha<=f?ef.existencia+num(old.cantidad):ef.existencia;
+        const ef=estadoItemCalc(it.id, f), baseF=(old&&old.itemId===it.id&&old.tipo==='salida'&&old.fecha<=f?ef.existencia+num(old.cantidad):ef.existencia)+(propio&&propio.fecha<=f?num(propio.cantidad):0);
         if(q>baseF+0.0005){ const prox=invMovs.filter(m=>m.itemId===it.id&&(m.tipo==='entrada'||m.tipo==='devolucion')&&m.fecha>f).map(m=>m.fecha).sort()[0]; const k='salidaFecha|'+it.id+'|'+f+'|'+q; if(tasaArmada!==k){ tasaArmada=k; return err(`Al ${fdate(f)} solo había ${cant(baseF,it.unidad)}${prox?`: la compra entró el ${fdate(prox)}`:''}. ${prox?`Pon la fecha ${fdate(prox)} o toca Guardar otra vez para dejarla así (se costeará con esa compra).`:'Toca Guardar otra vez para dejarla así.'}`); } tasaArmada=''; } }
     }
-    if(imTipo==='salida' && !imEditId){ const hace=Date.now()-10*60000; const igual=invMovs.find(x=>x.tipo==='salida' && x.itemId===it.id && x.fecha===f && Math.abs(num(x.cantidad)-q)<0.0005 && (x.trabajoId||'')===(body.trabajoId||'') && new Date(x.creado||0).getTime()>hace); const k='imDup|'+(igual?igual.id:''); if(igual && tasaArmada!==k){ tasaArmada=k; return err(`Hace un momento registraste un retiro igual (${cant(q,it.unidad)} de ${it.nombre}). Si de verdad es otro, toca Guardar otra vez.`); } if(igual) tasaArmada=''; }
-    const btnIM=$('#imSave'); if(btnIM&&btnIM.dataset.busy) return; if(btnIM){ btnIM.dataset.busy='1'; btnIM.disabled=true; btnIM.textContent='Guardando…'; }
-    try{
+    if(imTipo==='salida' && !imEditId){ const hace=Date.now()-10*60000; const igual=invMovs.find(x=>x.id!==idsIntento['#imSheet|mov'] && x.tipo==='salida' && x.itemId===it.id && x.fecha===f && Math.abs(num(x.cantidad)-q)<0.0005 && (x.trabajoId||'')===(body.trabajoId||'') && new Date(x.creado||0).getTime()>hace); const k='imDup|'+(igual?igual.id:''); if(igual && tasaArmada!==k){ tasaArmada=k; return err(`Hace un momento registraste un retiro igual (${cant(q,it.unidad)} de ${it.nombre}). Si de verdad es otro, toca Guardar otra vez.`); } if(igual) tasaArmada=''; }
+    /* La entrada y su gasto (y el ítem nuevo, si lo hay) se guardan juntos, todo o nada, con identificadores que se reutilizan al reintentar:
+       un intento que falla no deja un gasto suelto y volver a tocar Guardar no repite el gasto */
+    let opGasto=null;
+    {
       if(imTipo==='entrada' && !imEditId && $('#imGasto').checked && !body.movId && (body.costoUnit>0 || body.totalBs>0)){
         if(!(body.costoUnit>0)){ const ctaG=cuentaDe($('#imCuenta').value); const tg=ctaG.moneda==='VES'?(parseNum($('#imGTasa').value)||0):(tasaParaBs(f, body.totalBs, ctaG.id).tasa||0); if(!(tg>0)) return err('Escribe la tasa del pago para registrar el gasto.'); body.costoUnit=r4(body.totalBs/tg/q); body.sinCosto=false; body.tasa=tg; }
         const cta=cuentaDe($('#imCuenta').value), tot=r2(body.costoUnit*q); let gt=parseNum($('#imGTasa').value)||0;
         if(cta.moneda==='VES' && !(gt>0)) gt=body.tasa||tasaParaBs(f, tot*(tasaSugerida()||1), 'banco').tasa;
         if(cta.moneda==='VES' && !(gt>0)) return err('Escribe la tasa del pago en bolívares.');
-        const gref=gDb.collection('movimientos').doc();
-        await gref.set({tipo:'gasto', fecha:f, concepto:`Compra: ${it.nombre} (${cant(q,it.unidad)})`, categoria:CAT_GASTO_INV[it.categoria]||'Materiales', aCargo:'Empresa', cuenta:cta.id, monto:cta.moneda==='VES'?(body.totalBs>0?body.totalBs:r2(tot*gt)):tot, tasa:cta.moneda==='VES'?(body.totalBs>0?r4(body.totalBs/tot):gt):0, trabajoId:'', referencia:body.referencia||'', inventario:true, creado:body.creado, actualizado:body.actualizado});
-        body.movId=gref.id;
+        const idG=idEstable('#imSheet|gasto','movimientos');
+        opGasto=opSet('movimientos', idG, {tipo:'gasto', fecha:f, concepto:`Compra: ${it.nombre} (${cant(q,it.unidad)})`, categoria:CAT_GASTO_INV[it.categoria]||'Materiales', aCargo:'Empresa', cuenta:cta.id, monto:cta.moneda==='VES'?(body.totalBs>0?body.totalBs:r2(tot*gt)):tot, tasa:cta.moneda==='VES'?(body.totalBs>0?r4(body.totalBs/tot):gt):0, trabajoId:'', referencia:body.referencia||'', inventario:true, creado:body.creado, actualizado:body.actualizado}, 'el gasto de la compra');
+        body.movId=idG;
       }
       if(imTipo==='entrada') body.porPagar = !$('#imPorPagarL').hidden && $('#imPorPagar').checked && !body.movId;
-      const ref=imEditId?iDb.collection('invMovs').doc(imEditId):iDb.collection('invMovs').doc();
-      await conLimite(ref.set(body));
-      if(body.movId && imPre && imPre.movId && !old){ try{ await gDb.collection('movimientos').doc(body.movId).update({inventario:true, actualizado:new Date().toISOString()}); }catch(_){} }
+    }
+    const lblIM=imTipo==='conteo'?'Guardar conteo':'Guardar', btnUso=otro&&btnOtro?btnOtro:btnIM, lblUso=otro&&btnOtro?btnOtro.textContent:lblIM;
+    if(btnIM) btnIM.disabled=true; if(btnOtro) btnOtro.disabled=true;
+    await conBoton(btnUso, lblUso, async()=>{
+    try{
+      const marcaMov = body.movId && imPre && imPre.movId && !old && movs.some(m=>m.id===body.movId);
+      await escribirJuntos([opItem, opGasto, opSet('invMovs', imEditId||idEstable('#imSheet|mov','invMovs'), body, TIPO_INV[imTipo]?`el movimiento de inventario (${TIPO_INV[imTipo].toLowerCase()})`:'el movimiento de inventario'),
+        marcaMov?opUpd('movimientos', body.movId, {inventario:true, actualizado:new Date().toISOString()}, 'marcar el gasto como compra de inventario'):null], imTipo==='entrada'&&opGasto?'la entrada de inventario con su gasto':'el movimiento de inventario');
+      soltarIntento('#imSheet');
       if(otro){ /* misma fecha, orden y persona; se limpia el ítem y la cantidad para seguir con el siguiente */
         imContados=(imContados||0)+1; $('#imItem').value=''; $('#imCant').value=''; $('#imNota').value=''; $('#imErr').textContent=''; comboSync($('#imItem')); syncIMItem(); $('#imSheet').dataset.dirty=''; const ci=document.querySelector('.combo-in[data-for="imItem"]'); if(ci&&!ci.closest('.combo').hidden){ ci.value=''; ci.focus(); } else $('#imItem').focus();
         toast(`${it.nombre}: ${TIPO_INV[imTipo].toLowerCase()} ${imTipo==='conteo'?'registrado':'registrada'} (${imContados}). Sigue con el próximo ítem.`); return; }
       imContados=0; closeSheets(); toast(`${TIPO_INV[imTipo]} ${imTipo==='conteo'?'registrado':'registrada'}`);
-    }catch(e){ err(errMsg(e)); }
-    finally{ if(btnIM){ delete btnIM.dataset.busy; btnIM.disabled=false; btnIM.textContent=imTipo==='conteo'?'Guardar conteo':'Guardar'; } }
+    }catch(e){ err(errMsg(e)); } });
+    if(btnIM) btnIM.disabled=false; if(btnOtro) btnOtro.disabled=false;
   }
   async function eliminarIMov(){
     const b=$('#imDel'); if(!imEditId) return;
     if(!b.dataset.armed){ b.dataset.armed='1'; b.textContent='Toca otra vez para eliminar'; return; }
-    const old=invMovs.find(x=>x.id===imEditId);
+    const idM=imEditId, old=invMovs.find(x=>x.id===idM);
+    await conBoton(b, 'Eliminar', async()=>{
     try{
-      const pap=old?alPapelera('invMovs', imEditId, old, `Inventario: ${(TIPO_INV[old.tipo]||old.tipo)} de ${(itemDe(old.itemId)||{}).nombre||'ítem'} · ${fdate(old.fecha)}`):null;
-      await iDb.collection('invMovs').doc(imEditId).delete();
-      if(old&&old.movId && !invMovs.some(m=>m.id!==old.id&&m.movId===old.movId)){ try{ await gDb.collection('movimientos').doc(old.movId).update({inventario:false, actualizado:new Date().toISOString()}); }catch(_){} }
+      const pap=old?alPapelera('invMovs', idM, old, `Inventario: ${(TIPO_INV[old.tipo]||old.tipo)} de ${(itemDe(old.itemId)||{}).nombre||'ítem'} · ${fdate(old.fecha)}`):null;
+      const desmarca = old&&old.movId && !invMovs.some(m=>m.id!==old.id&&m.movId===old.movId) && movs.some(m=>m.id===old.movId);
+      await escribirJuntos([opPap(pap), opDel('invMovs', idM), desmarca?opUpd('movimientos', old.movId, {inventario:false, actualizado:new Date().toISOString()}, 'quitar la marca de inventario del gasto'):null], 'la eliminación del movimiento de inventario');
       closeSheets(); toastBorrado('Movimiento eliminado'+(old&&old.movId?'; el gasto sigue en Gastos':''), pap);
-    }catch(e){ $('#imErr').textContent=errMsg(e); }
+    }catch(e){ $('#imErr').textContent='No se eliminó. '+errMsg(e); } }, 'Eliminando…');
+    delete b.dataset.armed;
   }
 
   /* ---------- hoja: herramienta o equipo ---------- */
@@ -5657,15 +5885,21 @@ Responde solo con un objeto JSON:
     if(old && (old.responsableId||'taller')!==resp) hist.push({fecha:today(), de:old.responsableId||'taller', a:resp});
     const body={nombre, codigo:$('#acCodigo').value.trim(), estado:$('#acEstado').value, responsableId:resp, ubicacion:$('#acUbi').value.trim(), fechaCompra:$('#acFecha').value||'', costo:r2(parseNum($('#acCosto').value)||0), nota:$('#acNota').value.trim(), historial:hist, creado:old&&old.creado||new Date().toISOString(), actualizado:new Date().toISOString()};
     if(!acEditId && acPre && acPre.movId) body.movId=acPre.movId; else if(old && old.movId) body.movId=old.movId;
-    try{ const ref=acEditId?iDb.collection('activos').doc(acEditId):iDb.collection('activos').doc(); await ref.set(body);
-      if(!acEditId && acPre && acPre.movId){ try{ await gDb.collection('movimientos').doc(acPre.movId).update({activoId:ref.id, actualizado:new Date().toISOString()}); }catch(_){} acPre=null; }
+    /* El botón queda bloqueado mientras guarda y el equipo nuevo usa un identificador fijo por hoja: dos toques no crean dos equipos */
+    await conBoton($('#acSave'), 'Guardar', async()=>{
+    try{ const idA=acEditId||idEstable('#acSheet|activo','activos'), enlaza=!acEditId && acPre && acPre.movId && movs.some(m=>m.id===acPre.movId);
+      await escribirJuntos([opSet('activos', idA, body), enlaza?opUpd('movimientos', acPre.movId, {activoId:idA, actualizado:new Date().toISOString()}, 'enlazar el gasto con el equipo'):null], 'el equipo «'+nombre.slice(0,50)+'»');
+      if(!acEditId && acPre && acPre.movId) acPre=null; soltarIntento('#acSheet');
       closeSheets(); toast(old?'Guardado':'Agregado a herramientas y equipos'); }
-    catch(e){ $('#acErr').textContent=errMsg(e); }
+    catch(e){ $('#acErr').textContent=errMsg(e); } });
   }
   async function eliminarActivo(){
     const b=$('#acDel'); if(!acEditId) return;
     if(!b.dataset.armed){ b.dataset.armed='1'; b.textContent='Toca otra vez para eliminar'; return; }
-    try{ const aO=activos.find(x=>x.id===acEditId), pap=aO?alPapelera('activos', acEditId, aO, `Herramienta o equipo: ${aO.nombre||''}`):null; await iDb.collection('activos').doc(acEditId).delete(); closeSheets(); toastBorrado('Eliminado', pap); }catch(e){ $('#acErr').textContent=errMsg(e); }
+    const idA=acEditId;
+    await conBoton(b, 'Eliminar', async()=>{
+      try{ const aO=activos.find(x=>x.id===idA), pap=aO?alPapelera('activos', idA, aO, `Herramienta o equipo: ${aO.nombre||''}`):null; await escribirJuntos([opPap(pap), opDel('activos', idA)], 'la eliminación del equipo'); closeSheets(); toastBorrado('Eliminado', pap); }catch(e){ $('#acErr').textContent='No se eliminó. '+errMsg(e); } }, 'Eliminando…');
+    delete b.dataset.armed;
   }
 
   /* ---------- reportes de inventario (formato de WhatsApp) ---------- */
@@ -5761,7 +5995,7 @@ Responde solo con un objeto JSON:
   $('#iMain').addEventListener('click', e=>{ const b=e.target.closest('[data-imon]'); if(b){ iMon=b.dataset.imon; renderInv(); } });
   $('#iMain').addEventListener('change', e=>{ const t=e.target; if(t.dataset.icat!=null){ iCat=t.dataset.icat; const l=$('#iList'); if(l) l.innerHTML=listaItems(); document.querySelectorAll('#iMain [data-icat]').forEach(x=>x.closest('label').classList.toggle('on', x.checked)); } });
   $('#iMain').addEventListener('input', e=>{ if(e.target.id==='iQ'){ iQ=e.target.value; const l=$('#iList'); if(!l) return; if(iView==='ex') l.innerHTML=listaItems(); else { const q=norm(iQ); const ls=items.filter(it=>!q||norm(it.nombre).includes(q)||norm(it.categoria).includes(q)); l.innerHTML=ls.map(tarjetaItem).join('')||'<div class="empty"><b>Nada coincide</b></div>'; } } });
-  async function guardarICfg(n){ try{ await iDb.doc('config/inventario').set(n); icfg=n; renderInv(); toast('Guardado'); }catch(e){ toast(errMsg(e)); } }
+  async function guardarICfg(n){ try{ await conLimite(iDb.doc('config/inventario').set(n), 0, 'los ajustes de inventario'); icfg=n; renderInv(); toast('Guardado'); }catch(e){ toast(errMsg(e)); } }
   $('#itSave').addEventListener('click', guardarItem);
   $('#itDel').addEventListener('click', eliminarItem);
   $('#itEntrada').addEventListener('click', ()=>{ const id=itEditId; closeSheets(); openIMov('entrada', null, {itemId:id}); });
@@ -5795,8 +6029,11 @@ Responde solo con un objeto JSON:
   function previewCatalogo(){ const fs=filasCatalogo(); const rep=fs.filter(x=>items.some(i=>norm(i.nombre)===norm(x.nombre))).length; $('#icPrev').textContent = fs.length ? `${fs.length} ${fs.length===1?'ítem':'ítems'} · ${fs.filter(x=>x.precio>0).length} con precio${rep?` · ${rep} ya ${rep===1?'existe y se salta':'existen y se saltan'}`:''}` : ''; }
   async function guardarCatalogo(){
     const fs=filasCatalogo().filter(x=>!items.some(i=>norm(i.nombre)===norm(x.nombre))); if(!fs.length){ $('#icErr').textContent='No hay ítems nuevos en la lista.'; return; }
-    await conBoton($('#icSave'), 'Crear ítems', async()=>{ let n=0; try{ for(const x of fs){ const cat=icfg.categorias.find(c=>norm(c)===norm(x.categoria))||icfg.categorias[0]||'Materiales'; await conLimite(iDb.collection('inventario').doc().set({nombre:x.nombre, precioRef:x.precio>0?r4(x.precio):0, categoria:cat, unidad:x.unidad, minimo:0, ubicacion:'', proveedor:proveedorNormalizado(x.proveedor), activo:true, creado:new Date().toISOString(), actualizado:new Date().toISOString()})); n++; }
-      closeSheets(); toast(`${n} ${n===1?'ítem creado':'ítems creados'}`); }catch(e){ $('#icErr').textContent=errMsg(e)+(n?` (se crearon ${n})`:''); } });
+    /* Todos los ítems de la lista entran juntos (todo o nada), cada uno con un identificador fijo: reintentar no los crea dos veces */
+    await conBoton($('#icSave'), 'Crear ítems', async()=>{ const ah=new Date().toISOString(), vistos=new Set(), ops=[];
+      for(const x of fs){ const k=norm(x.nombre); if(vistos.has(k)) continue; vistos.add(k); const cat=icfg.categorias.find(c=>norm(c)===norm(x.categoria))||icfg.categorias[0]||'Materiales'; ops.push(opSet('inventario', idEstable('#icSheet|'+k,'inventario'), {nombre:x.nombre, precioRef:x.precio>0?r4(x.precio):0, categoria:cat, unidad:x.unidad, minimo:0, ubicacion:'', proveedor:proveedorNormalizado(x.proveedor), activo:true, creado:ah, actualizado:ah}, `el ítem «${x.nombre.slice(0,40)}»`)); }
+      try{ await escribirJuntos(ops, 'la lista de ítems nuevos'); soltarIntento('#icSheet'); const n=ops.length;
+      closeSheets(); toast(`${n} ${n===1?'ítem creado':'ítems creados'}`); }catch(e){ $('#icErr').textContent=errMsg(e); } });
   }
   $('#icTexto').addEventListener('input', previewCatalogo); $('#icSave').addEventListener('click', guardarCatalogo);
   function openConteoLista(){
@@ -5812,8 +6049,10 @@ Responde solo con un objeto JSON:
     const f=$('#clFecha').value; if(!f){ $('#clErr').textContent='Pon la fecha.'; return; }
     const filas=[...document.querySelectorAll('[data-clc]')].map(i=>({id:i.dataset.clc, v:i.value.trim()})).filter(x=>x.v!=='').map(x=>({id:x.id, q:parseNum(x.v)})).filter(x=>!isNaN(x.q)&&x.q>=0);
     if(!filas.length){ $('#clErr').textContent='Escribe al menos una cantidad contada.'; return; }
-    const btn=$('#clSave'); await conBoton(btn, 'Guardar conteo', async()=>{ let n=0, dif=0;
-      try{ for(const x of filas){ const it=itemDe(x.id); if(!it) continue; const e=estadoItem(x.id); if(Math.abs(e.existencia-x.q)>0.0005) dif++; await conLimite(iDb.collection('invMovs').doc().set({tipo:'conteo', fecha:f, itemId:x.id, contado:r2q(x.q), nota:'Conteo en lista', registradoPor:quienRegistra(), creado:new Date().toISOString(), actualizado:new Date().toISOString()})); n++; }
+    /* Todo el conteo entra junto (todo o nada), cada renglón con un identificador fijo: reintentar no repite conteos */
+    const btn=$('#clSave'); await conBoton(btn, 'Guardar conteo', async()=>{ let n=0, dif=0; const ops=[], ah=new Date().toISOString();
+      try{ for(const x of filas){ const it=itemDe(x.id); if(!it) continue; const e=estadoItem(x.id); if(Math.abs(e.existencia-x.q)>0.0005) dif++; ops.push(opSet('invMovs', idEstable('#clSheet|'+x.id,'invMovs'), {tipo:'conteo', fecha:f, itemId:x.id, contado:r2q(x.q), nota:'Conteo en lista', registradoPor:quienRegistra(), creado:ah, actualizado:ah}, `el conteo de ${it.nombre}`)); n++; }
+        await escribirJuntos(ops, 'el conteo en lista'); soltarIntento('#clSheet');
         closeSheets(); toast(`Conteo guardado: ${n} ${n===1?'ítem':'ítems'}${dif?` · ${dif} con diferencia`:' · todo cuadra'}`); }
       catch(e){ $('#clErr').textContent=errMsg(e); } });
   }
@@ -5880,29 +6119,31 @@ Responde solo con un objeto JSON:
     if(D.cta && !(D.pag>0) && !(D.tot>0)) return err('Escribe los precios o el monto pagado.');
     if((D.enBs||D.cta==='banco') && !(D.t>0) && !(D.cta&&cuentaDe(D.cta).moneda!=='VES'&&D.pag>0)) return err('Escribe la tasa para llevar los bolívares a dólares.');
     if(!(D.pagUsd>0) && D.tot>0) return err('No se pudo calcular el costo en dólares: revisa el monto pagado y la tasa.');
-    const btn=$('#rcSave'); btn.disabled=true; btn.textContent='Guardando…';
+    /* Los ítems nuevos, el gasto, las entradas y la marca del gasto ya registrado se guardan juntos (todo o nada), con identificadores fijos
+       por hoja abierta: un intento que falla no deja el gasto sin sus entradas y reintentar no repite nada */
+    const btn=$('#rcSave'); await conBoton(btn, 'Guardar compra', async()=>{
     try{
-      const ahora=new Date().toISOString(), totL=D.tot;
+      const ahora=new Date().toISOString(), totL=D.tot, ops=[], nuevosIt={};
       /* 1) ítems nuevos */
-      for(const l of ls){ if(l.itemId!=='__nuevo') continue; const nom=String(l.nuevo).trim().replace(/\s+/g,' '); const ya=items.find(x=>norm(x.nombre)===norm(nom));
-        if(ya){ l.itemId=ya.id; continue; } const r=iDb.collection('inventario').doc(); await r.set({nombre:nom, categoria:l.categoria, unidad:l.unidad, minimo:0, ubicacion:'', proveedor:prov, activo:true, precioRef:0, creado:ahora, actualizado:ahora}); l.itemId=r.id; }
+      for(const l of ls){ if(l.itemId!=='__nuevo') continue; const nom=String(l.nuevo).trim().replace(/\s+/g,' '), kN=norm(nom); const ya=items.find(x=>norm(x.nombre)===kN);
+        if(ya){ l.itemId=ya.id; continue; } if(nuevosIt[kN]){ l.itemId=nuevosIt[kN]; continue; } const idN=idEstable('#rcSheet|item|'+kN,'inventario'); ops.push(opSet('inventario', idN, {nombre:nom, categoria:l.categoria, unidad:l.unidad, minimo:0, ubicacion:'', proveedor:prov, activo:true, precioRef:0, creado:ahora, actualizado:ahora}, `el ítem nuevo «${nom.slice(0,40)}»`)); nuevosIt[kN]=idN; l.itemId=idN; }
       /* 2) el gasto (si se pagó) */
       let movId=rcPre?rcPre.movId:'';
       if(D.cta && !rcPre){ const c=cuentaDe(D.cta), catCnt={}; ls.forEach(l=>{ const it=itemDe(l.itemId)||{categoria:l.categoria}; const k=CAT_GASTO_INV[it.categoria]||'Materiales'; catCnt[k]=(catCnt[k]||0)+1; });
         const cat=Object.entries(catCnt).sort((a,b)=>b[1]-a[1])[0][0];
         const montoCta = c.moneda==='VES' ? (D.pag>0?D.pag:r2(D.pagUsd*D.t)) : r2(D.pagUsd);
-        const g=gDb.collection('movimientos').doc(); await g.set({tipo:'gasto', fecha:f, concepto:`Compra ${prov||'de materiales'}${ref?' · factura N° '+ref:''} (${ls.length} ${ls.length===1?'ítem':'ítems'})`, categoria:cat, aCargo:'Empresa', cuenta:c.id, monto:montoCta, tasa:c.moneda==='VES'?r4(montoCta/D.pagUsd):0, trabajoId:$('#rcOrden').value||'', referencia:ref, inventario:true, creado:ahora, actualizado:ahora}); movId=g.id; }
+        movId=idEstable('#rcSheet|gasto','movimientos'); ops.push(opSet('movimientos', movId, {tipo:'gasto', fecha:f, concepto:`Compra ${prov||'de materiales'}${ref?' · factura N° '+ref:''} (${ls.length} ${ls.length===1?'ítem':'ítems'})`, categoria:cat, aCargo:'Empresa', cuenta:c.id, monto:montoCta, tasa:c.moneda==='VES'?r4(montoCta/D.pagUsd):0, trabajoId:$('#rcOrden').value||'', referencia:ref, inventario:true, creado:ahora, actualizado:ahora}, 'el gasto de la compra')); }
       /* 3) las entradas, con el costo repartido según el precio de cada línea */
       let acum=0; const filas=ls.map(l=>({l, sub:l.q*l.p}));
       for(let i=0;i<filas.length;i++){ const {l,sub}=filas[i];
         let cu = totL>0 ? r4(sub/totL*D.pagUsd/l.q) : (rcPre ? r4(D.pagUsd/filas.length/l.q) : 0); if(i===filas.length-1 && (totL>0||rcPre)) cu=r4((D.pagUsd-acum)/l.q); acum+=cu*l.q;
         const body={tipo:'entrada', fecha:f, itemId:l.itemId, cantidad:r2q(l.q), costoUnit:cu>0?cu:0, sinCosto:!(cu>0), proveedor:prov, referencia:ref, movId, porPagar:!movId && (cu>0||sub>0), paraOrden:!movId?($('#rcOrden').value||''):'', nota:'', registradoPor:quienRegistra(), creado:ahora, actualizado:ahora};
         if(D.enBs && l.p>0) Object.assign(body,{costoUnitBs:r4(l.p), totalBs:r2(sub), tasa:D.t>0?r2(D.t):(D.pagUsd>0?r2(totL/D.pagUsd):0)});
-        await iDb.collection('invMovs').doc().set(body); }
-      if(rcPre){ try{ await gDb.collection('movimientos').doc(rcPre.movId).update({inventario:true, actualizado:ahora}); }catch(_){} rcPre=null; }
+        ops.push(opSet('invMovs', idEstable('#rcSheet|ent|'+i,'invMovs'), body, `la entrada de ${(itemDe(l.itemId)||{}).nombre||String(l.nuevo||'un ítem').trim()}`)); }
+      if(rcPre && movs.some(m=>m.id===rcPre.movId)) ops.push(opUpd('movimientos', rcPre.movId, {inventario:true, actualizado:ahora}, 'marcar el gasto como compra de inventario'));
+      await escribirJuntos(ops, 'la compra con sus '+ls.length+' líneas'); soltarIntento('#rcSheet'); rcPre=null;
       closeSheets(); toast(esRegistro()?'Enviado para aprobar: queda pendiente hasta que el dueño lo apruebe':`Compra registrada: ${ls.length} ${ls.length===1?'línea':'líneas'} · ${usd(D.pagUsd)}${movId?'':' · a crédito, queda por pagar'}`);
-    }catch(e){ err(errMsg(e)); }
-    finally{ btn.disabled=false; btn.textContent='Guardar compra'; }
+    }catch(e){ err(errMsg(e)); } });
   }
 
   /* ---------- cuadrar una compra con lo pagado ----------
@@ -5972,12 +6213,13 @@ Responde solo con un objeto JSON:
     con.forEach(f=>{ f.cu=r4(f.bs/tasa); });
     const dif=r2(pagado-sum(con,f=>f.cu*num(f.m.cantidad))); if(Math.abs(dif)>=0.005){ const mayor=con.slice().sort((a,b)=>b.tot-a.tot)[0]; mayor.cu=r4(mayor.cu+dif/num(mayor.m.cantidad)); }
     const ahora=new Date().toISOString();
+    await conBoton($('#cqSave'), 'Cuadrar y guardar', async()=>{
     try{
-      for(const f of con) await iDb.collection('invMovs').doc(f.m.id).update({costoUnit:f.cu, costoUnitBs:r2(f.bs), tasa:r2(tasa), sinCosto:false, movId:gasto?gasto.id:(f.m.movId||''), movIds:gastos.map(m=>m.id), actualizado:ahora});
-      /* Los gastos quedan como compras para inventario; sus montos y tasas no se tocan */
-      for(const m of gastos){ if(!m.inventario) await gDb.collection('movimientos').doc(m.id).update({inventario:true, actualizado:ahora}); }
+      /* Los costos de las entradas y la marca de los gastos entran juntos. Los gastos quedan como compras para inventario; sus montos y tasas no se tocan */
+      await escribirJuntos([...con.map(f=>opUpd('invMovs', f.m.id, {costoUnit:f.cu, costoUnitBs:r2(f.bs), tasa:r2(tasa), sinCosto:false, movId:gasto?gasto.id:(f.m.movId||''), movIds:gastos.map(m=>m.id), actualizado:ahora}, 'el costo de una entrada')),
+        ...gastos.filter(m=>!m.inventario).map(m=>opUpd('movimientos', m.id, {inventario:true, actualizado:ahora}, 'marcar el gasto como compra de inventario'))], 'cuadrar la compra');
       closeSheets(); toast(`Compra cuadrada: ${con.length} ${con.length===1?'ítem':'ítems'} a ${nfT.format(r2(tasa))} Bs/USD${gastos.length>1?` · ${gastos.length} abonos`:''}`);
-    }catch(e){ err(errMsg(e)); }
+    }catch(e){ err(errMsg(e)); } });
   }
   $('#acSave').addEventListener('click', guardarActivo);
   $('#acDel').addEventListener('click', eliminarActivo);
@@ -6142,13 +6384,15 @@ Responde solo con un objeto JSON:
     const vN=(i,k)=>{ const e=document.querySelector(`[data-in="${i}"][data-k="${k}"]`); return e?e.value.trim():''; };
     const vM=(i,k)=>{ const e=document.querySelector(`[data-im="${i}"][data-k="${k}"]`); return e ? (e.type==='checkbox'?e.checked:e.value.trim()) : ''; };
     const creados={};  // nombre normalizado → id del ítem creado en esta pasada
-    const gastoDe={};  // índice de grupo → id del gasto creado
+    /* El gasto de cada grupo se recuerda mientras la lectura siga en pantalla: volver a tocar Guardar no crea otro gasto para la misma compra */
+    const gastoDe=aiInv._gastoDe||(aiInv._gastoDe={});  // índice de grupo → id del gasto creado
+    const idAI=(k,col)=>{ const m=aiInv._ids||(aiInv._ids={}); return m[k]||(m[k]=nuevoId(col)); };
     const vG=(gi,k)=>{ const e=document.querySelector(`[data-gc="${gi}"][data-k="${k}"]`); return e?e.value.trim():''; };
     const crearItem=async(nombre, categoria, unidad, minimo)=>{
       const nm=norm(nombre); if(creados[nm]) return creados[nm];
       const ex=items.find(it=>norm(it.nombre)===nm); if(ex){ creados[nm]=ex.id; return ex.id; }
-      const ref=iDb.collection('inventario').doc();
-      await ref.set({nombre, categoria:categoria||icfg.categorias[0], unidad:UNIDADES.some(u=>u[0]===unidad)?unidad:'und', minimo:Math.max(0,parseNum(minimo)||0), ubicacion:'', proveedor:'', activo:true, creado:new Date().toISOString(), actualizado:new Date().toISOString()});
+      const ref={id:idAI('item|'+nm,'inventario')};
+      await escribirJuntos([opSet('inventario', ref.id, {nombre, categoria:categoria||icfg.categorias[0], unidad:UNIDADES.some(u=>u[0]===unidad)?unidad:'und', minimo:Math.max(0,parseNum(minimo)||0), ubicacion:'', proveedor:'', activo:true, creado:new Date().toISOString(), actualizado:new Date().toISOString()})], 'un ítem nuevo (asistente)');
       creados[nm]=ref.id; return ref.id;
     };
     for(let i=0;i<aiInv.items.length;i++){
@@ -6160,7 +6404,7 @@ Responde solo con un objeto JSON:
     for(let i=0;i<aiInv.movs.length;i++){
       const chk=document.querySelector(`[data-ichk="m${i}"]`), errEl=document.querySelector(`[data-ierr="m${i}"]`); if(!chk||!chk.checked) continue;
       const x=aiInv.movs[i]; let itemId=vM(i,'item');
-      try{
+      try{ let opG=null, gPend=null;   /* el gasto del grupo entra en el mismo guardado que su primera entrada */
         if(String(itemId).startsWith('nuevo:')) itemId=await crearItem(itemId.slice(6), vM(i,'item_categoria'), vM(i,'item_unidad'), vM(i,'item_minimo'));
         if(!itemId){ errEl.textContent='Elige el ítem.'; conErr++; continue; }
         const it=itemDe(itemId)||{id:itemId, categoria:vM(i,'item_categoria'), unidad:vM(i,'item_unidad')||'und', nombre:String(vM(i,'item')).replace(/^nuevo:/,'')};
@@ -6185,14 +6429,14 @@ Responde solo con un objeto JSON:
               const cta=cuentaDe(vG(gi,'cuenta')); let gt=parseNum(vG(gi,'tasa'))||0; if(cta.moneda==='VES'&&!(gt>0)) gt=tasaParaBs(f, tot*(tasaSugerida()||1), 'banco').tasa;
               if(cta.moneda==='VES'&&!(gt>0)){ errEl.textContent='Escribe la tasa del pago en bolívares en el gasto de la compra.'; conErr++; continue; }
               const catTop=Object.entries(cats).sort((a,b)=>b[1]-a[1])[0]; const nIt=document.querySelectorAll(`[data-k="grupo"][value="${gi}"]`).length;
-              const gref=gDb.collection('movimientos').doc();
-              await gref.set({tipo:'gasto', fecha:f, concepto:`Compra${g.proveedor?' '+g.proveedor:' de materiales'}${g.referencia?' · factura N° '+g.referencia:''} (${nIt} ${nIt===1?'ítem':'ítems'})`, categoria:CAT_GASTO_INV[catTop?catTop[0]:'']||'Materiales', aCargo:'Empresa', cuenta:cta.id, monto:cta.moneda==='VES'?r2(tot*gt):r2(tot), tasa:cta.moneda==='VES'?gt:0, trabajoId:'', referencia:g.referencia||'', inventario:true, creado:body.creado, actualizado:body.creado});
-              gastoDe[gi]=gref.id;
+              const gref={id:idAI('gasto|'+gi,'movimientos')};
+              opG=opSet('movimientos', gref.id, {tipo:'gasto', fecha:f, concepto:`Compra${g.proveedor?' '+g.proveedor:' de materiales'}${g.referencia?' · factura N° '+g.referencia:''} (${nIt} ${nIt===1?'ítem':'ítems'})`, categoria:CAT_GASTO_INV[catTop?catTop[0]:'']||'Materiales', aCargo:'Empresa', cuenta:cta.id, monto:cta.moneda==='VES'?r2(tot*gt):r2(tot), tasa:cta.moneda==='VES'?gt:0, trabajoId:'', referencia:g.referencia||'', inventario:true, creado:body.creado, actualizado:body.creado}, 'el gasto de la compra');
+              gPend=[gi, gref.id];
             }
-            body.movId=gastoDe[gi];
+            body.movId=gPend?gPend[1]:gastoDe[gi];
           }
         } else if(x.tipo==='salida'||x.tipo==='devolucion'){ body.trabajoId=vM(i,'trabajo')||''; if(x.tipo==='salida'){ body.quienId=vM(i,'quien')||''; const ex=estadoItem(itemId).existencia; if(q>ex+0.0005){ errEl.textContent=`Solo hay ${cant(ex,it.unidad)}; registra primero la entrada o un conteo.`; conErr++; continue; } } }
-        await iDb.collection('invMovs').doc().set(body); ok++; errEl.textContent=''; chk.checked=false; chk.closest('.act').style.opacity='.5';
+        await escribirJuntos([opG, opSet('invMovs', idAI('mov|'+i,'invMovs'), body)], opG?'la entrada con el gasto de la compra':'un movimiento de inventario (asistente)'); if(gPend) gastoDe[gPend[0]]=gPend[1]; ok++; errEl.textContent=''; chk.checked=false; chk.closest('.act').style.opacity='.5';
       }catch(e){ errEl.textContent=errMsg(e); conErr++; }
     }
     btn.disabled=false; btn.textContent='Guardar lo marcado';
@@ -6313,6 +6557,7 @@ Responde solo con un objeto JSON:
     const c=window.claude;
     const db = c&&c.use ? await c.use('db') : null;
     if(!db){ failed='Abre esta página desde tu cuenta de Claude para ver y editar los trabajos.'; canWrite=false; nFallo=true; render(); renderNom(); return; }
+    dbRaiz=db; pintarRed(); pintarRechazos(); revisarColaVieja();
     coll=db.collection('facturas');
     if(esRegistro() && !['reg','nom'].includes(modulo)) setModulo('reg');
     iniciarNomina(db);
