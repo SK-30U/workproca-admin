@@ -24,7 +24,7 @@
 #login button{border:0;background:#0D5C63;color:#fff;border-radius:12px;padding:13px 18px;font-weight:700;font-size:15px;width:100%}
 </style>
 </head>
-<body><div style="background:#B26A00;color:#fff;font:700 12px/1.3 system-ui,sans-serif;text-align:center;padding:4px 8px">VERSIÓN DE PRUEBA · etapa 1a · trabaja con tus datos reales</div>
+<body><div style="background:#B26A00;color:#fff;font:700 12px/1.3 system-ui,sans-serif;text-align:center;padding:4px 8px">VERSIÓN DE PRUEBA · etapa 1 completa · trabaja con tus datos reales</div>
 <div id="login" class="scrim-login">
   <div class="box">
     <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:#5A6A75">Workproca · Trabajos Profesionales C.A.</div>
@@ -557,6 +557,7 @@ select.combo-oculto{display:none}
 .notrab{margin-top:12px;padding:10px 12px}.notrab .lbl{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;color:var(--muted);margin-bottom:8px}.notrab .chips{display:flex;flex-wrap:wrap;gap:6px}.notrab .chips .btn{min-height:40px;padding:6px 12px;font-size:13.5px}
 .solg{margin:8px 0;border:1px solid var(--line);border-radius:10px;padding:6px 10px}.solg summary{display:flex;align-items:center;gap:6px;flex-wrap:wrap;cursor:pointer;font-size:13.5px}.solg summary .hbtns{margin-left:auto}.solic.dup{border-left:3px solid var(--so);padding-left:8px}
 .avfijo{background:var(--so);color:#fff;border-radius:10px;padding:8px 10px;font-weight:600;margin:0 0 8px}
+.avfalla{margin-top:8px;padding:9px 12px;border-radius:10px;border:1.5px solid var(--danger);color:var(--danger);font-size:13.5px;line-height:1.35}.avfalla b{display:block}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(140px + env(safe-area-inset-bottom,0px));z-index:30;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:600;font-size:14px;max-width:calc(100% - 32px)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}.card:active{transform:none}}
   .ctarow{display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}
@@ -1116,7 +1117,7 @@ select.combo-oculto{display:none}
     <div class="grab"></div>
     <div class="sh-head"><h3 id="clTitle">Conteo en lista</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
     <div class="tip">Escribe solo lo que contaste; lo que dejes vacío no se toca. Cada renglón con cantidad se guarda como un conteo de ese ítem.</div>
-    <div class="grid" style="margin-top:8px"><label class="f">Fecha<input type="date" id="clFecha"></label><label class="f">Buscar<input id="clQ" placeholder="Filtrar ítems…"></label></div>
+    <div class="grid" style="margin-top:8px"><label class="f">Fecha<input type="date" id="clFecha"></label><label class="f">Buscar<input id="clQ" data-sinmarca placeholder="Filtrar ítems…"></label></div>
     <div id="clLineas"></div>
     <div class="err" id="clErr"></div>
     <div class="row-btns" style="margin-top:12px"><button type="button" class="btn pri" id="clSave">Guardar conteo</button></div>
@@ -1554,6 +1555,9 @@ select.combo-oculto{display:none}
      El total es el promedio de las actividades de la ODS, ponderado por su peso (1 si no se cambia).
      Los trabajos adicionales se listan aparte pero también suman al total, con su peso (son parte de la misma ODS). */
   let avId=null, avActs=[], avDelArmed='', avEdit='', avCola=Promise.resolve();
+  /* Guardado de avance que falló: el aviso se queda junto a lo que se estaba guardando (no se borra al redibujar la hoja) hasta que se guarde bien o se cierre.
+     avFallaA: actividades ({donde: identificador de la actividad o '' para toda la lista, msg}); avFallaF: fechas y horario ({msg}). */
+  let avFallaA=null, avFallaF=null, avEnVuelo=0, avCierra=false, avEditSucio=false;
   const nf1 = new Intl.NumberFormat('es-VE',{maximumFractionDigits:1});
   const avPct = n => `${nf1.format(Math.round(n*10)/10)} %`;
   const actsDe = d => Array.isArray(d&&d.actividades) ? d.actividades : [];
@@ -1575,7 +1579,7 @@ select.combo-oculto{display:none}
         :`<div class="empty"><b>Todavía no hay órdenes con avance</b>${canWrite?'Elige un trabajo arriba y cárgale sus actividades.':''}</div>`}
       <div style="height:20px"></div>`;
   }
-  function openAvance(id){ const d=docs.find(x=>x.id===id); if(!d) return; avId=id; avActs=JSON.parse(JSON.stringify(actsDe(d))); avDelArmed=''; avEdit=''; avCarga=''; avF={ini:d.avInicio||'', fin:d.avCompromiso||'', sab:!!d.avSabado, dom:!!d.avDomingo, horas:num(d.avHorasDia)>0?num(d.avHorasDia):8, dias:{...(d.avDiasEsp||{})}}; avHorOpen=false; renderAvSheet(); openSheet('#avSheet'); }
+  function openAvance(id){ const d=docs.find(x=>x.id===id); if(!d) return; avId=id; avActs=JSON.parse(JSON.stringify(actsDe(d))); avDelArmed=''; avEdit=''; avCarga=''; avFallaA=null; avFallaF=null; avEditSucio=false; avF={ini:d.avInicio||'', fin:d.avCompromiso||'', sab:!!d.avSabado, dom:!!d.avDomingo, horas:num(d.avHorasDia)>0?num(d.avHorasDia):8, dias:{...(d.avDiasEsp||{})}}; avHorOpen=false; renderAvSheet(); openSheet('#avSheet'); }
   function pintarTotAv(){ const t=avanceActs(avActs), a=$('#avTot'), b=$('#avTotBar'); if(a) a.textContent=avPct(t); if(b) b.firstElementChild.style.width=t+'%'; pintarCurva(); }
   /* Estado de una actividad: terminada, detenida, en ejecución o por iniciar */
   const FRENOS=['Falta de material','Falta de equipo o herramienta','Falta de personal','Espera por el cliente','Espera por otra actividad','Clima','Otro'];
@@ -1585,6 +1589,18 @@ select.combo-oculto{display:none}
   const porAvance = xs => xs.map((a,i)=>[a,i]).sort((x,y)=>(pctAct(y[0])-pctAct(x[0])) || (x[1]-y[1])).map(x=>x[0]);
   const txtFreno = a => [a.freno&&a.freno!=='Otro'?a.freno:'', String(a.porque||'').trim()].filter(Boolean).join(': ');
   let avCarga='';
+  /* Lo que de verdad está guardado de una actividad, para decir cuáles siguen «sin guardar» después de una falla */
+  const avIgual = (a,g) => !!g && pctAct(a)===pctAct(g) && a.nombre===g.nombre && pesoAct(a)===pesoAct(g) && !!a.adicional===!!g.adicional && !!a.detenida===!!g.detenida && (a.freno||'')===(g.freno||'') && (a.porque||'')===(g.porque||'');
+  const avSinGuardar = a => !!avFallaA && !avIgual(a, actsDe(docs.find(x=>x.id===avId)).find(g=>g.id===a.id));
+  const avAviso = (f, tipo, que) => f ? `<div class="avfalla" role="alert"><b>${que}</b> ${esc(f.msg)} En la base sigue como estaba antes.<div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" data-avreint="${tipo}">Reintentar</button></div></div>` : '';
+  /* Lo escrito en la hoja que todavía no se ha mandado a guardar (la lista por agregar, un avance a medio cargar, un día con horario distinto) */
+  const avBorrador = () => !!String(($('#avTxt')||{}).value||'').trim() || (!!avCarga && avEditSucio) || !!String(($('#avDiaH')||{}).value||'').trim();
+  function avLimpiarMarca(){ if(!avFallaA && !avFallaF && !avEnVuelo && !avBorrador()) hojaLimpia('#avSheet'); }
+  /* Redibuja la hoja sin perder lo que se esté escribiendo en el avance abierto */
+  function avRepintar(){ const q=s=>{ const r=avCarga&&document.querySelector(`[data-avrow="${avCarga}"]`); return r&&r.querySelector(s); };
+    const v=q('[data-avp]') ? {p:q('[data-avp]').value, d:q('[data-avdetc]').checked, f:q('[data-avfreno]').value, w:q('[data-avporque]').value, e:q('[data-averr]').textContent} : null;
+    renderAvSheet(); if(!v||!q('[data-avp]')) return; q('[data-avp]').value=v.p; q('[data-avdetc]').checked=v.d; q('[data-avfreno]').value=v.f; q('[data-avporque]').value=v.w; q('[data-averr]').textContent=v.e;
+    document.querySelectorAll(`[data-avrow="${avCarga}"] [data-avdetf]`).forEach(x=>x.hidden=!v.d); }
   function renderAvSheet(){
     const d=docs.find(x=>x.id===avId); if(!d) return;
     const txt=($('#avTxt')||{}).value||'', adicChk=!!($('#avAdic')||{}).checked;
@@ -1593,8 +1609,9 @@ select.combo-oculto{display:none}
     const wTot=sum(avActs,pesoAct), conPesos=avActs.some(a=>Math.abs(pesoAct(a)-1)>0.001);
     const fila=a=>{ const p=pctAct(a), st=estAct(a), ed=avCarga===a.id;
       return `<div class="ln avrow" data-avrow="${esc(a.id)}">
-        <div class="h"><span class="avn"><b>${num0[a.id]}.</b> <span data-avnomtxt>${esc(a.nombre)}</span></span><b class="num avpct">${avPct(p)}</b></div>
+        <div class="h"><span class="avn"><b>${num0[a.id]}.</b> <span data-avnomtxt>${esc(a.nombre)}</span></span>${avSinGuardar(a)?'<span class="pill so" data-avsing>sin guardar</span> ':''}<b class="num avpct">${avPct(p)}</b></div>
         ${avBar(p)}
+        ${avFallaA&&avFallaA.donde===a.id?avAviso(avFallaA,'acts','No se guardó este cambio.'):''}
         ${conPesos&&wTot>0?`<div class="tip num" style="border:0;margin:4px 0 0">Peso ${nf1.format(pesoAct(a))} (horas de cuadrilla) · ${nf1.format(pesoAct(a)/wTot*100)} % del total</div>`:''}
         ${st==='det'?`<div class="avdet">Detenida${a.detenidaDesde?' desde el '+fdate(a.detenidaDesde).slice(0,5):''}${txtFreno(a)?' · '+esc(txtFreno(a)):''}</div>`:''}
         ${canWrite&&!ed?`<div class="acts" style="margin-top:8px"><button type="button" class="btn sec" data-avcarga="${esc(a.id)}">Cargar avance</button></div>`:''}
@@ -1604,7 +1621,7 @@ select.combo-oculto{display:none}
             <label class="chk full"><input type="checkbox" data-avdetc${a.detenida?' checked':''}> Está detenida</label>
             <label class="f full" data-avdetf${a.detenida?'':' hidden'}>Qué la está frenando<select data-avfreno><option value="">Elige…</option>${FRENOS.map(x=>`<option${a.freno===x?' selected':''}>${x}</option>`).join('')}</select></label>
             <label class="f full" data-avdetf${a.detenida?'':' hidden'}>Por qué (detalle)<input data-avporque value="${esc(a.porque||'')}" autocomplete="off" placeholder="Ej.: no ha llegado la tubería de escape"></label>
-          </div><div class="row-btns" style="margin-top:8px"><button type="button" class="btn pri" data-avok="${esc(a.id)}">Guardar avance</button><button type="button" class="btn sec" data-avcancel>Cancelar</button></div></div>`:''}
+          </div><div class="err" data-averr role="alert" style="min-height:0"></div><div class="row-btns" style="margin-top:8px"><button type="button" class="btn pri" data-avok="${esc(a.id)}">Guardar avance</button><button type="button" class="btn sec" data-avcancel>Cancelar</button></div></div>`:''}
         ${canWrite?`<details class="ddet"${avEdit===a.id?' open':''} data-avdet="${esc(a.id)}"><summary>Editar</summary><div class="grid" style="margin-top:8px">
           <label class="f full">Nombre<input data-avnom="${esc(a.id)}" value="${esc(a.nombre)}" autocomplete="off"></label>
           <label class="f">Peso en el total (horas de cuadrilla)<input data-avpeso="${esc(a.id)}" inputmode="decimal" value="${nf1.format(pesoAct(a))}"></label>
@@ -1614,12 +1631,14 @@ select.combo-oculto{display:none}
     const grupos=xs=>AV_GRUPOS.map(([k,t])=>{ const g=porAvance(xs.filter(a=>estAct(a)===k)); return g.length?`<div class="avgrp">${t} · ${g.length}</div><div class="lns" style="margin-top:6px">${g.map(fila).join('')}</div>`:''; }).join('');
     $('#avTitle').textContent='Avance';
     $('#avBody').innerHTML = `<div style="font-weight:600;font-size:16px">${esc(d.descripcion||'')}</div><div class="tip" style="border:0;margin:2px 0 0">${avMeta(d)}</div>
-      <div class="avtot"><span style="font-weight:600;color:var(--muted)">Avance total</span><b class="num" id="avTot">${avPct(avanceActs(avActs))}</b></div>${avBar(avanceActs(avActs),'avTotBar')}
+      <div class="avtot"><span style="font-weight:600;color:var(--muted)">Avance total${avFallaA?' <span class="pill so">con cambios sin guardar</span>':''}</span><b class="num" id="avTot">${avPct(avanceActs(avActs))}</b></div>${avBar(avanceActs(avActs),'avTotBar')}
+      ${avFallaA&&!avActs.some(a=>a.id===avFallaA.donde)?avAviso(avFallaA,'acts','No se guardó el último cambio de las actividades.'):''}
       <div class="row-btns" style="margin-top:12px;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;align-items:stretch"><button type="button" class="btn pri" id="avRep"${avActs.length?'':' disabled'}>Generar reporte</button>${canWrite&&sampleFn?'<button type="button" class="btn sec" id="avAI" style="margin:0">Cargar con asistente</button>':''}</div>
       ${avActs.length?`<div class="sech" style="font-size:16px">Curva de avance</div>
         <div class="grid"><label class="f${avF.ini?'':' fvacia'}">Fecha de inicio<input type="date" id="avIni" value="${esc(avF.ini)}"${canWrite?'':' disabled'}></label>
           <label class="f${avF.fin?'':' fvacia'}">Fecha de compromiso<input type="date" id="avFin" value="${esc(avF.fin)}"${canWrite?'':' disabled'}></label>
         </div>
+        ${avAviso(avFallaF,'fechas','No se guardaron las fechas ni el horario.')}
         ${(()=>{ const esp=Object.keys(avF.dias||{}).sort(), j=avJornada(avF), sem=avF.sab&&avF.dom?'todos los días':avF.sab?'lunes a sábado':avF.dom?'lunes a viernes y domingo':'lunes a viernes';
           return `<details class="ddet" id="avHor"${avHorOpen?' open':''} style="margin-top:8px"><summary>Horario: ${nf1.format(j)} horas por día, ${sem}${esp.length?` · ${esp.length} ${esp.length===1?'día con horario distinto':'días con horario distinto'}`:''}</summary>
           <div class="grid" style="margin-top:8px"><label class="f">Horas de un día normal<input id="avHorasDia" inputmode="decimal" value="${nf1.format(j)}"${canWrite?'':' disabled'}></label><span></span>
@@ -1644,10 +1663,15 @@ select.combo-oculto{display:none}
     pintarCurva();
   }
   /* Guarda las actividades en el trabajo, una escritura a la vez, y anota el avance total del día (sirve después para ver el ritmo) */
-  function guardarAv(){ if(!coll||!canWrite||!avId) return; const id=avId, acts=JSON.parse(JSON.stringify(avActs));
+  /* ok: aviso breve cuando se confirma el guardado. donde: la actividad que se estaba guardando (el aviso de falla va en su renglón; vacío = arriba, junto al total).
+     Si falla, lo cargado se queda en pantalla marcado «sin guardar», con el aviso fijo y «Reintentar», y la hoja no cierra sin avisar. */
+  function guardarAv(ok, donde){ if(!coll||!canWrite||!avId) return; const id=avId, acts=JSON.parse(JSON.stringify(avActs)); avEnVuelo++;
     avCola=avCola.then(()=>{ const d=docs.find(x=>x.id===id)||{}; const hist={...(d.avanceHist||{}), [today()]:Math.round(avanceActs(acts)*10)/10}, snap={...(d.avanceSnap||{}), [today()]:Object.fromEntries(acts.map(a=>[a.id, pctAct(a)]))};
-      return conLimite(coll.doc(id).update({actividades:acts, avanceHist:hist, avanceSnap:snap, actualizado:new Date().toISOString()})); })
-      .then(()=>{ const sh=$('#avSheet'); if(sh && avId===id) sh.dataset.dirty=''; }, e=>{ const x=$('#avErr'); if(x) x.textContent='No se guardó el último cambio: '+errMsg(e); else toast(errMsg(e)); }); }
+      return conLimite(coll.doc(id).update({actividades:acts, avanceHist:hist, avanceSnap:snap, actualizado:new Date().toISOString()}), 0, 'el avance de una orden'); })
+      .then(()=>{ avEnVuelo--; if(avId!==id) return; const d=docs.find(x=>x.id===id); if(d && JSON.stringify(actsDe(d))!==JSON.stringify(acts)) d.actividades=JSON.parse(JSON.stringify(acts));   /* lo guardado, aunque el aviso de la base todavía no haya llegado */
+          if(avFallaA && !avEnVuelo){ avFallaA=null; if(!$('#avSheet').hidden) avRepintar(); } avLimpiarMarca(); if(ok) toast(ok); },
+        e=>{ avEnVuelo--; if(avId!==id || $('#avSheet').hidden){ toast('No se guardó el avance: '+errMsg(e)); return; }
+          avFallaA={donde:donde||'', msg:errMsg(e)}; marcarCambio('#avSheet'); avRepintar(); const x=document.querySelector('#avSheet .avfalla'); if(x&&x.scrollIntoView) x.scrollIntoView({block:'center'}); toast('No se guardó el avance: mira el aviso en rojo'); }); }
   function buildAvance(d, acts){
     const base=acts.filter(a=>!a.adicional), adic=acts.filter(a=>a.adicional), L=['*WORKPROCA, Trabajos Profesionales C.A.*', `*Reporte de avance · ${d.descripcion||''}*`];
     const m=[d.cliente, d.unidad].filter(Boolean).join(' · '); if(m) L.push(m);
@@ -1738,43 +1762,48 @@ select.combo-oculto{display:none}
       if(file && navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file]}); return; } }
     catch(e){ if(e&&e.name==='AbortError') return; }
     if(await guardarArchivo(f.nombre, f.blob)) toast('Curva guardada como imagen'); }
-  function guardarAvF(){ if(!coll||!canWrite||!avId) return; const id=avId, f={...avF};
-    avCola=avCola.then(()=>conLimite(coll.doc(id).update({avInicio:f.ini, avCompromiso:f.fin, avSabado:!!f.sab, avDomingo:!!f.dom, avHorasDia:avJornada(f), avDiasEsp:{...(f.dias||{})}, actualizado:new Date().toISOString()})))
-      .then(()=>{ const sh=$('#avSheet'); if(sh && avId===id) sh.dataset.dirty=''; }, e=>{ const x=$('#avErr'); if(x) x.textContent='No se guardaron las fechas ni el horario: '+errMsg(e); else toast(errMsg(e)); }); }
+  function guardarAvF(ok){ if(!coll||!canWrite||!avId) return; const id=avId, f={...avF}; avEnVuelo++;
+    avCola=avCola.then(()=>conLimite(coll.doc(id).update({avInicio:f.ini, avCompromiso:f.fin, avSabado:!!f.sab, avDomingo:!!f.dom, avHorasDia:avJornada(f), avDiasEsp:{...(f.dias||{})}, actualizado:new Date().toISOString()}), 0, 'las fechas y el horario de una orden'))
+      .then(()=>{ avEnVuelo--; if(avId!==id) return; if(avFallaF && !avEnVuelo){ avFallaF=null; if(!$('#avSheet').hidden) avRepintar(); } avLimpiarMarca(); if(ok) toast(ok); },
+        e=>{ avEnVuelo--; if(avId!==id || $('#avSheet').hidden){ toast('No se guardaron las fechas ni el horario: '+errMsg(e)); return; }
+          avFallaF={msg:errMsg(e)}; marcarCambio('#avSheet'); avRepintar(); const x=document.querySelector('#avSheet .avfalla'); if(x&&x.scrollIntoView) x.scrollIntoView({block:'center'}); toast('No se guardaron las fechas ni el horario: mira el aviso en rojo'); }); }
   document.addEventListener('click', e=>{ if(e.target.closest('#btnCurva')||e.target.closest('#avCurvaBtn')) compartirCurva(); });
   $('#avBody').addEventListener('toggle', e=>{ if(e.target.id==='avHor') avHorOpen=e.target.open; }, true);
   $('#avMain').addEventListener('click', e=>{ const b=e.target.closest('[data-avopen]'); if(b) openAvance(b.dataset.avopen); });
   $('#avMain').addEventListener('change', e=>{ if(e.target.id==='avNueva' && e.target.value) openAvance(e.target.value); });
   $('#avBody').addEventListener('change', e=>{ const t=e.target, row=t.closest('[data-avrow]');
-    if(t.id==='avIni'||t.id==='avFin'){ avF={...avF, ini:$('#avIni').value||'', fin:$('#avFin').value||''}; $('#avIni').closest('label').classList.toggle('fvacia',!avF.ini); $('#avFin').closest('label').classList.toggle('fvacia',!avF.fin); $('#avErr').textContent=''; pintarCurva(); guardarAvF(); return; }
-    if(t.id==='avSab'||t.id==='avDom'||t.id==='avHorasDia'){ const h=parseNum($('#avHorasDia').value); avF={...avF, sab:$('#avSab').checked, dom:$('#avDom').checked, horas:h>0&&h<=24?Math.round(h*10)/10:avJornada(avF)}; avHorOpen=true; renderAvSheet(); guardarAvF(); return; }
+    if(t.id==='avIni'||t.id==='avFin'){ avF={...avF, ini:$('#avIni').value||'', fin:$('#avFin').value||''}; $('#avIni').closest('label').classList.toggle('fvacia',!avF.ini); $('#avFin').closest('label').classList.toggle('fvacia',!avF.fin); $('#avErr').textContent=''; pintarCurva(); guardarAvF('Fechas guardadas'); return; }
+    if(t.id==='avSab'||t.id==='avDom'||t.id==='avHorasDia'){ const h=parseNum($('#avHorasDia').value); avF={...avF, sab:$('#avSab').checked, dom:$('#avDom').checked, horas:h>0&&h<=24?Math.round(h*10)/10:avJornada(avF)}; avHorOpen=true; avRepintar(); guardarAvF('Horario guardado'); return; }
     if(t.dataset.avq!==undefined){ const i=row&&row.querySelector('[data-avp]'); if(i) i.value=t.dataset.avq; row.querySelectorAll('.ecchips label').forEach(l=>l.classList.toggle('on', l.contains(t))); return; }
     if(t.hasAttribute('data-avdetc')){ row.querySelectorAll('[data-avdetf]').forEach(x=>x.hidden=!t.checked); return; }
-    if(t.dataset.avnom){ const a=avActs.find(x=>x.id===t.dataset.avnom), n=t.value.trim().replace(/\s+/g,' ').slice(0,160); if(!a) return; if(!n){ t.value=a.nombre; return; } a.nombre=n; if(row) row.querySelector('[data-avnomtxt]').textContent=n; guardarAv(); return; }
-    if(t.dataset.avpeso){ const a=avActs.find(x=>x.id===t.dataset.avpeso); if(!a) return; const v=parseNum(t.value); a.peso=v>0?Math.round(v*10)/10:1; avEdit=a.id; renderAvSheet(); guardarAv(); return; }
-    if(t.dataset.avadic){ const a=avActs.find(x=>x.id===t.dataset.avadic); if(!a) return; a.adicional=t.checked; avEdit=a.id; renderAvSheet(); guardarAv(); return; }
+    if(t.dataset.avnom){ const a=avActs.find(x=>x.id===t.dataset.avnom), n=t.value.trim().replace(/\s+/g,' ').slice(0,160); if(!a) return; if(!n){ t.value=a.nombre; return; } a.nombre=n; if(row) row.querySelector('[data-avnomtxt]').textContent=n; guardarAv('Nombre guardado', a.id); return; }
+    if(t.dataset.avpeso){ const a=avActs.find(x=>x.id===t.dataset.avpeso); if(!a) return; const v=parseNum(t.value); a.peso=v>0?Math.round(v*10)/10:1; avEdit=a.id; avRepintar(); guardarAv('Peso guardado', a.id); return; }
+    if(t.dataset.avadic){ const a=avActs.find(x=>x.id===t.dataset.avadic); if(!a) return; a.adicional=t.checked; avEdit=a.id; avRepintar(); guardarAv('Cambio guardado', a.id); return; }
   });
+  $('#avBody').addEventListener('input', e=>{ if(e.target.closest('.avedit')) avEditSucio=true; });
+  $('#avBody').addEventListener('change', e=>{ if(e.target.closest('.avedit')) avEditSucio=true; }, true);
   $('#avBody').addEventListener('toggle', e=>{ const d=e.target; if(d.dataset&&d.dataset.avdet){ if(d.open) avEdit=d.dataset.avdet; else if(avEdit===d.dataset.avdet) avEdit=''; } }, true);
   $('#avBody').addEventListener('click', e=>{ const t=e.target;
-    const cg=t.closest('[data-avcarga]'); if(cg){ avCarga=cg.dataset.avcarga; renderAvSheet(); const i=document.querySelector(`[data-avp="${avCarga}"]`); if(i){ i.focus(); try{ i.select(); }catch(_){} } return; }
-    if(t.closest('[data-avcancel]')){ avCarga=''; renderAvSheet(); $('#avSheet').dataset.dirty=''; return; }
+    { const rt=t.closest('[data-avreint]'); if(rt){ rt.disabled=true; rt.textContent='Guardando…'; if(rt.dataset.avreint==='fechas') guardarAvF('Fechas y horario guardados'); else guardarAv('Avance guardado', avFallaA?avFallaA.donde:''); return; } }
+    const cg=t.closest('[data-avcarga]'); if(cg){ avCarga=cg.dataset.avcarga; avEditSucio=false; renderAvSheet(); const i=document.querySelector(`[data-avp="${avCarga}"]`); if(i){ i.focus(); try{ i.select(); }catch(_){} } return; }
+    if(t.closest('[data-avcancel]')){ avCarga=''; avEditSucio=false; renderAvSheet(); avLimpiarMarca(); return; }
     const ok=t.closest('[data-avok]'); if(ok){ const a=avActs.find(x=>x.id===ok.dataset.avok), row=ok.closest('[data-avrow]'); if(!a||!row) return;
       const v=parseNum(row.querySelector('[data-avp]').value), p=Math.round(Math.max(0,Math.min(100,isNaN(v)?0:v))*10)/10, det=row.querySelector('[data-avdetc]').checked && p<100;
       const fr=row.querySelector('[data-avfreno]').value, pq=row.querySelector('[data-avporque]').value.trim().replace(/\s+/g,' ').slice(0,200);
-      if(det && !fr && !pq){ $('#avErr').textContent='Di qué la está frenando o escribe por qué está detenida.'; row.querySelector('[data-avfreno]').focus(); return; }
+      if(det && !fr && !pq){ row.querySelector('[data-averr]').textContent='Di qué la está frenando o escribe por qué está detenida.'; row.querySelector('[data-avfreno]').focus(); return; }
       a.pct=p; if(det){ if(!a.detenida||!a.detenidaDesde) a.detenidaDesde=today(); a.detenida=true; a.freno=fr; a.porque=pq; } else { a.detenida=false; a.freno=''; a.porque=''; a.detenidaDesde=''; }
-      avCarga=''; renderAvSheet(); guardarAv(); return; }
-    const del=t.closest('[data-avdel]'); if(del){ const id=del.dataset.avdel; if(avDelArmed!==id){ avDelArmed=id; avEdit=id; renderAvSheet(); return; } avActs=avActs.filter(x=>x.id!==id); avDelArmed=''; avEdit=''; renderAvSheet(); guardarAv(); return; }
+      avCarga=''; avEditSucio=false; marcarCambio('#avSheet'); renderAvSheet(); guardarAv(`Avance guardado: ${a.nombre.length>40?a.nombre.slice(0,39)+'…':a.nombre}, ${avPct(p)}`, a.id); return; }
+    const del=t.closest('[data-avdel]'); if(del){ const id=del.dataset.avdel; if(avDelArmed!==id){ avDelArmed=id; avEdit=id; avRepintar(); return; } avActs=avActs.filter(x=>x.id!==id); avDelArmed=''; avEdit=''; if(avCarga===id){ avCarga=''; avEditSucio=false; } marcarCambio('#avSheet'); avRepintar(); guardarAv('Actividad eliminada'); return; }
     if(t.closest('#avAdd')){ const ad=$('#avAdic').checked, ls=$('#avTxt').value.split(/\n+/).map(x=>x.replace(/^\s*(?:\d+\s*[.)\-:]|[•\-*·])\s*/,'').trim().replace(/\s+/g,' ').replace(/[.;,:]+$/,'').slice(0,160)).filter(Boolean);
       if(!ls.length){ $('#avErr').textContent='Escribe al menos una actividad.'; return; }
       ls.forEach((n,i)=>avActs.push({id:'a'+Date.now().toString(36)+i.toString(36)+Math.random().toString(36).slice(2,5), nombre:n, pct:0, peso:1, adicional:ad}));
-      $('#avTxt').value=''; renderAvSheet(); guardarAv(); toast(`${ls.length} ${ls.length===1?'actividad agregada':'actividades agregadas'}`); return; }
-    if(t.closest('#avAI')){ $('#avSheet').hidden=true; abrirAI('av'); return; }
+      $('#avTxt').value=''; marcarCambio('#avSheet'); avRepintar(); guardarAv(`${ls.length} ${ls.length===1?'actividad agregada':'actividades agregadas'}`); return; }
+    if(t.closest('#avAI')){ if(!dejarHoja()) return; $('#avSheet').hidden=true; abrirAI('av'); return; }
     if(t.closest('#avDiaAdd')){ const f=$('#avDiaF').value, h=parseNum($('#avDiaH').value); avHorOpen=true;
       if(!f){ toast('Elige la fecha del día con horario distinto'); return; } if(isNaN(h)||h<0||h>24){ toast('Pon las horas que se trabajan ese día, entre 0 y 24'); return; }
-      avF={...avF, dias:{...(avF.dias||{}), [f]:Math.round(h*10)/10}}; renderAvSheet(); guardarAvF(); return; }
-    { const q=t.closest('[data-avdiadel]'); if(q){ const ds={...(avF.dias||{})}; delete ds[q.dataset.avdiadel]; avF={...avF, dias:ds}; avHorOpen=true; renderAvSheet(); guardarAvF(); return; } }
-    if(t.closest('#avRep')){ const d=docs.find(x=>x.id===avId); if(!d) return; const txt=buildAvance(d, avActs);
+      avF={...avF, dias:{...(avF.dias||{}), [f]:Math.round(h*10)/10}}; marcarCambio('#avSheet'); avRepintar(); { const dh=$('#avDiaH'), df=$('#avDiaF'); if(dh) dh.value=''; if(df) df.value=''; } guardarAvF('Día con horario distinto guardado'); return; }
+    { const q=t.closest('[data-avdiadel]'); if(q){ const ds={...(avF.dias||{})}; delete ds[q.dataset.avdiadel]; avF={...avF, dias:ds}; avHorOpen=true; marcarCambio('#avSheet'); avRepintar(); guardarAvF('Horario guardado'); return; } }
+    if(t.closest('#avRep')){ const d=docs.find(x=>x.id===avId); if(!d || !dejarHoja()) return; const txt=buildAvance(d, avActs);
       shareMode='av'; avCurvaOn=true; $('#ecFiltros').hidden=true; $('#ecFiltros').innerHTML=''; $('#shareTitle').textContent='Reporte de avance'; $('#shareDesc').textContent='Porcentaje de cada actividad y avance total de la orden, con formato de WhatsApp.';
       $('#shareText').value=txt; $('#avSheet').hidden=true; openSheet('#shareSheet'); return; }
   });
@@ -1782,15 +1811,30 @@ select.combo-oculto{display:none}
   function render(){ renderTabs(); renderStats(); renderList(); renderSelbar(); if(typeof renderGas==='function' && modulo==='gas') renderGas(); if(typeof renderRes==='function' && modulo==='res') renderRes(); if(modulo==='av') renderAv(); }
 
   /* ---------- hojas ---------- */
-  function openSheet(id){ soltarIntento(id); if(id==='#shareSheet'){ const b=$('#btnCurva'); if(b) b.hidden=!avCurvaOn; avCurvaOn=false; } $('#scrim').hidden=false; $(id).hidden=false; $(id).dataset.dirty=''; cierreArmado=0; $('#toast').hidden=true; document.body.style.overflow='hidden'; }
+  /* Marca de «cambios sin guardar»: UN solo mecanismo para todas las hojas.
+     Se pone con cualquier cambio real: teclear, cambiar un selector o una casilla (eventos input y change) y los botones que agregan o quitan
+     renglones, pagos, líneas o actividades (marcarCambio). Se quita en todo guardado exitoso (hojaLimpia) y cada vez que una hoja se abre.
+     Mientras una hoja se abre y el código la rellena, nada la marca: una hoja recién abierta nunca nace marcada. */
+  const HOJAS_LECTURA=['shareSheet','ctaSheet','trSheet'];   /* solo se leen o se copian: no tienen nada que guardar */
+  const TXT_SUCIA='Tienes datos sin guardar. Toca otra vez para descartarlos.';
+  let cierreArmado=0, abriendoHoja=0;
+  function marcarCambio(h){ const sh=typeof h==='string'?$(h):h; if(sh && !abriendoHoja && !HOJAS_LECTURA.includes(sh.id)) sh.dataset.dirty='1'; }
+  function hojaLimpia(h){ const sh=typeof h==='string'?$(h):h; if(sh) sh.dataset.dirty=''; cierreArmado=0; }
+  const hojaSucia = () => [...document.querySelectorAll('section.sheet')].find(x=>!x.hidden && x.dataset.dirty==='1');
+  function openSheet(id){ soltarIntento(id); if(id==='#shareSheet'){ const b=$('#btnCurva'); if(b) b.hidden=!avCurvaOn; avCurvaOn=false; } $('#scrim').hidden=false; $(id).hidden=false; $(id).dataset.dirty=''; cierreArmado=0; $('#toast').hidden=true; document.body.style.overflow='hidden';
+    abriendoHoja++; Promise.resolve().then(()=>{ abriendoHoja=Math.max(0,abriendoHoja-1); }); }
+  /* Los buscadores (la casilla de un selector con buscador y los filtros marcados con data-sinmarca) no son cambios */
+  const marcaDeEvento = e => { const t=e.target, sh=t&&t.closest&&t.closest('section.sheet'); if(sh && !(t.classList&&t.classList.contains('combo-in')) && !(t.hasAttribute&&t.hasAttribute('data-sinmarca'))) marcarCambio(sh); };
+  document.addEventListener('input', marcaDeEvento, true); document.addEventListener('change', marcaDeEvento, true);
   /* Lo escrito en una hoja no se pierde por un toque fuera: la primera vez avisa, la segunda descarta */
-  let cierreArmado=0;
-  document.addEventListener('input', e=>{ const sh=e.target.closest&&e.target.closest('section.sheet'); if(sh && sh.id!=='shareSheet' && !e.target.classList.contains('combo-in')) sh.dataset.dirty='1'; }, true);
   function intentarCerrar(){
-    const sucia=[...document.querySelectorAll('section.sheet')].find(x=>!x.hidden && x.dataset.dirty==='1');
-    if(sucia && Date.now()-cierreArmado>4000){ cierreArmado=Date.now(); toast('Tienes datos sin guardar. Toca otra vez para descartarlos.'); return; }
+    /* Avance guarda solo: si todavía está guardando, se espera el resultado antes de decidir (ni aviso falso ni cierre sin saber) */
+    if(avEnVuelo && !$('#avSheet').hidden){ if(!avCierra){ avCierra=true; toast('Guardando el avance…'); avCola.then(()=>{ avCierra=false; if(!$('#avSheet').hidden) intentarCerrar(); }); } return; }
+    if(hojaSucia() && Date.now()-cierreArmado>4000){ cierreArmado=Date.now(); toast(TXT_SUCIA); return; }
     cierreArmado=0; closeSheets();
   }
+  /* Pasar de una hoja a otra con un botón: si la que se deja tiene cambios sin guardar, avisa igual que al cerrar */
+  function dejarHoja(){ if(hojaSucia() && Date.now()-cierreArmado>4000){ cierreArmado=Date.now(); toast(TXT_SUCIA); return false; } cierreArmado=0; return true; }
   /* =====================================================================
      GUARDADO SEGURO: todo o nada, identificadores estables por intento, cola del teléfono y causa real de cada error
      ===================================================================== */
@@ -1947,7 +1991,7 @@ select.combo-oculto{display:none}
     draft.cobros=draft.cobros||[];
     const p={monto:r2(m), tasa:md==='banco'?t:0, cuenta:md, numFactura:$('#pNum').value.trim(), fecha:$('#pFecha').value||today(), ref:$('#pRef').value.trim(), _nuevo:true};
     if(comp.length) p.compensa=comp;
-    draft.cobros.push(p);
+    draft.cobros.push(p); marcarCambio('#sheet');
     resetPayForm(); if(md==='banco') $('#pTasa').value=nfT.format(t); $('#formErr').textContent=editingId?'Pago agregado: toca Guardar para registrarlo.':'';
     renderPagos(); return true;
   }
@@ -1978,7 +2022,7 @@ select.combo-oculto{display:none}
   }
   function editPago(i){
     const c=draft.cobros[i]; if(!c) return;
-    draft.cobros.splice(i,1);
+    draft.cobros.splice(i,1); marcarCambio('#sheet');
     $('#pNum').value=c.numFactura||''; $('#pFecha').value=c.fecha||today(); $('#pModo').value=modoDe(c); $('#pTasa').value=num(c.tasa)>0?nfT.format(num(c.tasa)):'';
     $('#pMonto').value=nf.format(num(c.monto)); $('#pRef').value=c.ref||'';
     $('#pComp').checked=esCruce(c); renderTgts(esCruce(c)?c.compensa:[]);
@@ -2446,13 +2490,13 @@ select.combo-oculto{display:none}
     return L.join('\n');
   }
   function copiarTexto(txt, titulo, desc){
-    const fallback=()=>{ $('#ecFiltros').hidden=true; $('#shareTitle').textContent=titulo; $('#shareDesc').textContent=desc; $('#shareText').value=txt; ['#sheet','#bulkSheet'].forEach(s=>$(s).hidden=true); openSheet('#shareSheet'); };
+    const fallback=()=>{ if(hojaSucia()){ toast('No se pudo copiar solo. Guarda primero los cambios de esta hoja y vuelve a tocar el botón.'); return; } $('#ecFiltros').hidden=true; $('#shareTitle').textContent=titulo; $('#shareDesc').textContent=desc; $('#shareText').value=txt; ['#sheet','#bulkSheet'].forEach(s=>$(s).hidden=true); openSheet('#shareSheet'); };
     try{ navigator.clipboard.writeText(txt).then(()=>toast('Resumen copiado. Pégalo en WhatsApp'), fallback); }catch(_){ fallback(); }
   }
 
   /* ---------- eventos ---------- */
   /* Duplicar o dividir: un trabajo nuevo con el mismo cliente, unidad, requisición y fecha; el monto lo pones tú (y ajustas el del original) */
-  $('#btnDup').addEventListener('click', ()=>{ const d=docs.find(x=>x.id===editingId); if(!d) return; closeSheets(); openEditor(null);
+  $('#btnDup').addEventListener('click', ()=>{ const d=docs.find(x=>x.id===editingId); if(!d || !dejarHoja()) return; closeSheets(); openEditor(null);
     draft={cliente:d.cliente||'', unidad:d.unidad||'', nota:d.nota||'', fecha:d.fecha||today(), ejecutado:false, cobros:[]};
     $('#iDesc').value=(d.descripcion||'')+' (parte 2)'; fillClienteSelect(draft.cliente); fillUnidadSelect(draft.unidad); $('#iNota').value=draft.nota; $('#iFecha').value=draft.fecha; $('#iMonto').value=''; $('#iOds').value=''; syncOds(); renderPagos();
     $('#formErr').textContent=`Copia de «${d.descripcion}». Pon el monto de esta parte y después baja el monto del original.`; $('#iMonto').focus(); });
@@ -2484,7 +2528,7 @@ select.combo-oculto{display:none}
   $('#bConfirm').addEventListener('click', confirmBulk);
   $('#bModo').addEventListener('change', renderBulkTot);
   $('#fab').addEventListener('click', ()=>openEditor(null));
-  $('#iAI').addEventListener('click', ()=>{ closeSheets(); abrirAI('cob'); });
+  $('#iAI').addEventListener('click', ()=>{ if(!dejarHoja()) return; closeSheets(); abrirAI('cob'); });
   $('#scrim').addEventListener('click', intentarCerrar);
   document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', intentarCerrar));
   document.addEventListener('keydown', e=>{ if(e.key==='Escape') intentarCerrar(); });
@@ -2504,10 +2548,10 @@ select.combo-oculto{display:none}
   $('#pModo').addEventListener('change', renderConv);
   $('#pTasa').addEventListener('input', renderConv);
   $('#btnAddPago').addEventListener('click', addPago);
-  $('#btnSaldo').addEventListener('click', ()=>{ const s=Math.max(0,r2(currentMonto()-(draft.cobros||[]).reduce((a,c)=>a+num(c.monto),0))); if(s<=0){ $('#formErr').textContent='No queda saldo por cobrar.'; return; } $('#pMonto').value=nf.format(s); renderConv(); });
+  $('#btnSaldo').addEventListener('click', ()=>{ const s=Math.max(0,r2(currentMonto()-(draft.cobros||[]).reduce((a,c)=>a+num(c.monto),0))); if(s<=0){ $('#formErr').textContent='No queda saldo por cobrar.'; return; } $('#pMonto').value=nf.format(s); marcarCambio('#sheet'); renderConv(); });
   $('#cobrosList').addEventListener('click', e=>{
     const ed=e.target.closest('[data-ed]'); if(ed){ editPago(+ed.dataset.ed); return; }
-    const b=e.target.closest('[data-rm]'); if(!b) return; draft.cobros.splice(+b.dataset.rm,1); renderPagos();
+    const b=e.target.closest('[data-rm]'); if(!b) return; draft.cobros.splice(+b.dataset.rm,1); marcarCambio('#sheet'); renderPagos();
   });
   $('#pComp').addEventListener('change', ()=>{ const m=[...document.querySelectorAll('#pTgts input:checked')].map(x=>x.value); renderTgts(m); });
   $('#form').addEventListener('submit', save);
@@ -2740,6 +2784,7 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
       $('#aiReplyBox').hidden = !canWrite; $('#aiReply').value='';
       $('#aiStat').textContent=[...avisos, lineaConsultaIA()].filter(Boolean).join(' ');
       if(aiMode==='av') renderAIAv(res||{}); else if(aiMode==='asis') renderAIAsis(res||{}); else if(aiMode==='trab') renderAITrab(res||{}); else if(aiMode==='gas') renderAIGas(res||{}); else if(aiMode==='inv') renderAIInv(res||{}); else renderAI(res||{});
+      if(!$('#aiApplyRow').hidden) marcarCambio('#aiSheet');   /* hay propuestas en pantalla sin guardar */
     }catch(e){
       const code=e&&e.code;
       $('#aiStat').textContent = msgIA(e);
@@ -2817,7 +2862,7 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
       for(const body of nuevos){ if(!body.descripcion||body.monto<=0){ fallas.push('un trabajo nuevo sin descripción o monto'); continue; } await conLimite(coll.doc().set(body), 0, 'un trabajo nuevo (asistente)'); ok++; }
       const base=Object.fromEntries(Object.entries(copias).map(([id,b])=>[id, b.cobros||[]]));
       for(const r of repartos){ const x=await repartirPago(r.m, r.as, r.nf, r.ff, base); if(x&&x.error) fallas.push(x.error); else ok+=r.as.length; }
-      if(!fallas.length){ $('#aiRes').innerHTML=''; $('#aiApplyRow').hidden=true; $('#aiReplyBox').hidden=true; aiLast=null; aiActs=[]; $('#aiText').value=''; aiFiles=[]; renderChips(); }
+      if(!fallas.length){ $('#aiRes').innerHTML=''; $('#aiApplyRow').hidden=true; $('#aiReplyBox').hidden=true; aiLast=null; aiActs=[]; $('#aiText').value=''; aiFiles=[]; renderChips(); hojaLimpia('#aiSheet'); }
       const nN=nuevos.filter(b=>b.descripcion&&b.monto>0).length, nA=ok-nN;
       $('#aiStat').textContent = `Guardado: ${[nN?`${nN} ${nN===1?'trabajo nuevo':'trabajos nuevos'}`:'', nA>0?`${nA} ${nA===1?'trabajo actualizado':'trabajos actualizados'}`:''].filter(Boolean).join(' y ')||'nada'}.` + (fallas.length?` No se aplicó: ${fallas.join('; ')}.`:'');
       toast(fallas.length?(ok?'Guardado en parte: revisa lo que no se aplicó':'No se guardó nada: revisa el aviso'):'Cambios guardados');
@@ -2886,9 +2931,10 @@ Responde solo con un objeto JSON:
       const n=String((el('nombre')||{}).value||'').trim().replace(/\s+/g,' ').slice(0,160); if(!n) return;
       const nueva={id:'a'+Date.now().toString(36)+i.toString(36)+Math.random().toString(36).slice(2,5), nombre:n, pct:p, peso:w||1, adicional:!!(el('adicional')&&el('adicional').checked)}; ponDet(nueva); avActs.push(nueva); nuevas++; });
     if(!nuevas&&!act){ $('#aiStat').textContent='No marcaste nada.'; return; }
-    guardarAv(); $('#aiRes').innerHTML=''; $('#aiApplyRow').hidden=true; $('#aiReplyBox').hidden=true; aiLast=null; aiAv=[]; $('#aiText').value=''; aiFiles=[]; renderChips();
-    $('#aiSheet').hidden=true; $('#aiSheet').dataset.dirty=''; renderAvSheet(); $('#avSheet').hidden=false; $('#avSheet').dataset.dirty='';
-    toast([nuevas&&`${nuevas} ${nuevas===1?'actividad agregada':'actividades agregadas'}`, act&&`${act} ${act===1?'actividad actualizada':'actividades actualizadas'}`].filter(Boolean).join(' · '));
+    $('#aiRes').innerHTML=''; $('#aiApplyRow').hidden=true; $('#aiReplyBox').hidden=true; aiLast=null; aiAv=[]; $('#aiText').value=''; aiFiles=[]; renderChips();
+    $('#aiSheet').hidden=true; hojaLimpia('#aiSheet'); renderAvSheet(); $('#avSheet').hidden=false; hojaLimpia('#avSheet');
+    /* El aviso de «agregadas / actualizadas» sale cuando la base lo confirma; si falla, la hoja de avance lo dice en rojo y queda marcada */
+    guardarAv([nuevas&&`${nuevas} ${nuevas===1?'actividad agregada':'actividades agregadas'}`, act&&`${act} ${act===1?'actividad actualizada':'actividades actualizadas'}`].filter(Boolean).join(' · '));
   }
   /* ---------- asistente para trabajadores ---------- */
   function abrirAI(modo){
@@ -3060,7 +3106,7 @@ Responde solo con un objeto JSON:
     }
     btn.disabled=false; btn.textContent='Guardar trabajadores marcados';
     $('#aiStat').textContent = `${ok} ${ok===1?'trabajador guardado':'trabajadores guardados'}.${incompletos?` ${incompletos} sin datos completos de pago móvil: complétalos en la lista antes del corte.`:''}${conErr?` ${conErr} con datos por corregir: revisa los mensajes en rojo.`:''}`;
-    if(ok && !conErr){ toast('Trabajadores guardados'); $('#aiText').value=''; aiFiles=[]; renderChips(); }
+    if(ok && !conErr){ toast('Trabajadores guardados'); $('#aiText').value=''; aiFiles=[]; renderChips(); hojaLimpia('#aiSheet'); }
   }
   function marcarFalta(campo, vacio){ const l=campo.closest('label, .fl'); if(!l) return; const b=l.querySelector('.flt'); if(!b) return; l.classList.toggle('falta', vacio); b.hidden=!vacio; }
   $('#aiRes').addEventListener('change', e=>{
@@ -3087,7 +3133,7 @@ Responde solo con un objeto JSON:
   document.addEventListener('mousedown', e=>{ if(e.target.closest && e.target.closest('.bp-list')) e.preventDefault(); });
   document.addEventListener('click', e=>{
     const b=e.target.closest && e.target.closest('[data-bcode]'); if(!b) return;
-    const inp=b.closest('.bp').querySelector('.bp-in'); setBanco(inp, b.dataset.bcode); b.closest('.bp-list').hidden=true; inp.blur();
+    const inp=b.closest('.bp').querySelector('.bp-in'); setBanco(inp, b.dataset.bcode); marcarCambio(inp.closest('section.sheet')); b.closest('.bp-list').hidden=true; inp.blur();
   });
   document.addEventListener('focusout', e=>{
     const t=e.target; if(!(t.matches && t.matches('.bp-in'))) return;
@@ -3217,7 +3263,7 @@ Responde solo con un objeto JSON:
       for(const id of activar) await conLimite(nDb.collection('trabajadores').doc(id).update({activo:true, actualizado:new Date().toISOString()}), 0, 'activar a un trabajador');
       if(!dayDirty) dayDraft=null;
       $('#aiStat').textContent = `Guardado: ${nd} ${nd===1?'día':'días'}${na?` y ${na} ${na===1?'adelanto':'adelantos'}`:''}${activar.size?` · ${activar.size} ${activar.size===1?'trabajador activado':'trabajadores activados'}`:''}.`+(fallas.length?` No se guardó: ${fallas.join('; ')}.`:'');
-      $('#aiApplyRow').hidden=true; toast('Asistencia guardada'); delete $('#aiSheet').dataset.dirty; renderNom();
+      $('#aiApplyRow').hidden=true; toast('Asistencia guardada'); hojaLimpia('#aiSheet'); renderNom();
     }catch(err){ $('#aiStat').textContent=errMsg(err)+(nd?` Se alcanzaron a guardar ${nd} días.`:''); }
     finally{ btn.disabled=false; btn.textContent='Guardar lo marcado'; }
   }
@@ -3236,6 +3282,8 @@ Responde solo con un objeto JSON:
   let modulo='cob';
   function setModulo(m){
     if(esRegistro() && !['reg','nom'].includes(m) && !(m==='inv'&&iView==='eq')) m='reg';
+    /* Salir de Nómina con el día marcado y sin guardar: mismo aviso que al cambiar de pestaña o de día */
+    if(modulo==='nom' && m!=='nom' && !salirDelDia()){ try{ history.replaceState(null,'','#nomina'); }catch(_){} return; }
     modulo = ['nom','gas','inv','res','reg','av','dat'].includes(m) ? m : 'cob';
     document.querySelectorAll('#modTabs button').forEach(b=>b.setAttribute('aria-selected', String(b.dataset.m===modulo)));
     $('#modCob').hidden = modulo!=='cob'; $('#cobHead').hidden = modulo!=='cob'; $('#cobBtns').hidden = modulo!=='cob';
@@ -3630,7 +3678,7 @@ Responde solo con un objeto JSON:
   const pmOk = pm => String(pm.telefono||'').replace(/\D/g,'').length===11 && String(pm.cedula||'').replace(/\D/g,'').length>=5 && !!pm.banco;
   const datosBancoOk = t => !!t && pmOk(pmDe(t));
   function copyPlain(txt, okMsg, titulo){
-    const fallback=()=>{ $('#ecFiltros').hidden=true; $('#shareTitle').textContent=titulo||'Copiar'; $('#shareDesc').textContent='Selecciona el texto y cópialo.'; $('#shareText').value=txt; ['#sheet','#bulkSheet','#wSheet','#adSheet'].forEach(s=>$(s).hidden=true); openSheet('#shareSheet'); };
+    const fallback=()=>{ if(hojaSucia()){ toast('No se pudo copiar solo. Guarda primero los cambios de esta hoja y vuelve a tocar el botón.'); return; } $('#ecFiltros').hidden=true; $('#shareTitle').textContent=titulo||'Copiar'; $('#shareDesc').textContent='Selecciona el texto y cópialo.'; $('#shareText').value=txt; ['#sheet','#bulkSheet','#wSheet','#adSheet'].forEach(s=>$(s).hidden=true); openSheet('#shareSheet'); };
     try{ navigator.clipboard.writeText(txt).then(()=>toast(okMsg), fallback); }catch(_){ fallback(); }
   }
   function resumenCorte(c){
@@ -3682,7 +3730,13 @@ Responde solo con un objeto JSON:
       </details>
       <div class="row-btns"><button type="button" class="btn sec" id="dNuevoT">Agregar trabajador nuevo</button></div>`;
     const btnAIDia = sampleFn&&canWrite ? '<button type="button" class="btn sec" id="dAI">Registrar con asistente</button>' : '';
-    const navDia = `<div class="daynav"><button type="button" id="dPrev" aria-label="Día anterior">‹</button><input type="date" id="dFecha" value="${diaSel}"><button type="button" id="dNext" aria-label="Día siguiente">›</button></div>`;
+    /* Borradores guardados en el teléfono: se ofrecen, no se aplican */
+    const ofertas = nLoaded.a && nLoaded.t ? borrValidos() : {}, bo=ofertas[diaSel];
+    const borrHTML = (bo?`<div class="lock" id="dBorr" role="alert"><b>Este día tiene marcas que no se guardaron</b> (del ${fechaHora(new Date(num(bo.t)).toISOString())}): ${esc(Object.entries(regsDe(bo.d)).map(([id,r])=>`${(nombreT(id)||'alguien').split(' ')[0]} ${r.tipo==='completo'?'día completo':r.tipo==='medio'?'medio día':'no trabajó'}${num(r.horasExtra)?' y '+nf.format(num(r.horasExtra)).replace(/,00$/,'')+' h extra':''}${num(r.bono)?' y bonificación':''}`).join(', ')||'nadie marcado')}. ${asis[diaSel]?'Lo guardado en la base es distinto':'En la base el día no está registrado'}. Todavía no se han aplicado.<div class="row-btns" style="margin-top:8px"><button type="button" class="btn pri" id="dBorrRec">Recuperar lo que marcaste</button><button type="button" class="btn sec" id="dBorrDes">Descartar</button></div></div>`:'')
+      + Object.keys(ofertas).filter(f=>f!==diaSel).sort().map(f=>`<div class="lock" data-borrotro="${f}">El ${DIAS[new Date(f+'T12:00:00').getDay()]} ${fdate(f).slice(0,5)} tiene marcas que no se guardaron. <button type="button" class="lnk" data-borrir="${f}">Ver ese día</button></div>`).join('');
+    const navDia = `<div class="daynav"><button type="button" id="dPrev" aria-label="Día anterior">‹</button><input type="date" id="dFecha" value="${diaSel}"><button type="button" id="dNext" aria-label="Día siguiente">›</button></div>${borrHTML}`;
+    /* La oferta queda a la vista la primera vez que se llega al día (la pantalla puede venir corrida hacia abajo) */
+    if(bo && borrVisto!==diaSel){ borrVisto=diaSel; setTimeout(()=>{ const e=$('#dBorr'); if(e && modulo==='nom' && e.scrollIntoView) e.scrollIntoView({block:'center'}); },0); } else if(!bo && borrVisto===diaSel) borrVisto='';
     if(!lista.length){ dayDirty=hayCambiosDia(); el.innerHTML=`${navDia}<div class="empty"><b>No hay trabajadores activos</b>${inactivos.length?'Activa los que trabajan este día aquí abajo.':'Agrega el primero para empezar a registrar días.'}</div>${btnAIDia&&trabs.some(t=>!esSup(t))?`<div class="row-btns">${btnAIDia}</div>`:''}${bloqueInact}${dayDirty&&!bloqueado?'<div class="nsum"><div class="row-btns" style="margin-top:0"><button type="button" class="btn pri" id="dSave">Guardar día</button></div></div>':''}`; return; }
     const solDia=f=>solicitudes.filter(x=>x.estado==='pendiente'&&x.col==='asistencia'&&(x.docId===f||String((x.datos||{}).fecha||'')===f));
     const ayer=sumarDias(today(),-1), proponerAyer = diaSel===today() && !asis[today()] && !asis[ayer] && !solDia(ayer).length && !dayDirty && new Date(ayer+'T12:00:00').getDay()!==0;
@@ -3746,19 +3800,45 @@ Responde solo con un objeto JSON:
     Object.entries(dayDraft||{}).forEach(([id,r])=>{ const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return; const p=pagoDia(t,r,diaSel); if(p.dias===1)c++; else if(p.dias===0.5)m++; h+=p.horas; cost+=p.montoDias+p.montoExtra+p.montoBono; bo+=p.montoBono; });
     const soloHx=Object.entries(dayDraft||{}).filter(([id,r])=>r.tipo==='no'&&num(r.horasExtra)>0).length;
     const partes=[c?`${c} ${c===1?'persona':'personas'} día completo`:'', m?`${m} ${m===1?'persona':'personas'} medio día`:'', h?`${nf.format(h).replace(/,00$/,'')} h extra`:'', bo?`<span class="dinero">bonificaciones ${usd(r2(bo))}</span>`:'', soloHx?`<span class="warn">${soloHx} ${soloHx===1?'cobra':'cobran'} solo horas extra</span>`:''].filter(Boolean);
-    el.innerHTML = `${partes.length?partes.join(' · '):'Nadie registrado todavía'}<span class="dinero"> · Costo del día: <b>${usd(r2(cost))}</b></span>${dayDirty?' · <span class="warn">sin guardar</span>':''}`;
+    el.innerHTML = `${partes.length?partes.join(' · '):'Nadie registrado todavía'}<span class="dinero"> · Costo del día: <b>${usd(r2(cost))}</b></span>${dayDirty&&hayCambiosDia()?' · <span class="warn">sin guardar</span>':''}`;
     const sv=$('#dSave'); if(sv && !sv.dataset.busy){ const nadie=!Object.values(regsDe(dayDraft)).length && !asis[diaSel], igual=!hayCambiosDia(); sv.disabled=nadie||igual; sv.textContent=nadie?'Nadie marcado':igual?(asis[diaSel]?'Guardado':'Sin cambios'):'Guardar día'; }
   }
   function cambiarDia(f){
-    if(dayDirty && hayCambiosDia() && !confirmarSalida()) return;
+    if(!salirDelDia()) return;
     diaSel=f; dayDraft=null; renderNom();
   }
-  /* Lo marcado y no guardado se guarda en el teléfono: si la app se cierra o se cae la señal, al volver se recupera */
-  function guardarBorradorDia(){ try{ if(dayDirty && hayCambiosDia()) localStorage.setItem('borradorDia', JSON.stringify({f:diaSel, d:dayDraft, t:Date.now()})); else localStorage.removeItem('borradorDia'); }catch(_){} }
-  function recuperarBorradorDia(){ try{ const b=JSON.parse(localStorage.getItem('borradorDia')||'null'); if(!b||!b.f||!b.d||Date.now()-b.t>3*86400000) return false; if(JSON.stringify(regsDe(b.d))===JSON.stringify(regsDe((asis[b.f]||{}).registros))){ localStorage.removeItem('borradorDia'); return false; } diaSel=b.f; dayDraft=b.d; dayDirty=true; toast(`Recuperé lo que habías marcado el ${fdate(b.f)} sin guardar`); return true; }catch(_){ return false; } }
+  /* Borrador del día: lo marcado y no guardado se copia al teléfono, por día. Si la app se cierra, se cae la señal o se sale sin guardar,
+     al volver a ese día se OFRECE con dos botones («Recuperar lo que marcaste» y «Descartar»): nunca se aplica solo ni se mezcla con lo guardado.
+     Se borra al guardar el día con éxito o al descartarlo. Solo se ofrece si es más nuevo que lo guardado en la base para ese día y tiene menos de 3 días. */
+  /* Se lee del teléfono cada vez (nada se guarda en memoria al arrancar), y solo se borra lo que esta sesión escribió o lo que el dueño descarta */
+  const borrLeer = () => { let o={}; try{ o=JSON.parse(localStorage.getItem('borradoresDia')||'{}'); if(!o||typeof o!=='object'||Array.isArray(o)) o={}; }catch(_){ o={}; }
+    /* borrador de versiones anteriores de la app (una sola clave): se pasa al formato nuevo */
+    try{ const v=JSON.parse(localStorage.getItem('borradorDia')||'null'); if(v&&v.f&&v.d){ if(!o[v.f]) o[v.f]={d:v.d, t:v.t||Date.now()}; localStorage.setItem('borradoresDia', JSON.stringify(o)); localStorage.removeItem('borradorDia'); } }catch(_){}
+    return o; };
+  const borrPoner = o => { try{ if(Object.keys(o).length) localStorage.setItem('borradoresDia', JSON.stringify(o)); else localStorage.removeItem('borradoresDia'); }catch(_){} };
+  /* borrVivo: el día cuyo borrador va copiando esta sesión mientras se marca. Cualquier otro borrador que haya en el teléfono es una oferta:
+     no se pisa ni se aplica hasta que el dueño decida. */
+  let borrVivo='';
+  function borrQuitar(f){ const o=borrLeer(); if(o[f]){ delete o[f]; borrPoner(o); } if(borrVivo===f) borrVivo=''; }
+  function borrValidos(){ const o=borrLeer(), out={}; let cambio=false;
+    Object.keys(o).forEach(f=>{ if(f===borrVivo) return; const b=o[f], g=asis[f], tg=g&&g.actualizado?Date.parse(g.actualizado):0;
+      if(b && b.d && typeof b.d==='object' && /^\d{4}-\d{2}-\d{2}$/.test(f) && Date.now()-num(b.t)<=3*86400000 && !(tg>num(b.t)) && JSON.stringify(regsDe(b.d))!==JSON.stringify(regsDe((g||{}).registros))) out[f]=b;
+      else { delete o[f]; cambio=true; } });
+    if(cambio) borrPoner(o); return out; }
+  function guardarBorradorDia(){ if(nView!=='dia' || !dayDraft) return; const o=borrLeer();
+    if(diaSucio()){ if(o[diaSel] && borrVivo!==diaSel) return;   /* hay una oferta de este día sin decidir: no se pisa */
+      o[diaSel]={d:dayDraft, t:Date.now()}; borrVivo=diaSel; borrPoner(o); }
+    else if(borrVivo===diaSel){ borrVivo=''; if(o[diaSel]){ delete o[diaSel]; borrPoner(o); } } }
   setInterval(guardarBorradorDia, 3000);
-  let salidaArmada=false;
-  function confirmarSalida(){ if(salidaArmada){ salidaArmada=false; return true; } salidaArmada=true; toast('Tienes cambios sin guardar. Toca otra vez para salir sin guardar.'); setTimeout(()=>salidaArmada=false,4000); return false; }
+  /* El iPhone puede cerrar la app en cuanto pasa a segundo plano: el borrador se copia en ese momento, sin esperar los 3 segundos */
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) guardarBorradorDia(); }); window.addEventListener('pagehide', guardarBorradorDia);
+  function diaSucio(){ return nView==='dia' && !!dayDraft && dayDirty && hayCambiosDia(); }
+  /* Salir del registro del día con marcas sin guardar: el mismo aviso y el mismo comportamiento al cambiar de pestaña dentro de Nómina, de módulo o de día.
+     El primer toque avisa y no sale; el segundo sale. Lo marcado no se pierde: queda en el teléfono y se ofrece al volver a ese día. */
+  let salidaArmada=0, borrVisto='';
+  function salirDelDia(){ if(!diaSucio()){ salidaArmada=0; borrVisto=''; guardarBorradorDia(); return true; }
+    if(Date.now()-salidaArmada>4000){ salidaArmada=Date.now(); toast(`El día ${fdate(diaSel).slice(0,5)} tiene cambios sin guardar. Toca otra vez para salir sin guardar; podrás recuperarlos al volver a ese día.`); return false; }
+    salidaArmada=0; borrVisto=''; const o=borrLeer(); o[diaSel]={d:dayDraft, t:Date.now()}; borrPoner(o); borrVivo=''; dayDraft=null; dayDirty=false; return true; }
   /* Registros que valen la pena guardar, y comparación con lo ya guardado */
   function regsDe(o){ const regs={}; Object.keys(o||{}).sort().forEach(id=>{ const r=o[id]; if(r && (r.tipo!=='no' || num(r.horasExtra)>0 || num(r.bono)>0)) regs[id]={tipo:r.tipo||'no', horasExtra:num(r.horasExtra), trabajoId:r.trabajoId||'', ...(num(r.bono)>0?{bono:r2(num(r.bono)), ...(r.bonoNota?{bonoNota:String(r.bonoNota).slice(0,80)}:{})}:{})}; if(!regs[id]) return; if(r.dividir&&r.trabajoId2&&r.trabajoId2!==r.trabajoId){ regs[id].trabajoId2=r.trabajoId2; regs[id].dividir=true; } }); return regs; }
   const hayCambiosDia = () => JSON.stringify(regsDe(dayDraft)) !== JSON.stringify(regsDe((asis[diaSel]||{}).registros));
@@ -3778,7 +3858,7 @@ Responde solo con un objeto JSON:
   }
   async function guardarDia(){
     if(!nDb) return;
-    const regs=regsDe(dayDraft), saved=regsDe((asis[diaSel]||{}).registros);
+    const regs=regsDe(dayDraft), saved=regsDe((asis[diaSel]||{}).registros), fDia=diaSel, enviado=JSON.stringify(regs); let hecho=false;
     /* Lo ya pagado no se toca: para esos trabajadores se conserva lo guardado */
     trabs.filter(t=>diaBloqueado(t,diaSel) && !diaCorregir.has(t.id)).forEach(t=>{ if(saved[t.id]) regs[t.id]=saved[t.id]; else delete regs[t.id]; });
     /* Días pagados que se corrigen: lo nuevo contra lo que ya se pagó por ese día */
@@ -3796,9 +3876,15 @@ Responde solo con un objeto JSON:
       { const dsc=r=>!r?'no trabajó':[r.tipo==='completo'?'día completo':r.tipo==='medio'?'medio día':'no trabajó', num(r.horasExtra)?`${nf.format(num(r.horasExtra)).replace(/,00$/,'')} ${num(r.horasExtra)===1?'hora extra':'horas extra'}`:'', r.trabajoId?nombreCorto(docs.find(d=>d.id===r.trabajoId)||{}):''].filter(Boolean).join(', ');
         if(Object.keys(saved).length) [...new Set([...Object.keys(saved),...Object.keys(regs)])].forEach(id=>{ const a=dsc(saved[id]), b=dsc(regs[id]); if(a!==b) registrarCambio('asistencia', diaSel, `Día ${fdate(diaSel)}: ${nombreT(id)}`, a, b); }); }
       diaCorregir=new Set();
-      dayDirty=false; try{ localStorage.removeItem('borradorDia'); }catch(_){} toast(`Día ${fdate(diaSel)} guardado${difPagados.length?' · '+difPagados.map(x=>`${x.t.nombre.split(' ')[0]} ${x.m<0?'− ':'+ '}${usd(Math.abs(x.m))}`).join(', ')+' en el próximo corte':''}${reactivar.length?` · ${reactivar.map(t=>t.nombre.split(' ')[0]).join(' y ')} ${reactivar.length===1?'queda activo':'quedan activos'}`:''}`);
+      /* Lo guardado se refleja de una vez (sin esperar el aviso de la base) y la pantalla se vuelve a pintar: así no queda diciendo «sin guardar» */
+      borrQuitar(fDia); hecho=true;
+      if(!esRegistro()){ if(Object.keys(regs).length) asis[fDia]={fecha:fDia, registros:regs, actualizado:ah}; else delete asis[fDia]; }
+      /* Si mientras guardaba se marcó algo más, eso sigue en pantalla y sigue «sin guardar» */
+      if(diaSel===fDia){ if(JSON.stringify(regsDe(dayDraft))===enviado){ dayDirty=false; if(!esRegistro()) dayDraft=null; } else dayDirty=true; }
+      toast(`Día ${fdate(fDia)} guardado${difPagados.length?' · '+difPagados.map(x=>`${x.t.nombre.split(' ')[0]} ${x.m<0?'− ':'+ '}${usd(Math.abs(x.m))}`).join(', ')+' en el próximo corte':''}${reactivar.length?` · ${reactivar.map(t=>t.nombre.split(' ')[0]).join(' y ')} ${reactivar.length===1?'queda activo':'quedan activos'}`:''}`);
     }catch(err){ avisoFijo('#dSum', `No se guardó el día: ${errMsg(err)}`); }
     finally{ if(btn){ delete btn.dataset.busy; btn.disabled=false; btn.textContent='Guardar día'; } }
+    if(hecho && modulo==='nom' && nView==='dia') renderNom();
   }
 
   function renderCorte(el){
@@ -4117,7 +4203,7 @@ Responde solo con un objeto JSON:
   }
 
   /* ---------- eventos de nómina ---------- */
-  $('#nTabs').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; if(nView==='dia' && dayDirty && hayCambiosDia() && b.dataset.v!=='dia' && !confirmarSalida()) return; if(b.dataset.v!=='dia'){ dayDraft=null; dayDirty=false; } nView=b.dataset.v; nDelArmed=''; renderNom(); });
+  $('#nTabs').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; if(b.dataset.v!=='dia' && !salirDelDia()) return; if(b.dataset.v!=='dia'){ dayDraft=null; dayDirty=false; } nView=b.dataset.v; nDelArmed=''; renderNom(); });
   $('#nMain').addEventListener('click', e=>{
     const t=e.target;
     if(t.closest('#dPrev')) return cambiarDia(sumarDias(diaSel,-1));
@@ -4126,6 +4212,10 @@ Responde solo con un objeto JSON:
     if(t.closest('#dAI')) return abrirAI('asis');
     if(t.closest('#dNuevoT')) return openTrab(null);
     if(t.closest('#dIrAyer')) return cambiarDia(sumarDias(today(),-1));
+    if(t.closest('#dBorrRec')){ const b=borrValidos()[diaSel]; if(!b) return renderNom(); const d=JSON.parse(JSON.stringify(b.d)); Object.keys(d).forEach(id=>{ if(!trabs.some(x=>x.id===id)) delete d[id]; });
+      dayDraft=d; dayDirty=true; todosTocado=true; Object.keys(d).forEach(id=>diaAgregados.add(id)); borrVivo=diaSel; renderNom(); toast('Recuperado. Revisa y toca «Guardar día».'); return; }
+    if(t.closest('#dBorrDes')){ borrQuitar(diaSel); renderNom(); toast('Borrador descartado'); return; }
+    { const bi=t.closest('[data-borrir]'); if(bi) return cambiarDia(bi.dataset.borrir); }
     if(t.closest('#dAdelanto')) return openAdelanto();
     const dv=t.closest('[data-dividir]'); if(dv){ const id=dv.dataset.dividir; dayDraft[id]={...(dayDraft[id]||defReg(id)), dividir:true, trabajoId2:''}; dayDirty=true; return renderNom(); }
     const ndv=t.closest('[data-nodividir]'); if(ndv){ const id=ndv.dataset.nodividir; const r={...(dayDraft[id]||defReg(id))}; delete r.dividir; delete r.trabajoId2; dayDraft[id]=r; dayDirty=true; return renderNom(); }
@@ -4210,7 +4300,7 @@ Responde solo con un objeto JSON:
   $('#wMismo').addEventListener('change', syncMismo);
   $('#wCtaMismo').addEventListener('change', syncCta); $('#wCtaNum').addEventListener('input', syncCta);
   $('#wSave').addEventListener('click', guardarTrab);
-  $('#wAdel').addEventListener('click', ()=>{ const id=wEditId; closeSheets(); openAdelanto(id); });
+  $('#wAdel').addEventListener('click', ()=>{ if(!dejarHoja()) return; const id=wEditId; closeSheets(); openAdelanto(id); });
   $('#wDel').addEventListener('click', eliminarTrab);
   $('#adSave').addEventListener('click', guardarAdelanto);
   $('#adCuenta').addEventListener('change', ()=>{ $('#adTasaL').hidden=$('#adCuenta').value!=='banco'; });
@@ -4796,7 +4886,7 @@ Responde solo con un objeto JSON:
     const it=itemDe(o.ms[0].itemId)||{};
     $('#mvConcepto').value=`Pago ${o.proveedor||it.nombre||'de compra'}${o.referencia?' · factura N° '+o.referencia:''}`;
     $('#mvRef').value=o.referencia||''; { const cat=CAT_GASTO_INV[it.categoria]||'Materiales'; if([...$('#mvCat').options].some(x=>x.value===cat)) $('#mvCat').value=cat; }
-    if(o.bs>0){ $('#mvBs').value=nf.format(o.bs); $('#mvBs').dispatchEvent(new Event('input')); } else $('#mvMonto').value=nf.format(o.usd);
+    if(o.bs>0){ $('#mvBs').value=nf.format(o.bs); mvBsCambio(); } else $('#mvMonto').value=nf.format(o.usd);
     if(o.trabajoId && [...$('#mvTrab').options].some(x=>x.value===o.trabajoId)){ $('#mvACargo').value='Empresa'; $('#mvTrab').value=o.trabajoId; comboSync($('#mvTrab')); }
     $('#mvTitle').textContent='Pagar compra a crédito'; renderMvConv();
   }
@@ -4817,7 +4907,7 @@ Responde solo con un objeto JSON:
     $('#rpQueda').innerHTML = q<-0.004 ? `<b style="color:var(--danger)">Te pasaste por ${m$(-q)}</b>` : `Repartido ${m$(s)} · queda por repartir <b>${m$(q)}</b>${q>0.004&&s>0?' (sigue pendiente para después)':''}`; }
   $('#rpList').addEventListener('input', rpQueda);
   $('#rpList').addEventListener('click', e=>{ const b=e.target.closest('[data-rptodo]'); if(!b) return; const m=movs.find(x=>x.id===rpId), d=docs.find(x=>x.id===b.dataset.rptodo); if(!m||!d) return;
-    const inp=[...document.querySelectorAll('#rpList [data-rp]')].find(i=>i.dataset.rp===d.id); inp.value=''; inp.value=nf.format(Math.max(0, Math.min(saldo(d), r2(rpUsd(m)-rpSum())))); rpQueda(); });
+    const inp=[...document.querySelectorAll('#rpList [data-rp]')].find(i=>i.dataset.rp===d.id); inp.value=''; inp.value=nf.format(Math.max(0, Math.min(saldo(d), r2(rpUsd(m)-rpSum())))); marcarCambio('#rpSheet'); rpQueda(); });
   $('#rpSave').addEventListener('click', async ()=>{ const b=$('#rpSave'); if(b.dataset.busy) return; const err=x=>{ $('#rpErr').textContent=x; };
     /* Reintento tras un intento sin respuesta: se reenvía exactamente el mismo reparto (los abonos no se suman otra vez) */
     const firma=JSON.stringify([rpId, [...document.querySelectorAll('#rpList [data-rp]')].map(i=>[i.dataset.rp, i.value])]);
@@ -4847,7 +4937,7 @@ Responde solo con un objeto JSON:
     return {ops, todo, s, q, anotar:()=>registrarCambio('movimientos', m.id, `Pago repartido${numFactura?' con la factura N° '+numFactura:''}: ${m.concepto||''}`, m$(tot), as.map(x=>`${x.d.descripcion}: ${m$(x.u)}`).join(' · '))};
   }
   document.addEventListener('click', e=>{ const b=e.target.closest('[data-repartir]'); if(b) openRepartir(b.dataset.repartir); });
-  $('#mvRepartir').addEventListener('click', ()=>{ const id=mvEditId; closeSheets(); setTimeout(()=>openRepartir(id), 60); });
+  $('#mvRepartir').addEventListener('click', ()=>{ if(!dejarHoja()) return; const id=mvEditId; closeSheets(); setTimeout(()=>openRepartir(id), 60); });
   let mvVia='directo';
   $('#mvVia').addEventListener('click', e=>{ const b=e.target.closest('[data-via]'); if(!b) return; mvVia=b.dataset.via; syncMvMoneda(); });
   ['#mvViaBs','#mvViaTasa'].forEach(x=>$(x).addEventListener('input', ()=>{ const vb=parseNum($('#mvViaBs').value)||0, vt=parseNum($('#mvViaTasa').value)||0; if(vb>0&&vt>0) $('#mvMonto').value=nf.format(r2(vb/vt)); renderMvConv(); }));
@@ -5313,7 +5403,8 @@ Responde solo con un objeto JSON:
   ['#mvCuenta','#mvOrig','#mvDest'].forEach(s=>$(s).addEventListener('change', ()=>{ delete $('#mvDestMonto').dataset.manual; syncMvMoneda(); }));
   ['#mvMonto','#mvOrigMonto'].forEach(s=>$(s).addEventListener('input', renderMvConv));
   const tasaBsBinance = f => tasaUsdt(f) || (td=>td?{tasa:td.tasa, fecha:td.fecha}:null)(tasaDelDia(f)) || (tasaSugerida()>0?{tasa:tasaSugerida(), fecha:f}:null);
-  $('#mvBs').addEventListener('input', ()=>{ const b=parseNum($('#mvBs').value)||0, tu=tasaBsBinance($('#mvFecha').value||today()); if(b>0&&tu) $('#mvMonto').value=nf.format(r2(b/tu.tasa)); syncMvCredito(); renderMvConv(); });
+  function mvBsCambio(){ const b=parseNum($('#mvBs').value)||0, tu=tasaBsBinance($('#mvFecha').value||today()); if(b>0&&tu) $('#mvMonto').value=nf.format(r2(b/tu.tasa)); syncMvCredito(); renderMvConv(); }
+  $('#mvBs').addEventListener('input', mvBsCambio);
   $('#mvTasa').addEventListener('input', ()=>{ $('#mvTasa').dataset.manual='1'; renderMvConv(); });
   $('#mvFecha').addEventListener('change', ()=>{ syncMvCredito(); renderMvConv(); });
   $('#mvDestMonto').addEventListener('input', ()=>{ $('#mvDestMonto').dataset.manual='1'; if(!$('#mvDestMonto').value.trim()) delete $('#mvDestMonto').dataset.manual; renderMvConv(); });
@@ -5473,7 +5564,7 @@ Responde solo con un objeto JSON:
     }
     btn.disabled=false; btn.textContent='Guardar movimientos marcados';
     $('#aiStat').textContent=`${ok} ${ok===1?'movimiento guardado':'movimientos guardados'}.${conErr?` ${conErr} con datos por corregir: revisa los mensajes en rojo.`:''}`;
-    if(ok && !conErr){ toast('Movimientos guardados'); $('#aiText').value=''; aiFiles=[]; renderChips(); }
+    if(ok && !conErr){ toast('Movimientos guardados'); $('#aiText').value=''; aiFiles=[]; renderChips(); hojaLimpia('#aiSheet'); }
   }
 
   /* =====================================================================
@@ -5846,7 +5937,7 @@ Responde solo con un objeto JSON:
         marcaMov?opUpd('movimientos', body.movId, {inventario:true, actualizado:new Date().toISOString()}, 'marcar el gasto como compra de inventario'):null], imTipo==='entrada'&&opGasto?'la entrada de inventario con su gasto':'el movimiento de inventario');
       soltarIntento('#imSheet');
       if(otro){ /* misma fecha, orden y persona; se limpia el ítem y la cantidad para seguir con el siguiente */
-        imContados=(imContados||0)+1; $('#imItem').value=''; $('#imCant').value=''; $('#imNota').value=''; $('#imErr').textContent=''; comboSync($('#imItem')); syncIMItem(); $('#imSheet').dataset.dirty=''; const ci=document.querySelector('.combo-in[data-for="imItem"]'); if(ci&&!ci.closest('.combo').hidden){ ci.value=''; ci.focus(); } else $('#imItem').focus();
+        imContados=(imContados||0)+1; $('#imItem').value=''; $('#imCant').value=''; $('#imNota').value=''; $('#imErr').textContent=''; comboSync($('#imItem')); syncIMItem(); hojaLimpia('#imSheet'); const ci=document.querySelector('.combo-in[data-for="imItem"]'); if(ci&&!ci.closest('.combo').hidden){ ci.value=''; ci.focus(); } else $('#imItem').focus();
         toast(`${it.nombre}: ${TIPO_INV[imTipo].toLowerCase()} ${imTipo==='conteo'?'registrado':'registrada'} (${imContados}). Sigue con el próximo ítem.`); return; }
       imContados=0; closeSheets(); toast(`${TIPO_INV[imTipo]} ${imTipo==='conteo'?'registrado':'registrada'}`);
     }catch(e){ err(errMsg(e)); } });
@@ -5998,8 +6089,8 @@ Responde solo con un objeto JSON:
   async function guardarICfg(n){ try{ await conLimite(iDb.doc('config/inventario').set(n), 0, 'los ajustes de inventario'); icfg=n; renderInv(); toast('Guardado'); }catch(e){ toast(errMsg(e)); } }
   $('#itSave').addEventListener('click', guardarItem);
   $('#itDel').addEventListener('click', eliminarItem);
-  $('#itEntrada').addEventListener('click', ()=>{ const id=itEditId; closeSheets(); openIMov('entrada', null, {itemId:id}); });
-  $('#itSalida').addEventListener('click', ()=>{ const id=itEditId; closeSheets(); openIMov('salida', null, {itemId:id}); });
+  $('#itEntrada').addEventListener('click', ()=>{ if(!dejarHoja()) return; const id=itEditId; closeSheets(); openIMov('entrada', null, {itemId:id}); });
+  $('#itSalida').addEventListener('click', ()=>{ if(!dejarHoja()) return; const id=itEditId; closeSheets(); openIMov('salida', null, {itemId:id}); });
   $('#imTipo').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b||imEditId) return; imTipo=b.dataset.t; $('#imGasto').checked=imTipo==='entrada'&&!(imPre&&imPre.movId); syncIMTipo(); renderIMConv(); });
   $('#imItem').addEventListener('change', syncIMItem);
   /* La orden de un retiro: la que tiene asignada en la asistencia de ese día quien retira; si no, la del último retiro */
@@ -6016,7 +6107,7 @@ Responde solo con un objeto JSON:
   $('#imSave').addEventListener('click', ()=>guardarIMov(false));
   $('#imOtro').addEventListener('click', ()=>guardarIMov(true));
   $('#imDel').addEventListener('click', eliminarIMov);
-  $('#imCuadrar').addEventListener('click', ()=>{ const m=invMovs.find(x=>x.id===imEditId); closeSheets(); openCuadrar(m?claveCompra(m):undefined); });
+  $('#imCuadrar').addEventListener('click', ()=>{ if(!dejarHoja()) return; const m=invMovs.find(x=>x.id===imEditId); closeSheets(); openCuadrar(m?claveCompra(m):undefined); });
   $('#cqGrupo').addEventListener('change', ()=>openCuadrar($('#cqGrupo').value));
   $('#cqGastos').addEventListener('change', ()=>{ $('#cqPagado').value=''; recalcCuadrar(); });
   $('#cqPagado').addEventListener('input', recalcCuadrar);
@@ -6104,8 +6195,8 @@ Responde solo con un objeto JSON:
   }
   $('#rcLineas').addEventListener('input', e=>{ const el=e.target, k=el.dataset.rc, i=+(el.closest('[data-rcl]')||{dataset:{}}).dataset.rcl; if(!k||isNaN(i)) return; rcLineas[i][k]=el.value; recalcCompra(); });
   $('#rcLineas').addEventListener('change', e=>{ const el=e.target, k=el.dataset.rc, i=+(el.closest('[data-rcl]')||{dataset:{}}).dataset.rcl; if(!k||isNaN(i)) return; rcLineas[i][k]=el.value; if(k==='itemId'){ pintarLineasCompra(); } recalcCompra(); });
-  $('#rcLineas').addEventListener('click', e=>{ const b=e.target.closest('[data-rcdel]'); if(!b) return; rcLineas.splice(+b.dataset.rcdel,1); pintarLineasCompra(); recalcCompra(); });
-  $('#rcAdd').addEventListener('click', ()=>{ rcLineas.push({itemId:'', nuevo:'', unidad:'und', categoria:icfg.categorias[0]||'Materiales', cant:'', precio:''}); pintarLineasCompra(); recalcCompra(); });
+  $('#rcLineas').addEventListener('click', e=>{ const b=e.target.closest('[data-rcdel]'); if(!b) return; rcLineas.splice(+b.dataset.rcdel,1); marcarCambio('#rcSheet'); pintarLineasCompra(); recalcCompra(); });
+  $('#rcAdd').addEventListener('click', ()=>{ rcLineas.push({itemId:'', nuevo:'', unidad:'und', categoria:icfg.categorias[0]||'Materiales', cant:'', precio:''}); marcarCambio('#rcSheet'); pintarLineasCompra(); recalcCompra(); });
   $('#rcMon').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; rcMon=b.dataset.m; try{ localStorage.setItem('rcMon',rcMon); }catch(_){} document.querySelectorAll('#rcMon button').forEach(x=>x.classList.toggle('on', x===b)); pintarLineasCompra(); recalcCompra(); });
   $('#rcTasa').addEventListener('input', ()=>{ $('#rcTasa').dataset.manual='1'; });
   /* La tasa sigue a la cuenta: del banco, la tasa a la que entraron esos bolívares (como en + Gasto); de Binance, la de los USDT */
@@ -6441,7 +6532,7 @@ Responde solo con un objeto JSON:
     }
     btn.disabled=false; btn.textContent='Guardar lo marcado';
     $('#aiStat').textContent=`${ok} ${ok===1?'registro guardado':'registros guardados'}.${conErr?` ${conErr} por corregir: revisa los mensajes en rojo.`:''}`;
-    if(ok && !conErr){ toast('Inventario actualizado'); $('#aiText').value=''; aiFiles=[]; renderChips(); }
+    if(ok && !conErr){ toast('Inventario actualizado'); $('#aiText').value=''; aiFiles=[]; renderChips(); hojaLimpia('#aiSheet'); }
   }
   /* =====================================================================
      RESUMEN: caja, cobranzas, nómina y órdenes en una sola pantalla, con el cruce entre ellas
