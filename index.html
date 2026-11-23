@@ -1606,7 +1606,7 @@ input,select,textarea{min-width:0;max-width:100%}
         :`<div class="empty"><b>Todavía no hay órdenes con avance</b>${canWrite?'Elige un trabajo arriba y cárgale sus actividades.':''}</div>`}
       <div style="height:20px"></div>`;
   }
-  function openAvance(id){ const d=docs.find(x=>x.id===id); if(!d) return; avId=id; avActs=JSON.parse(JSON.stringify(actsDe(d))); avBase=JSON.parse(JSON.stringify(avActs)); avDelArmed=''; avEdit=''; avCarga=''; avFallaA=null; avFallaF=null; avEditSucio=false; avF={ini:d.avInicio||'', fin:d.avCompromiso||'', sab:!!d.avSabado, dom:!!d.avDomingo, horas:num(d.avHorasDia)>0?num(d.avHorasDia):8, dias:{...(d.avDiasEsp||{})}}; avFBase=avFDoc(avF); avFOrig=avFDe(d); avHorOpen=false; renderAvSheet(); openSheet('#avSheet'); }
+  function openAvance(id){ const d=docs.find(x=>x.id===id); if(!d) return; avId=id; avActs=JSON.parse(JSON.stringify(actsDe(d))); avBase=JSON.parse(JSON.stringify(avActs)); avDelArmed=''; avEdit=''; avCarga=''; avAdicOpen=false; avFallaA=null; avFallaF=null; avEditSucio=false; avF={ini:d.avInicio||'', fin:d.avCompromiso||'', sab:!!d.avSabado, dom:!!d.avDomingo, horas:num(d.avHorasDia)>0?num(d.avHorasDia):8, dias:{...(d.avDiasEsp||{})}}; avFBase=avFDoc(avF); avFOrig=avFDe(d); avHorOpen=false; renderAvSheet(); openSheet('#avSheet'); }
   /* Lo que esta hoja sabe que está guardado: las actividades (avBase) y las fechas y el horario (avFBase, como los escribiría la hoja; avFOrig, como están en el documento).
      Cada guardado se aplica sobre lo que haya AHORA en la orden: lo que esta hoja no tocó queda como esté en la base, aunque otro teléfono lo haya cambiado */
   let avBase=[], avFBase={}, avFOrig={};
@@ -1641,7 +1641,7 @@ input,select,textarea{min-width:0;max-width:100%}
   const avSinGuardar = a => !!avFallaA && !avIgual(a, actsDe(docs.find(x=>x.id===avId)).find(g=>g.id===a.id));
   const avAviso = (f, tipo, que) => f && f.choque ? `<div class="avfalla" role="alert"><b>Este registro cambió desde otro teléfono</b> ${esc(f.msg)}<div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" data-avreint="recargar">Recargar</button><button type="button" class="btn sec" data-avreint="${tipo}" data-forzar="1">Guardar igual</button></div></div>` : f ? `<div class="avfalla" role="alert"><b>${que}</b> ${esc(f.msg)} En la base sigue como estaba antes.<div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" data-avreint="${tipo}">Reintentar</button></div></div>` : '';
   /* Lo escrito en la hoja que todavía no se ha mandado a guardar (la lista por agregar, un avance a medio cargar, un día con horario distinto) */
-  const avBorrador = () => !!String(($('#avTxt')||{}).value||'').trim() || (!!avCarga && avEditSucio) || !!String(($('#avDiaH')||{}).value||'').trim();
+  const avBorrador = () => !!String(($('#avTxt')||{}).value||'').trim() || (!!avCarga && avEditSucio) || !!String(($('#avDiaH')||{}).value||'').trim() || !!String(($('#avAdN')||{}).value||'').trim();
   function avLimpiarMarca(){ if(!avFallaA && !avFallaF && !avEnVuelo && !avBorrador()) hojaLimpia('#avSheet'); }
   /* Redibuja la hoja sin perder lo que se esté escribiendo en el avance abierto */
   function avRepintar(){ const q=s=>{ const r=avCarga&&document.querySelector(`[data-avrow="${avCarga}"]`); return r&&r.querySelector(s); };
@@ -1650,7 +1650,7 @@ input,select,textarea{min-width:0;max-width:100%}
     document.querySelectorAll(`[data-avrow="${avCarga}"] [data-avdetf]`).forEach(x=>x.hidden=!v.d); }
   function renderAvSheet(){
     const d=docs.find(x=>x.id===avId); if(!d) return;
-    const txt=($('#avTxt')||{}).value||'', adicChk=!!($('#avAdic')||{}).checked;
+    const txt=($('#avTxt')||{}).value||'', adicChk=!!($('#avAdic')||{}).checked, adN=($('#avAdN')||{}).value||'', adH=($('#avAdH')||{}).value||'';
     const base=avActs.filter(a=>!a.adicional), adic=avActs.filter(a=>a.adicional);
     const num0={}; base.forEach((a,i)=>num0[a.id]=i+1); adic.forEach((a,i)=>num0[a.id]=i+1);
     const wTot=sum(avActs,pesoAct), conPesos=avActs.some(a=>Math.abs(pesoAct(a)-1)>0.001);
@@ -1700,6 +1700,9 @@ input,select,textarea{min-width:0;max-width:100%}
         <div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" id="avCurvaBtn">Compartir curva (imagen)</button></div>`:''}
       ${base.length?`<div class="sech" style="font-size:16px">Actividades de la ODS · ${base.length}</div>${grupos(base)}`:''}
       ${adic.length?`<div class="sech" style="font-size:16px">Trabajos adicionales · ${adic.length}</div><div class="tip" style="border:0;margin:0">Se listan aparte y también suman al avance total.</div>${grupos(adic)}`:''}
+      ${canWrite?`<div class="row-btns" style="margin-top:12px"><button type="button" class="btn sec" id="avAdicBtn" aria-expanded="${avAdicOpen}">+ Trabajo adicional</button></div>${avAdicOpen?`<div class="grid" style="margin-top:8px"><label class="f full">Trabajo adicional (fuera de la ODS original)<input id="avAdN" maxlength="160" placeholder="Ej.: Fabricar e instalar orejas de seguro" value="${esc(adN)}"></label><label class="f">Horas de cuadrilla<input id="avAdH" inputmode="decimal" placeholder="Ej.: 6" value="${esc(adH)}"></label></div>
+        <div class="tip" style="border:0;margin:6px 0 0">Las horas de cuadrilla son su peso en el avance total. Entra en 0 % y suma a la misma ODS.</div>
+        <div class="row-btns" style="margin-top:8px"><button type="button" class="btn pri" id="avAdicOk">Agregar adicional</button><button type="button" class="btn sec" id="avAdicNo">Cancelar</button></div><div class="err" id="avAdErr"></div>`:''}`:''}
       ${!avActs.length?'<div class="empty" style="margin-top:14px"><b>Esta orden no tiene actividades</b>Escríbelas o pega la lista aquí abajo.</div>':''}
       ${canWrite?`<div class="sech" style="font-size:16px">Agregar actividades</div>
         <label class="f full">Una por línea (puedes pegar la lista completa de la ODS)<textarea id="avTxt" rows="3" placeholder="Reemplazar tres bocas de visita&#10;Alinear dos motores propulsores">${esc(txt)}</textarea></label>
@@ -1744,7 +1747,7 @@ input,select,textarea{min-width:0;max-width:100%}
     return L.join('\n');
   }
   /* ---------- curva de avance: planificado (recta por días hábiles entre inicio y compromiso) contra real (lo guardado cada día) ---------- */
-  let avF={ini:'',fin:'',sab:false,dom:false,horas:8,dias:{}}, avHorOpen=false, avCurvaOn=false, avCurvaFile=null, avCurvaKey='';
+  let avF={ini:'',fin:'',sab:false,dom:false,horas:8,dias:{}}, avHorOpen=false, avAdicOpen=false, avCurvaOn=false, avCurvaFile=null, avCurvaKey='';
   const avD = s => { const [y,m,d]=String(s).split('-').map(Number); return new Date(y,(m||1)-1,d||1); };
   const avIso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const avMas = (s,n) => { const d=avD(s); d.setDate(d.getDate()+n); return avIso(d); };
@@ -1858,6 +1861,14 @@ input,select,textarea{min-width:0;max-width:100%}
       if(pctAct(a)!==p) a.pct=p; if(det){ if(!a.detenida||!a.detenidaDesde) a.detenidaDesde=today(); a.detenida=true; a.freno=fr; a.porque=pq; } else if(a.detenida||a.freno||a.porque||a.detenidaDesde){ a.detenida=false; a.freno=''; a.porque=''; a.detenidaDesde=''; }   /* confirmar lo mismo no escribe campos que nadie tocó */
       avCarga=''; avEditSucio=false; marcarCambio('#avSheet'); renderAvSheet(); guardarAv(`Avance guardado: ${a.nombre.length>40?a.nombre.slice(0,39)+'…':a.nombre}, ${avPct(p)}`, a.id); return; }
     const del=t.closest('[data-avdel]'); if(del){ const id=del.dataset.avdel; if(avDelArmed!==id){ avDelArmed=id; avEdit=id; avRepintar(); return; } avActs=avActs.filter(x=>x.id!==id); avDelArmed=''; avEdit=''; if(avCarga===id){ avCarga=''; avEditSucio=false; } marcarCambio('#avSheet'); avRepintar(); guardarAv('Actividad eliminada'); return; }
+    if(t.closest('#avAdicBtn')){ avAdicOpen=!avAdicOpen; avRepintar(); if(avAdicOpen){ try{ $('#avAdN').focus(); }catch(_){} } else avLimpiarMarca(); return; }
+    if(t.closest('#avAdicNo')){ avAdicOpen=false; { const x=$('#avAdN'), y=$('#avAdH'); if(x) x.value=''; if(y) y.value=''; } avRepintar(); avLimpiarMarca(); return; }
+    if(t.closest('#avAdicOk')){ const n=$('#avAdN').value.trim().replace(/\s+/g,' ').replace(/[.;,:]+$/,'').slice(0,160), raw=$('#avAdH').value.trim(), h=parseNum(raw), er=$('#avAdErr'), igual=x=>String(x||'').trim().toLowerCase();
+      if(!n){ er.textContent='Escribe el trabajo adicional.'; $('#avAdN').focus(); return; }
+      if(!raw || isNaN(h) || h<=0 || h>10000){ er.textContent = !raw ? 'Pon las horas de cuadrilla que lleva: es su peso en el avance.' : 'Las horas de cuadrilla van en número, mayor que cero.'; $('#avAdH').focus(); return; }
+      if(avActs.some(a=>igual(a.nombre)===igual(n))){ er.textContent='Ya hay una actividad con ese nombre en esta orden.'; $('#avAdN').focus(); return; }
+      avActs.push({id:'a'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), nombre:n, pct:0, peso:Math.max(0.1, Math.round(h*10)/10), adicional:true});
+      avAdicOpen=false; $('#avAdN').value=''; $('#avAdH').value=''; marcarCambio('#avSheet'); avRepintar(); guardarAv('Trabajo adicional agregado'); return; }
     if(t.closest('#avAdd')){ const ad=$('#avAdic').checked, ls=$('#avTxt').value.split(/\n+/).map(x=>x.replace(/^\s*(?:\d+\s*[.)\-:](?!\d)|[•\-*·])\s*/,'').trim().replace(/\s+/g,' ').replace(/[.;,:]+$/,'').slice(0,160)).filter(Boolean);
       if(!ls.length){ $('#avErr').textContent='Escribe al menos una actividad.'; return; }
       ls.forEach((n,i)=>avActs.push({id:'a'+Date.now().toString(36)+i.toString(36)+Math.random().toString(36).slice(2,5), nombre:n, pct:0, peso:1, adicional:ad}));
@@ -1918,7 +1929,7 @@ input,select,textarea{min-width:0;max-width:100%}
   /* =====================================================================
      GUARDADO SEGURO: todo o nada, identificadores estables por intento, cola del teléfono y causa real de cada error
      ===================================================================== */
-  const APP_VERSION='147';
+  const APP_VERSION='148';
   let dbRaiz=null;                                       /* la base de datos (se asigna al arrancar) */
   const cacheActiva = () => !!window.__persistencia;     /* versión independiente con la caché del teléfono activa: lo escrito queda en cola y sube solo */
   const sinRed = () => typeof navigator!=='undefined' && navigator.onLine===false;
