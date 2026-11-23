@@ -24,7 +24,7 @@
 #login button{border:0;background:#0D5C63;color:#fff;border-radius:12px;padding:13px 18px;font-weight:700;font-size:15px;width:100%}
 </style>
 </head>
-<body><div style="background:#B26A00;color:#fff;font:700 12px/1.3 system-ui,sans-serif;text-align:center;padding:4px 8px">VERSIÓN DE PRUEBA · etapa 1 completa · trabaja con tus datos reales</div>
+<body><div style="background:#B26A00;color:#fff;font:700 12px/1.3 system-ui,sans-serif;text-align:center;padding:4px 8px">VERSIÓN DE PRUEBA · etapas 1 y 2 · trabaja con tus datos reales</div>
 <div id="login" class="scrim-login">
   <div class="box">
     <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:#5A6A75">Workproca · Trabajos Profesionales C.A.</div>
@@ -106,14 +106,16 @@ window.__standalone = true;
   try { fs.enablePersistence({ synchronizeTabs: true }).then(() => { window.__persistencia = true; avisarRed(); }).catch(() => {}); } catch (_) {}
   /* Cada escritura cuenta como «cambio por subir» hasta que el servidor la confirma (o la rechaza) */
   const contar = p => { window.__pendientes++; avisarRed(); const fin = () => { window.__pendientes = Math.max(0, window.__pendientes - 1); avisarRed(); }; p.then(fin, fin); return p; };
-  const wrapDoc = d => ({ id: d.id, set: (o, opt) => contar(opt ? d.set(limpiar(o), opt) : d.set(limpiar(o))), update: o => contar(d.update(limpiar(o))), delete: () => contar(d.delete()), onSnapshot: (f, e) => d.onSnapshot(f, e), get: () => d.get() });
+  /* Editar solo lo que cambió: la app manda `update` con rutas con punto («registros.<trabajador>») y una marca para borrar un campo */
+  const conBorrados = o => { Object.keys(o).forEach(k => { const v = o[k]; if (v && typeof v === 'object' && v.wkBorrarCampo === true) o[k] = firebase.firestore.FieldValue.delete(); }); return o; };
+  const wrapDoc = d => ({ id: d.id, set: (o, opt) => contar(opt ? d.set(limpiar(o), opt) : d.set(limpiar(o))), update: o => contar(d.update(conBorrados(limpiar(o)))), delete: () => contar(d.delete()), onSnapshot: (f, e) => d.onSnapshot(f, e), get: () => d.get() });
   const wrapColl = c => ({ doc: id => wrapDoc(id ? c.doc(id) : c.doc()), onSnapshot: (f, e) => c.onSnapshot(f, e) });
   /* Lote de Firestore: varias escrituras que entran todas o no entra ninguna (también cuando quedan en cola sin señal) */
   const lote = ops => { const b = fs.batch(); (ops || []).forEach(o => { const r = fs.collection(o.col).doc(o.id);
       if (o.op === 'set') { if (o.merge) b.set(r, limpiar(o.datos || {}), { merge: true }); else b.set(r, limpiar(o.datos || {})); }
-      else if (o.op === 'update') b.update(r, limpiar(o.datos || {})); else b.delete(r); });
+      else if (o.op === 'update') b.update(r, conBorrados(limpiar(o.datos || {}))); else b.delete(r); });
     return contar(b.commit()); };
-  const adapter = { collection: c => wrapColl(fs.collection(c)), doc: p => wrapDoc(fs.doc(p)), lote,
+  const adapter = { collection: c => wrapColl(fs.collection(c)), doc: p => wrapDoc(fs.doc(p)), lote, rutas: true,
     /* Para comprobar, al volver a abrir la app, lo que quedó en cola en una sesión anterior */
     esperarSubida: () => fs.waitForPendingWrites(),
     enServidor: (col, id) => fs.collection(col).doc(id).get({ source: 'server' }).then(s => ({ existe: s.exists, datos: s.exists ? s.data() : null })) };
@@ -570,6 +572,7 @@ select.combo-oculto{display:none}
   <div class="wrap">
     <div class="netbar" id="netBar" role="status" hidden></div>
     <div class="rechazo" id="avRech" role="alert" hidden></div>
+    <div class="rechazo" id="avCfg" role="alert" hidden></div>
     <nav class="modtabs" id="modTabs" role="tablist" aria-label="Módulos">
       <button type="button" role="tab" data-m="cob" aria-selected="true">Cobranzas</button>
       <button type="button" role="tab" data-m="av" aria-selected="false">Avance</button>
@@ -1401,7 +1404,7 @@ select.combo-oculto{display:none}
     const btn=$('#btnNewUni'); btn.disabled=true;
     try{
       const nueva={cliente:cli, unidad:nombre};
-      await conLimite(uniRef.set({lista:[...unidadesExtra.filter(u=>!(u.cliente===cli&&norm(u.unidad)===norm(nombre))), nueva]}), 0, 'la unidad nueva');
+      await escribirCfg('unidades', {lista:[...unidadesExtra.filter(u=>!(u.cliente===cli&&norm(u.unidad)===norm(nombre))), nueva]}, 'la unidad nueva');
       unidadesExtra=[...unidadesExtra, nueva];
       fillUnidadSelect(nombre); $('#newUni').hidden=true; toast(`Unidad «${nombre}» agregada a ${cli}`);
     }catch(err){ $('#newUniMsg').textContent=errMsg(err); }
@@ -1435,7 +1438,7 @@ select.combo-oculto{display:none}
     if(!cfgRef) return;
     const btn=$('#btnNewCli'); btn.disabled=true;
     try{
-      await conLimite(cfgRef.set({lista:[...clientesExtra.filter(c=>norm(c)!==norm(nombre)), nombre]}), 0, 'el cliente nuevo');
+      await escribirCfg('clientes', {lista:[...clientesExtra.filter(c=>norm(c)!==norm(nombre)), nombre]}, 'el cliente nuevo');
       if(!clientesExtra.includes(nombre)) clientesExtra=[...clientesExtra, nombre];
       fillClienteSelect(nombre); $('#newCli').hidden=true; renderClientes(); toast(`Cliente «${nombre}» agregado`);
     }catch(err){ $('#newCliMsg').textContent=errMsg(err); }
@@ -1579,7 +1582,27 @@ select.combo-oculto{display:none}
         :`<div class="empty"><b>Todavía no hay órdenes con avance</b>${canWrite?'Elige un trabajo arriba y cárgale sus actividades.':''}</div>`}
       <div style="height:20px"></div>`;
   }
-  function openAvance(id){ const d=docs.find(x=>x.id===id); if(!d) return; avId=id; avActs=JSON.parse(JSON.stringify(actsDe(d))); avDelArmed=''; avEdit=''; avCarga=''; avFallaA=null; avFallaF=null; avEditSucio=false; avF={ini:d.avInicio||'', fin:d.avCompromiso||'', sab:!!d.avSabado, dom:!!d.avDomingo, horas:num(d.avHorasDia)>0?num(d.avHorasDia):8, dias:{...(d.avDiasEsp||{})}}; avHorOpen=false; renderAvSheet(); openSheet('#avSheet'); }
+  function openAvance(id){ const d=docs.find(x=>x.id===id); if(!d) return; avId=id; avActs=JSON.parse(JSON.stringify(actsDe(d))); avBase=JSON.parse(JSON.stringify(avActs)); avDelArmed=''; avEdit=''; avCarga=''; avFallaA=null; avFallaF=null; avEditSucio=false; avF={ini:d.avInicio||'', fin:d.avCompromiso||'', sab:!!d.avSabado, dom:!!d.avDomingo, horas:num(d.avHorasDia)>0?num(d.avHorasDia):8, dias:{...(d.avDiasEsp||{})}}; avFBase=avFDoc(avF); avFOrig=avFDe(d); avHorOpen=false; renderAvSheet(); openSheet('#avSheet'); }
+  /* Lo que esta hoja sabe que está guardado: las actividades (avBase) y las fechas y el horario (avFBase, como los escribiría la hoja; avFOrig, como están en el documento).
+     Cada guardado se aplica sobre lo que haya AHORA en la orden: lo que esta hoja no tocó queda como esté en la base, aunque otro teléfono lo haya cambiado */
+  let avBase=[], avFBase={}, avFOrig={};
+  const AVF_CAMPOS=['avInicio','avCompromiso','avSabado','avDomingo','avHorasDia','avDiasEsp'];
+  const avFDoc = f => ({avInicio:f.ini, avCompromiso:f.fin, avSabado:!!f.sab, avDomingo:!!f.dom, avHorasDia:avJornada(f), avDiasEsp:{...(f.dias||{})}});
+  const avFDe = d => Object.fromEntries(AVF_CAMPOS.map(k=>[k, copia((d||{})[k])]));
+  function fusionarActs(base, act, mias){ const B=new Map(base.map(a=>[a.id,a])), M=new Map(mias.map(a=>[a.id,a])), A=new Set(act.map(a=>a.id)), res=[], choques=[];
+    act.forEach(a=>{ const b=B.get(a.id), m=M.get(a.id); if(!b){ res.push(m||a); return; }   /* la agregaron por fuera: se conserva */
+      const fuera=!igual(a,b);
+      if(!m){ if(fuera) choques.push(a.id); return; }                                        /* la quité aquí */
+      if(igual(m,b)){ res.push(a); return; }                                                  /* no la toqué: vale lo que haya en la base */
+      if(fuera && !igual(a,m)) choques.push(a.id); res.push(m); });
+    mias.forEach(m=>{ if(A.has(m.id)) return; const b=B.get(m.id); if(!b){ res.push(m); return; } if(!igual(m,b)){ choques.push(m.id); res.push(m); } });   /* si la eliminaron por fuera, solo vuelve cuando aquí se cambió y se elige guardar igual */
+    return {lista:res, choques}; }
+  const errChoque = (ids, msg) => Object.assign(new Error(msg), {choque:ids||[], wkMsg:msg});
+  /* Con la hoja abierta y nada pendiente, lo que llega de la base se refleja en pantalla (el avance que cargó otro teléfono) */
+  function avRefrescar(){ if(!avId || $('#avSheet').hidden || avEnVuelo || avFallaA || avFallaF) return; const d=docs.find(x=>x.id===avId); if(!d) return; let pintar=false;
+    if(igual(avActs, avBase) && !igual(actsDe(d), avBase)){ avActs=JSON.parse(JSON.stringify(actsDe(d))); avBase=JSON.parse(JSON.stringify(avActs)); if(avCarga && !avActs.some(a=>a.id===avCarga)){ avCarga=''; avEditSucio=false; } pintar=true; }
+    if(igual(avFDoc(avF), avFBase) && !igual(avFDe(d), avFOrig)){ avF={ini:d.avInicio||'', fin:d.avCompromiso||'', sab:!!d.avSabado, dom:!!d.avDomingo, horas:num(d.avHorasDia)>0?num(d.avHorasDia):8, dias:{...(d.avDiasEsp||{})}}; avFBase=avFDoc(avF); avFOrig=avFDe(d); pintar=true; }
+    if(pintar) avRepintar(); }
   function pintarTotAv(){ const t=avanceActs(avActs), a=$('#avTot'), b=$('#avTotBar'); if(a) a.textContent=avPct(t); if(b) b.firstElementChild.style.width=t+'%'; pintarCurva(); }
   /* Estado de una actividad: terminada, detenida, en ejecución o por iniciar */
   const FRENOS=['Falta de material','Falta de equipo o herramienta','Falta de personal','Espera por el cliente','Espera por otra actividad','Clima','Otro'];
@@ -1592,7 +1615,7 @@ select.combo-oculto{display:none}
   /* Lo que de verdad está guardado de una actividad, para decir cuáles siguen «sin guardar» después de una falla */
   const avIgual = (a,g) => !!g && pctAct(a)===pctAct(g) && a.nombre===g.nombre && pesoAct(a)===pesoAct(g) && !!a.adicional===!!g.adicional && !!a.detenida===!!g.detenida && (a.freno||'')===(g.freno||'') && (a.porque||'')===(g.porque||'');
   const avSinGuardar = a => !!avFallaA && !avIgual(a, actsDe(docs.find(x=>x.id===avId)).find(g=>g.id===a.id));
-  const avAviso = (f, tipo, que) => f ? `<div class="avfalla" role="alert"><b>${que}</b> ${esc(f.msg)} En la base sigue como estaba antes.<div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" data-avreint="${tipo}">Reintentar</button></div></div>` : '';
+  const avAviso = (f, tipo, que) => f && f.choque ? `<div class="avfalla" role="alert"><b>Este registro cambió desde otro teléfono</b> ${esc(f.msg)}<div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" data-avreint="recargar">Recargar</button><button type="button" class="btn sec" data-avreint="${tipo}" data-forzar="1">Guardar igual</button></div></div>` : f ? `<div class="avfalla" role="alert"><b>${que}</b> ${esc(f.msg)} En la base sigue como estaba antes.<div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" data-avreint="${tipo}">Reintentar</button></div></div>` : '';
   /* Lo escrito en la hoja que todavía no se ha mandado a guardar (la lista por agregar, un avance a medio cargar, un día con horario distinto) */
   const avBorrador = () => !!String(($('#avTxt')||{}).value||'').trim() || (!!avCarga && avEditSucio) || !!String(($('#avDiaH')||{}).value||'').trim();
   function avLimpiarMarca(){ if(!avFallaA && !avFallaF && !avEnVuelo && !avBorrador()) hojaLimpia('#avSheet'); }
@@ -1665,13 +1688,22 @@ select.combo-oculto{display:none}
   /* Guarda las actividades en el trabajo, una escritura a la vez, y anota el avance total del día (sirve después para ver el ritmo) */
   /* ok: aviso breve cuando se confirma el guardado. donde: la actividad que se estaba guardando (el aviso de falla va en su renglón; vacío = arriba, junto al total).
      Si falla, lo cargado se queda en pantalla marcado «sin guardar», con el aviso fijo y «Reintentar», y la hoja no cierra sin avisar. */
-  function guardarAv(ok, donde){ if(!coll||!canWrite||!avId) return; const id=avId, acts=JSON.parse(JSON.stringify(avActs)); avEnVuelo++;
-    avCola=avCola.then(()=>{ const d=docs.find(x=>x.id===id)||{}; const hist={...(d.avanceHist||{}), [today()]:Math.round(avanceActs(acts)*10)/10}, snap={...(d.avanceSnap||{}), [today()]:Object.fromEntries(acts.map(a=>[a.id, pctAct(a)]))};
-      return conLimite(coll.doc(id).update({actividades:acts, avanceHist:hist, avanceSnap:snap, actualizado:new Date().toISOString()}), 0, 'el avance de una orden'); })
+  function guardarAv(ok, donde, forzar){ if(!coll||!canWrite||!avId) return; const id=avId, mias=JSON.parse(JSON.stringify(avActs)); let acts=mias; avEnVuelo++;
+    avCola=avCola.then(()=>{ const d=docs.find(x=>x.id===id); if(!d) throw Object.assign(new Error('no existe'), {wkMsg:'Esta orden ya no existe (la eliminaron desde otro teléfono).'});
+      const F=fusionarActs(avBase, actsDe(d), mias); if(F.choques.length && !forzar) throw errChoque(F.choques, `${F.choques.length===1?'Esta actividad también la cambiaron':'Estas actividades también las cambiaron'} desde otro teléfono mientras tenías la hoja abierta. «Recargar» muestra cómo quedó; «Guardar igual» deja lo que cargaste aquí.`);
+      acts=JSON.parse(JSON.stringify(F.lista)); const hoy=today();
+      if(igual(mias, avBase) && igual(acts, actsDe(d))) return;   /* no se cambió nada: no se escribe nada */
+      const pHoy=Math.round(avanceActs(acts)*10)/10, sHoy=Object.fromEntries(acts.map(a=>[a.id, pctAct(a)])), ah=new Date().toISOString();
+      /* Una persona invitada sigue enviando, como antes, una solicitud de cambio solo con los campos del avance (el dueño la aprueba) */
+      return escribirJuntos([esRegistro()&&window.__standalone ? opUpd('facturas', id, {actividades:acts, avanceHist:{...(d.avanceHist||{}), [hoy]:pHoy}, avanceSnap:{...(d.avanceSnap||{}), [hoy]:sHoy}, actualizado:ah}, 'el avance de una orden')
+        : opEditar('facturas', id, {actividades:acts, ['avanceHist.'+hoy]:pHoy, ['avanceSnap.'+hoy]:sHoy, actualizado:ah}, 'el avance de una orden')], 'el avance de una orden'); })
       .then(()=>{ avEnVuelo--; if(avId!==id) return; const d=docs.find(x=>x.id===id); if(d && JSON.stringify(actsDe(d))!==JSON.stringify(acts)) d.actividades=JSON.parse(JSON.stringify(acts));   /* lo guardado, aunque el aviso de la base todavía no haya llegado */
-          if(avFallaA && !avEnVuelo){ avFallaA=null; if(!$('#avSheet').hidden) avRepintar(); } avLimpiarMarca(); if(ok) toast(ok); },
+          /* La hoja queda con lo guardado (incluye lo que entró desde otro teléfono), sin perder lo que se haya tocado mientras guardaba */
+          { const Mi=new Map(mias.map(a=>[a.id,a])), Ah=new Map(avActs.map(a=>[a.id,a])); const nv=acts.filter(g=>Ah.has(g.id)||!Mi.has(g.id)).map(g=>{ const h=Ah.get(g.id), m=Mi.get(g.id); return h&&m&&!igual(h,m)?h:JSON.parse(JSON.stringify(g)); });
+            avActs.forEach(h=>{ if(!Mi.has(h.id) && !acts.some(g=>g.id===h.id)) nv.push(h); }); avActs=nv; avBase=JSON.parse(JSON.stringify(acts)); }
+          const repintar=!igual(acts, mias) || (avFallaA && !avEnVuelo); if(avFallaA && !avEnVuelo) avFallaA=null; if(repintar && !$('#avSheet').hidden) avRepintar(); avLimpiarMarca(); if(ok) toast(ok); },
         e=>{ avEnVuelo--; if(avId!==id || $('#avSheet').hidden){ toast('No se guardó el avance: '+errMsg(e)); return; }
-          avFallaA={donde:donde||'', msg:errMsg(e)}; marcarCambio('#avSheet'); avRepintar(); const x=document.querySelector('#avSheet .avfalla'); if(x&&x.scrollIntoView) x.scrollIntoView({block:'center'}); toast('No se guardó el avance: mira el aviso en rojo'); }); }
+          avFallaA={donde:(e&&e.choque&&e.choque[0])||donde||'', msg:errMsg(e), choque:!!(e&&e.choque)}; marcarCambio('#avSheet'); avRepintar(); const x=document.querySelector('#avSheet .avfalla'); if(x&&x.scrollIntoView) x.scrollIntoView({block:'center'}); toast(e&&e.choque?'Este registro cambió desde otro teléfono: mira el aviso en rojo':'No se guardó el avance: mira el aviso en rojo'); }); }
   function buildAvance(d, acts){
     const base=acts.filter(a=>!a.adicional), adic=acts.filter(a=>a.adicional), L=['*WORKPROCA, Trabajos Profesionales C.A.*', `*Reporte de avance · ${d.descripcion||''}*`];
     const m=[d.cliente, d.unidad].filter(Boolean).join(' · '); if(m) L.push(m);
@@ -1762,11 +1794,16 @@ select.combo-oculto{display:none}
       if(file && navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file]}); return; } }
     catch(e){ if(e&&e.name==='AbortError') return; }
     if(await guardarArchivo(f.nombre, f.blob)) toast('Curva guardada como imagen'); }
-  function guardarAvF(ok){ if(!coll||!canWrite||!avId) return; const id=avId, f={...avF}; avEnVuelo++;
-    avCola=avCola.then(()=>conLimite(coll.doc(id).update({avInicio:f.ini, avCompromiso:f.fin, avSabado:!!f.sab, avDomingo:!!f.dom, avHorasDia:avJornada(f), avDiasEsp:{...(f.dias||{})}, actualizado:new Date().toISOString()}), 0, 'las fechas y el horario de una orden'))
-      .then(()=>{ avEnVuelo--; if(avId!==id) return; if(avFallaF && !avEnVuelo){ avFallaF=null; if(!$('#avSheet').hidden) avRepintar(); } avLimpiarMarca(); if(ok) toast(ok); },
+  function guardarAvF(ok, forzar){ if(!coll||!canWrite||!avId) return; const id=avId, nuevo=avFDoc(avF); let escritos={}; avEnVuelo++;
+    avCola=avCola.then(()=>{ const d=docs.find(x=>x.id===id); if(!d) throw Object.assign(new Error('no existe'), {wkMsg:'Esta orden ya no existe (la eliminaron desde otro teléfono).'});
+        /* Solo se escribe lo que cambió aquí (una fecha, el horario…): lo demás queda como esté en la base */
+        const cambios=cambiosDe(avFBase, nuevo), chq=choquesDe(cambios, avFOrig, d);
+        if(chq.length && !forzar) throw errChoque(chq, detalleChoque(chq, {avInicio:'fecha de inicio', avCompromiso:'fecha de compromiso', avSabado:'trabaja sábados', avDomingo:'trabaja domingos', avHorasDia:'horas por día', avDiasEsp:'días con horario distinto'}, d).trim()+' «Recargar» muestra cómo quedó; «Guardar igual» deja lo que pusiste aquí.');
+        if(!Object.keys(cambios).length) return; escritos=copia(cambios);
+        return escribirJuntos([esRegistro()&&window.__standalone ? opUpd('facturas', id, {...nuevo, actualizado:new Date().toISOString()}, 'las fechas y el horario de una orden') : opEditar('facturas', id, {...cambios, actualizado:new Date().toISOString()}, 'las fechas y el horario de una orden')], 'las fechas y el horario de una orden'); })
+      .then(()=>{ avEnVuelo--; if(avId!==id) return; avFBase=nuevo; avFOrig={...avFOrig, ...escritos}; if(avFallaF && !avEnVuelo){ avFallaF=null; if(!$('#avSheet').hidden) avRepintar(); } avLimpiarMarca(); if(ok) toast(ok); },
         e=>{ avEnVuelo--; if(avId!==id || $('#avSheet').hidden){ toast('No se guardaron las fechas ni el horario: '+errMsg(e)); return; }
-          avFallaF={msg:errMsg(e)}; marcarCambio('#avSheet'); avRepintar(); const x=document.querySelector('#avSheet .avfalla'); if(x&&x.scrollIntoView) x.scrollIntoView({block:'center'}); toast('No se guardaron las fechas ni el horario: mira el aviso en rojo'); }); }
+          avFallaF={msg:errMsg(e), choque:!!(e&&e.choque)}; marcarCambio('#avSheet'); avRepintar(); const x=document.querySelector('#avSheet .avfalla'); if(x&&x.scrollIntoView) x.scrollIntoView({block:'center'}); toast('No se guardaron las fechas ni el horario: mira el aviso en rojo'); }); }
   document.addEventListener('click', e=>{ if(e.target.closest('#btnCurva')||e.target.closest('#avCurvaBtn')) compartirCurva(); });
   $('#avBody').addEventListener('toggle', e=>{ if(e.target.id==='avHor') avHorOpen=e.target.open; }, true);
   $('#avMain').addEventListener('click', e=>{ const b=e.target.closest('[data-avopen]'); if(b) openAvance(b.dataset.avopen); });
@@ -1784,14 +1821,14 @@ select.combo-oculto{display:none}
   $('#avBody').addEventListener('change', e=>{ if(e.target.closest('.avedit')) avEditSucio=true; }, true);
   $('#avBody').addEventListener('toggle', e=>{ const d=e.target; if(d.dataset&&d.dataset.avdet){ if(d.open) avEdit=d.dataset.avdet; else if(avEdit===d.dataset.avdet) avEdit=''; } }, true);
   $('#avBody').addEventListener('click', e=>{ const t=e.target;
-    { const rt=t.closest('[data-avreint]'); if(rt){ rt.disabled=true; rt.textContent='Guardando…'; if(rt.dataset.avreint==='fechas') guardarAvF('Fechas y horario guardados'); else guardarAv('Avance guardado', avFallaA?avFallaA.donde:''); return; } }
+    { const rt=t.closest('[data-avreint]'); if(rt){ rt.disabled=true; rt.textContent='Guardando…'; if(rt.dataset.avreint==='recargar'){ openAvance(avId); return; } const fz=!!rt.dataset.forzar; if(rt.dataset.avreint==='fechas') guardarAvF('Fechas y horario guardados', fz); else guardarAv('Avance guardado', avFallaA?avFallaA.donde:'', fz); return; } }
     const cg=t.closest('[data-avcarga]'); if(cg){ avCarga=cg.dataset.avcarga; avEditSucio=false; renderAvSheet(); const i=document.querySelector(`[data-avp="${avCarga}"]`); if(i){ i.focus(); try{ i.select(); }catch(_){} } return; }
     if(t.closest('[data-avcancel]')){ avCarga=''; avEditSucio=false; renderAvSheet(); avLimpiarMarca(); return; }
     const ok=t.closest('[data-avok]'); if(ok){ const a=avActs.find(x=>x.id===ok.dataset.avok), row=ok.closest('[data-avrow]'); if(!a||!row) return;
       const v=parseNum(row.querySelector('[data-avp]').value), p=Math.round(Math.max(0,Math.min(100,isNaN(v)?0:v))*10)/10, det=row.querySelector('[data-avdetc]').checked && p<100;
       const fr=row.querySelector('[data-avfreno]').value, pq=row.querySelector('[data-avporque]').value.trim().replace(/\s+/g,' ').slice(0,200);
       if(det && !fr && !pq){ row.querySelector('[data-averr]').textContent='Di qué la está frenando o escribe por qué está detenida.'; row.querySelector('[data-avfreno]').focus(); return; }
-      a.pct=p; if(det){ if(!a.detenida||!a.detenidaDesde) a.detenidaDesde=today(); a.detenida=true; a.freno=fr; a.porque=pq; } else { a.detenida=false; a.freno=''; a.porque=''; a.detenidaDesde=''; }
+      if(pctAct(a)!==p) a.pct=p; if(det){ if(!a.detenida||!a.detenidaDesde) a.detenidaDesde=today(); a.detenida=true; a.freno=fr; a.porque=pq; } else if(a.detenida||a.freno||a.porque||a.detenidaDesde){ a.detenida=false; a.freno=''; a.porque=''; a.detenidaDesde=''; }   /* confirmar lo mismo no escribe campos que nadie tocó */
       avCarga=''; avEditSucio=false; marcarCambio('#avSheet'); renderAvSheet(); guardarAv(`Avance guardado: ${a.nombre.length>40?a.nombre.slice(0,39)+'…':a.nombre}, ${avPct(p)}`, a.id); return; }
     const del=t.closest('[data-avdel]'); if(del){ const id=del.dataset.avdel; if(avDelArmed!==id){ avDelArmed=id; avEdit=id; avRepintar(); return; } avActs=avActs.filter(x=>x.id!==id); avDelArmed=''; avEdit=''; if(avCarga===id){ avCarga=''; avEditSucio=false; } marcarCambio('#avSheet'); avRepintar(); guardarAv('Actividad eliminada'); return; }
     if(t.closest('#avAdd')){ const ad=$('#avAdic').checked, ls=$('#avTxt').value.split(/\n+/).map(x=>x.replace(/^\s*(?:\d+\s*[.)\-:]|[•\-*·])\s*/,'').trim().replace(/\s+/g,' ').replace(/[.;,:]+$/,'').slice(0,160)).filter(Boolean);
@@ -1821,7 +1858,7 @@ select.combo-oculto{display:none}
   function marcarCambio(h){ const sh=typeof h==='string'?$(h):h; if(sh && !abriendoHoja && !HOJAS_LECTURA.includes(sh.id)) sh.dataset.dirty='1'; }
   function hojaLimpia(h){ const sh=typeof h==='string'?$(h):h; if(sh) sh.dataset.dirty=''; cierreArmado=0; }
   const hojaSucia = () => [...document.querySelectorAll('section.sheet')].find(x=>!x.hidden && x.dataset.dirty==='1');
-  function openSheet(id){ soltarIntento(id); if(id==='#shareSheet'){ const b=$('#btnCurva'); if(b) b.hidden=!avCurvaOn; avCurvaOn=false; } $('#scrim').hidden=false; $(id).hidden=false; $(id).dataset.dirty=''; cierreArmado=0; $('#toast').hidden=true; document.body.style.overflow='hidden';
+  function openSheet(id){ soltarIntento(id); quitarChoque(id); if(id==='#shareSheet'){ const b=$('#btnCurva'); if(b) b.hidden=!avCurvaOn; avCurvaOn=false; } $('#scrim').hidden=false; $(id).hidden=false; $(id).dataset.dirty=''; cierreArmado=0; $('#toast').hidden=true; document.body.style.overflow='hidden';
     abriendoHoja++; Promise.resolve().then(()=>{ abriendoHoja=Math.max(0,abriendoHoja-1); }); }
   /* Los buscadores (la casilla de un selector con buscador y los filtros marcados con data-sinmarca) no son cambios */
   const marcaDeEvento = e => { const t=e.target, sh=t&&t.closest&&t.closest('section.sheet'); if(sh && !(t.classList&&t.classList.contains('combo-in')) && !(t.hasAttribute&&t.hasAttribute('data-sinmarca'))) marcarCambio(sh); };
@@ -1923,6 +1960,95 @@ select.combo-oculto{display:none}
   }
   /* Guardado con reintento seguro: recuerda las operaciones de un intento incierto para reenviarlas idénticas */
   async function guardarOps(clave, firma, ops, que, fin){ try{ const r=await escribirJuntos(ops, que); delete dudosos[clave]; return r; }catch(e){ if(e&&e.dudoso) dudosos[clave]={firma, ops, fin}; else delete dudosos[clave]; throw e; } }
+  /* =====================================================================
+     GUARDAR SOLO LO QUE CAMBIÓ. Al abrir un registro existente se guarda la «base» (lo que el formulario escribiría sin tocar nada) y una copia del
+     documento; al guardar se compara, y solo lo que el usuario cambió se escribe con `update`. Lo que la hoja no muestra no se toca y lo que otro
+     teléfono cambió mientras tanto se conserva. Si el mismo campo o elemento cambió por fuera, se avisa antes de pisarlo.
+     ===================================================================== */
+  const BORRAR={wkBorrarCampo:true};
+  const esBorrar = v => !!v && typeof v==='object' && v.wkBorrarCampo===true;
+  const esMapa = v => !!v && typeof v==='object' && !Array.isArray(v);
+  const canon = v => v===undefined ? 'null' : JSON.stringify(v, (k,x)=> esMapa(x) ? Object.fromEntries(Object.keys(x).sort().filter(q=>x[q]!==undefined).map(q=>[q,x[q]])) : x);
+  const igual = (a,b) => canon(a)===canon(b);
+  const copia = v => v===undefined ? undefined : JSON.parse(JSON.stringify(v));
+  /* Qué campos cambió el usuario: base y nuevo salen del mismo formulario, al abrir y al guardar */
+  function cambiosDe(base, nuevo){ const c={}; [...new Set([...Object.keys(base||{}), ...Object.keys(nuevo||{})])].forEach(k=>{ if(!igual((base||{})[k], (nuevo||{})[k])) c[k]=(nuevo||{})[k]===undefined?BORRAR:nuevo[k]; }); return c; }
+  /* De esos campos, los que también cambiaron por fuera desde que se abrió la hoja (y no quedaron igual a lo que el usuario puso) */
+  function choquesDe(cambios, orig, act){ return Object.keys(cambios||{}).filter(k=>{ const a=(act||{})[k], v=esBorrar(cambios[k])?undefined:cambios[k]; return !igual((orig||{})[k], a) && !igual(a, v); }); }
+  /* Aplica cambios (con rutas con punto y borrados) sobre una copia de un documento */
+  function aplicarCambios(doc, cambios){ const d=copia(doc||{}); Object.entries(cambios||{}).forEach(([k,v])=>{ const p=k.split('.'); let o=d; for(let i=0;i<p.length-1;i++){ if(!esMapa(o[p[i]])) o[p[i]]={}; o=o[p[i]]; } if(esBorrar(v)) delete o[p[p.length-1]]; else o[p[p.length-1]]=copia(v); }); return d; }
+  const rutaSegura = k => !!k && !/[~*\/\[\].]/.test(String(k));   /* una clave que puede ir como tramo de una ruta con punto */
+  const encoge = (v, a) => esMapa(v) && esMapa(a) && Object.keys(a).some(k=>!(k in v) || encoge(v[k], a[k]));
+  /* La escritura para editar un documento existente con solo lo que cambió. cambios: {campo o «mapa.clave»: valor | BORRAR}; act: el documento actual
+     (si no se pasa, el de la suscripción en vivo). Versión independiente: `update` de Firestore con rutas con punto y borrado de campos.
+     Dentro de Claude `update` mezcla los mapas hacia adentro y no sabe borrar: cuando hay que borrar algo, se escribe el documento ACTUAL con los
+     cambios aplicados. Las personas invitadas siguen enviando el registro completo (el actual con sus cambios), que es lo que el dueño revisa. */
+  function opEditar(col, id, cambios, que, act){
+    const ks=Object.keys(cambios||{}); if(!ks.length) return null;
+    if(act===undefined) act=memDoc(col, id);
+    if(esRegistro() && window.__standalone && act) return opSet(col, id, aplicarCambios(act, cambios), que);
+    if(dbRaiz && dbRaiz.rutas) return {op:'update', col, id, datos:cambios, que, antes:act||undefined};
+    const actEn = k => k.split('.').reduce((o,p)=>esMapa(o)?o[p]:undefined, act||{});
+    if(act && ks.some(k=>esBorrar(cambios[k]) || encoge(cambios[k], actEn(k)))) return {op:'set', col, id, datos:aplicarCambios(act, cambios), que, antes:act};
+    const datos={}; ks.forEach(k=>{ const p=k.split('.'); let o=datos; for(let i=0;i<p.length-1;i++) o=o[p[i]]=esMapa(o[p[i]])?o[p[i]]:{}; o[p[p.length-1]]=esBorrar(cambios[k])?null:cambios[k]; });
+    return {op:'update', col, id, datos, que, antes:act||undefined};
+  }
+  /* Listas dentro de un documento (los pagos de un trabajo): lo que el usuario hizo se aplica sobre la lista ACTUAL, elemento por elemento.
+     orig: la lista al abrir la hoja; act: la lista de ahora; hoja: lo que queda en la hoja, donde cada elemento que venía de orig trae su posición
+     en `_o`, los que el usuario corrigió traen `_editado` y los nuevos no traen `_o`; limpio(x) deja el elemento como se guarda.
+     Devuelve {lista, tocada, choques}: choques son los elementos que el usuario corrigió o quitó y que ya no están como él los vio. */
+  function fusionarLista(orig, act, hoja, limpio, forzar){
+    orig=orig||[]; act=act||[]; const usados=new Set(), pos=orig.map(o=>{ const j=act.findIndex((a,jj)=>!usados.has(jj) && igual(a,o)); if(j>=0) usados.add(j); return j; });
+    const quedan=new Map(hoja.filter(x=>x._o!==undefined).map(x=>[x._o,x])), res=act.map(x=>x), choques=[], extra=[]; let tocada=false;
+    orig.forEach((o,i)=>{ const h=quedan.get(i); if(h && !h._editado) return; tocada=true;
+      let j=pos[i]; if(j<0){ choques.push(i); if(!forzar) return; j = i<act.length && !usados.has(i) ? i : -1; if(j>=0) usados.add(j); }   /* guardar igual: si en su lugar hay uno que cambió por fuera, se reemplaza */
+      if(j>=0) res[j]=h?limpio(h):null; else if(h) extra.push(limpio(h)); });
+    hoja.filter(x=>x._o===undefined).forEach(x=>{ tocada=true; extra.push(limpio(x)); });
+    return {lista:[...res.filter(x=>x!==null), ...extra], tocada, choques};
+  }
+  /* Aviso de choque: lo mismo cambió desde otro teléfono mientras la hoja estaba abierta. Deja elegir entre recargar (ver lo de ahora y perder lo escrito
+     aquí) o guardar igual (lo escrito aquí queda encima de ese cambio; lo demás no se toca). Devuelve true si ya se eligió «Guardar igual» para ese mismo choque */
+  const choqueOk={};
+  function quitarChoque(hoja){ delete choqueOk[hoja]; const sh=$(hoja), b=sh&&sh.querySelector('.choque'); if(b) b.remove(); }
+  function avisoChoque(hoja, ancla, firma, detalle, recargar, guardar, soloRecargar){
+    if(choqueOk[hoja]===firma && !soloRecargar) return true;
+    const sh=$(hoja), an=$(ancla); let b=sh.querySelector('.choque'); if(!b){ b=document.createElement('div'); b.className='choque avfalla'; b.setAttribute('role','alert'); an.parentNode.insertBefore(b, an); }
+    b.innerHTML=`<b>Este registro cambió desde otro teléfono</b>${esc(detalle)}<div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" data-chq="recargar">Recargar</button>${soloRecargar?'':'<button type="button" class="btn sec" data-chq="igual">Guardar igual</button>'}</div>`;
+    b.querySelector('[data-chq="recargar"]').onclick=()=>{ quitarChoque(hoja); recargar(); };
+    if(!soloRecargar) b.querySelector('[data-chq="igual"]').onclick=()=>{ choqueOk[hoja]=firma; b.remove(); guardar(); };
+    if(b.scrollIntoView) b.scrollIntoView({block:'center'}); toast('Este registro cambió desde otro teléfono: mira el aviso en rojo'); return false;
+  }
+  const valTxt = v => v===undefined||v===null||v==='' ? '(vacío)' : typeof v==='boolean' ? (v?'sí':'no') : typeof v==='number' ? nfT.format(v) : typeof v==='object' ? '(otro valor)' : String(v).slice(0,40);
+  const detalleChoque = (chq, etq, act) => ' '+chq.map(k=>`${(etq&&etq[k])||k}: ahora dice ${valTxt((act||{})[k])}`).join(' · ')+'.';
+  /* Un desplegable debe ofrecer el valor guardado aunque ya no esté en su lista (orden ya cobrada, trabajador inactivo, categoría o cuenta retirada):
+     se agrega rotulado y queda elegido, para que guardar no lo cambie por otro */
+  function ofrecerGuardado(sel, valor, rotulo){ sel=typeof sel==='string'?$(sel):sel; if(!sel||valor===undefined||valor===null||valor==='') return; valor=String(valor);
+    sel.querySelectorAll('option[data-guardado]').forEach(o=>{ if(o.value!==valor) o.remove(); });
+    if(![...sel.options].some(o=>o.value===valor)){ const o=document.createElement('option'); o.value=valor; o.dataset.guardado='1'; o.textContent=(typeof rotulo==='function'?rotulo(valor):rotulo)||valor; sel.appendChild(o); } sel.value=valor; comboSync(sel); }
+  const estadoOrden = d => d.cancelado ? 'cancelada' : etapa(d)==='cobrado' ? 'cobrada' : 'cerrada';
+  const rotuloOrden = id => { const d=docs.find(x=>x.id===id); return d ? `${[d.unidad||'', tieneOrden(d)?d.ods:''].filter(Boolean).join(' · ')||d.descripcion||'Trabajo'} (${estadoOrden(d)})` : 'Orden que ya no existe'; };
+  const opcionOrden = id => id && !centrosCosto().some(d=>d.id===id) ? `<option value="${esc(id)}" selected>${esc(rotuloOrden(id))}</option>` : '';
+  /* Configuración: si su lectura falló no se escribe (se pisaría con la de fábrica); se avisa con «Recargar» */
+  const cfgLeida={}, cfgFalla={};
+  const CFG_NOMBRE={gastos:'Gastos (saldos iniciales, categorías y tasas)', nomina:'Nómina (cargos, tarifas y factores)', inventario:'Inventario (categorías y ubicaciones)', clientes:'la lista de clientes', unidades:'la lista de unidades'};
+  function pintarCfgFalla(){ const el=$('#avCfg'); if(!el) return; const ks=Object.keys(cfgFalla).filter(k=>cfgFalla[k]); if(!ks.length){ if(!el.hidden) sinCorrer(()=>{ el.hidden=true; el.innerHTML=''; }); return; }
+    sinCorrer(()=>{ el.innerHTML=`<b>No se pudo leer la configuración de ${esc(ks.map(k=>CFG_NOMBRE[k]||k).join(' ni la de '))}</b><div>Lo que ves puede estar incompleto y no se puede guardar ningún ajuste hasta leerla bien.</div><button type="button" id="avCfgRec">Recargar</button>`; el.hidden=false; }); }
+  document.addEventListener('click', e=>{ if(e.target.closest&&e.target.closest('#avCfgRec')) location.reload(); });
+  const cfgCruda={};   /* la configuración tal como está en la base (sin los valores de fábrica que la app le suma en memoria) */
+  const cfgOk = (k, existe, datos) => { cfgLeida[k]={existe:!!existe}; cfgCruda[k]=existe?copia(datos||{}):null; if(cfgFalla[k]){ cfgFalla[k]=false; pintarCfgFalla(); } };
+  const cfgMal = k => { if(cfgLeida[k]) return; cfgFalla[k]=true; pintarCfgFalla(); };
+  const TXT_CFG='No se pudo leer esta configuración, así que no se guarda nada para no pisarla con la de fábrica. Toca «Recargar».';
+  const cfgLista = k => !!cfgLeida[k] && !cfgFalla[k];
+  /* La escritura de una configuración: solo los campos que cambian (rutas con punto para una entrada de un mapa, como la tasa de un día) si el documento
+     existe; si todavía no existe, se crea con `completo` (lo que hay en memoria) más esos cambios. Si la lectura falló, no se escribe */
+  function opCfg(k, cambios, que, completo){
+    if(!cfgLista(k)){ toast(TXT_CFG, {label:'Recargar', fn:()=>location.reload()}); throw Object.assign(new Error(TXT_CFG), {wkMsg:TXT_CFG, code:'config_sin_leer'}); }
+    if(!Object.keys(cambios||{}).length) return null;
+    return cfgLeida[k].existe ? opEditar('config', k, cambios, que, cfgCruda[k]||null) : {op:'set', col:'config', id:k, datos:aplicarCambios(completo||{}, cambios), que, nuevo:true};
+  }
+  async function escribirCfg(k, cambios, que, completo){ const op=opCfg(k, cambios, que, completo); if(!op) return; await escribirJuntos([op], que); cfgLeida[k].existe=true; }
+  /* Campos de primer nivel que cambian entre dos versiones de una configuración */
+  const cambiosCfg = (antes, despues) => { const c={}; Object.keys(despues||{}).forEach(k=>{ if(!igual((antes||{})[k], despues[k])) c[k]=despues[k]; }); return c; };
   /* Al volver a abrir la app: lo que quedó en cola en una sesión anterior se comprueba contra el servidor cuando termina de subir */
   async function revisarColaVieja(){ const q=lsLeer('wkCola'); if(!q.length || !dbRaiz || typeof dbRaiz.esperarSubida!=='function' || typeof dbRaiz.enServidor!=='function') return;
     try{ await dbRaiz.esperarSubida(); }catch(_){ return; }
@@ -1940,8 +2066,9 @@ select.combo-oculto{display:none}
     const src = id ? docs.find(d=>d.id===id) : null;
     editingId=id||null;
     draft = src ? JSON.parse(JSON.stringify(src)) : {cliente:cliente||'', ejecutado:false, cobros:[], fecha:today()};
+    trabOrig = src ? JSON.parse(JSON.stringify(src)) : null; pagoEnEdicion=null; if(src) (draft.cobros||[]).forEach((c,i)=>{ c._o=i; });   /* cada pago recuerda su lugar en la lista que había al abrir */
     $('#shTitle').textContent = src?'Editar trabajo':'Nuevo trabajo';
-    $('#iDesc').value=draft.descripcion||''; fillClienteSelect(draft.cliente||''); $('#newCli').hidden=true; fillUnidadSelect(draft.unidad||''); $('#newUni').hidden=true;
+    $('#iDesc').value=draft.descripcion||''; fillClienteSelect(draft.cliente||''); if(src) ofrecerGuardado('#iCliente', draft.cliente); $('#newCli').hidden=true; fillUnidadSelect(draft.unidad||''); $('#newUni').hidden=true;
     $('#iOds').value=draft.ods||''; $('#iNota').value=draft.nota||'';
     $('#iMonto').value = draft.monto ? nf.format(num(draft.monto)) : '';
     $('#iFecha').value=draft.fecha||''; $('#iEjecutado').checked=!!draft.ejecutado; $('#iFechaEjec').value=draft.fechaEjecucion||'';
@@ -1951,8 +2078,17 @@ select.combo-oculto{display:none}
     syncEjec(); renderPagos();
     [...$('#form').elements].forEach(x=>{ x.disabled=!canWrite; });
     syncOds();
+    trabBase = src ? cuerpoTrabajo() : null;
     limpiarFiltros('#sheet'); openSheet('#sheet');
   }
+  let trabOrig=null, trabBase=null, pagoEnEdicion=null;
+  /* Lo que el formulario guardaría en los campos del trabajo (sin los pagos). Se usa al abrir, para saber después qué cambió el usuario, y al guardar */
+  function cuerpoTrabajo(){ const ej=$('#iEjecutado').checked;
+    return { descripcion:$('#iDesc').value.trim(), cliente:$('#iCliente').value.trim(), unidad:$('#iUnidad').value.trim(), ods:$('#iOds').value.trim(), nota:$('#iNota').value.trim(), monto:r2(parseNum($('#iMonto').value)), fecha:$('#iFecha').value||'',
+      ejecutado:ej, cancelado:$('#iCancelado').checked, fechaEjecucion: ej?($('#iFechaEjec').value||''):'', enEjecucion: !ej && $('#iEnEjec').checked, fechaInicio: (ej||$('#iEnEjec').checked)?($('#iFechaIni').value||''):'' }; }
+  /* Un pago tal como se guarda. Un abono que vino de un pago repartido conserva su enlace, su fecha de factura y sus bolívares exactos */
+  const limpioPago = c => Object.assign({monto:num(c.monto), tasa:num(c.tasa), cuenta:modoDe(c), numFactura:c.numFactura||'', fecha:c.fecha||'', ref:c.ref||''}, esCruce(c)?{compensa:c.compensa.slice()}:{},
+    c.dePago?{dePago:c.dePago}:{}, c.fechaFactura?{fechaFactura:c.fechaFactura}:{}, (num(c.montoBs)>0 && Math.abs(num(c.montoBs)-num(c.monto)*num(c.tasa))<=5)?{montoBs:num(c.montoBs)}:{});
   function syncEjec(){ const ej=$('#iEjecutado').checked; $('#ejecFields').hidden=!ej; $('#iEnEjec').closest('label').hidden=ej; $('#enEjecFields').hidden=ej||!$('#iEnEjec').checked; $('#enEjecTip').hidden=ej; }
   function syncOds(){
     const ok=!!$('#iOds').value.trim();
@@ -1991,7 +2127,13 @@ select.combo-oculto{display:none}
     draft.cobros=draft.cobros||[];
     const p={monto:r2(m), tasa:md==='banco'?t:0, cuenta:md, numFactura:$('#pNum').value.trim(), fecha:$('#pFecha').value||today(), ref:$('#pRef').value.trim(), _nuevo:true};
     if(comp.length) p.compensa=comp;
-    draft.cobros.push(p); marcarCambio('#sheet');
+    const ed=pagoEnEdicion; pagoEnEdicion=null;
+    if(ed){ const o=ed.orig;   /* un pago que se corrige conserva lo que el formulario no muestra (enlace al ingreso, fecha de la factura, bolívares recibidos) y su lugar en la lista */
+      ['dePago','fechaFactura'].forEach(k=>{ if(o[k]) p[k]=o[k]; }); if(num(o.montoBs)>0 && Math.abs(num(o.monto)-p.monto)<0.005 && Math.abs(num(o.tasa)-num(p.tasa))<1e-9) p.montoBs=o.montoBs;
+      const cambio=!igual(limpioPago(p), limpioPago(o)); if(o._o!==undefined){ p._o=o._o; p._editado=cambio||!!o._editado; } p._nuevo=cambio||!!o._nuevo;
+      draft.cobros.splice(Math.min(ed.i, draft.cobros.length), 0, p); }
+    else draft.cobros.push(p);
+    marcarCambio('#sheet');
     resetPayForm(); if(md==='banco') $('#pTasa').value=nfT.format(t); $('#formErr').textContent=editingId?'Pago agregado: toca Guardar para registrarlo.':'';
     renderPagos(); return true;
   }
@@ -2021,8 +2163,10 @@ select.combo-oculto{display:none}
     box.innerHTML = otros.length ? otros.map(x=>`<label><input type="checkbox" value="${esc(x.id)}"${marcados.includes(x.id)?' checked':''}><span>${esc(nombre(x))} · ${usd(num(x.monto))}</span></label>`).join('') : '<div style="color:var(--muted);font-size:13.5px">No hay otros trabajos pendientes de este cliente.</div>';
   }
   function editPago(i){
-    const c=draft.cobros[i]; if(!c) return;
-    draft.cobros.splice(i,1); marcarCambio('#sheet');
+    const c=draft.cobros[i]; if(!c) return; let j=i;
+    /* si ya había otro pago en corrección sin volver a agregar, regresa a su lugar tal como estaba (no se pierde) */
+    if(pagoEnEdicion){ const pe=pagoEnEdicion, k=Math.min(pe.i, draft.cobros.length); pagoEnEdicion=null; draft.cobros.splice(k,0,pe.orig); if(k<=i) j=i+1; }
+    draft.cobros.splice(j,1); pagoEnEdicion={orig:c, i:j}; marcarCambio('#sheet');
     $('#pNum').value=c.numFactura||''; $('#pFecha').value=c.fecha||today(); $('#pModo').value=modoDe(c); $('#pTasa').value=num(c.tasa)>0?nfT.format(num(c.tasa)):'';
     $('#pMonto').value=nf.format(num(c.monto)); $('#pRef').value=c.ref||'';
     $('#pComp').checked=esCruce(c); renderTgts(esCruce(c)?c.compensa:[]);
@@ -2044,22 +2188,34 @@ select.combo-oculto{display:none}
     if(!editingId){ const dupT=docs.find(d=>d.id!==idsIntento['#sheet|trabajo'] && !d.cancelado && norm(d.descripcion||'')===norm(desc) && (d.cliente||'')===$('#iCliente').value.trim() && (d.unidad||'')===$('#iUnidad').value.trim() && Math.abs(num(d.monto)-monto)<0.005); const kD=desc+'|'+monto;
       if(dupT && $('#formErr').dataset.dup!==kD){ $('#formErr').dataset.dup=kD; $('#formErr').textContent=`Ya existe un trabajo igual para esta unidad${dupT.ods?' ('+dupT.ods+')':''}. Si es otro, toca Guardar otra vez.`; return; } }
     if(pagoPendiente() && !addPago()) return;   // el pago escrito y no agregado se agrega solo; si tiene un error, no se guarda nada
-    const ej=$('#iEjecutado').checked;
-    const orden = editingId ? num(draft.orden) : docs.reduce((m,d)=>Math.max(m,num(d.orden)),0)+1;
-    const body={ orden, descripcion:desc, cliente:$('#iCliente').value.trim(), unidad:$('#iUnidad').value.trim(),
-      ods:$('#iOds').value.trim(), nota:$('#iNota').value.trim(), monto:r2(monto), moneda:'USD', fecha:$('#iFecha').value||'',
-      ejecutado:ej, cancelado:$('#iCancelado').checked, fechaEjecucion: ej?($('#iFechaEjec').value||''):'', enEjecucion: !ej && $('#iEnEjec').checked, fechaInicio: (ej||$('#iEnEjec').checked)?($('#iFechaIni').value||''):'',
-      cobros:(draft.cobros||[]).map(c=>Object.assign({monto:num(c.monto), tasa:num(c.tasa), cuenta:modoDe(c), numFactura:c.numFactura||'', fecha:c.fecha||'', ref:c.ref||''}, esCruce(c)?{compensa:c.compensa.slice()}:{},
-        /* un abono que vino de un pago repartido conserva su enlace, su fecha de factura y sus bolívares exactos (si no le cambiaron monto ni tasa) */
-        c.dePago?{dePago:c.dePago}:{}, c.fechaFactura?{fechaFactura:c.fechaFactura}:{}, (num(c.montoBs)>0 && Math.abs(num(c.montoBs)-num(c.monto)*num(c.tasa))<=5)?{montoBs:num(c.montoBs)}:{})),
-      creado:draft.creado||new Date().toISOString(), actualizado:new Date().toISOString() };
-    { const old0=editingId?docs.find(x=>x.id===editingId):null; if(old0) ['actividades','avanceHist','avanceSnap','avInicio','avCompromiso','avSabado','avDomingo','avHorasDia','avDiasEsp'].forEach(k=>{ if(old0[k]!==undefined) body[k]=old0[k]; }); }   /* el avance de la orden se lleva en su módulo: editar el trabajo no lo borra */
+    const C=cuerpoTrabajo(), ah=new Date().toISOString(); let body, op, anotar=null;
+    if(editingId){
+      /* Editar: solo se escribe lo que cambió en esta hoja. Los pagos se aplican sobre la lista ACTUAL del trabajo, uno por uno:
+         un cobro que entró desde otro teléfono (o por un reparto) mientras la hoja estaba abierta se conserva */
+      const idE=editingId, act=docs.find(x=>x.id===idE);
+      if(!act||!trabOrig){ $('#formErr').textContent='Este trabajo ya no existe (lo eliminaron desde otro teléfono). Cierra la hoja.'; return; }
+      const cambios=cambiosDe(trabBase, C), chq=choquesDe(cambios, trabOrig, act); let F=fusionarLista(trabOrig.cobros, act.cobros, draft.cobros||[], limpioPago, false);
+      const recargar=()=>openEditor(idE), otraVez=()=>save({preventDefault(){}});
+      if(chq.length || F.choques.length){ const ETQ={descripcion:'descripción', cliente:'cliente', unidad:'unidad', ods:'orden de servicio', nota:'nota', monto:'monto', fecha:'fecha', ejecutado:'ejecutado', cancelado:'cancelado', fechaEjecucion:'fecha de ejecución', enEjecucion:'en ejecución', fechaInicio:'fecha de inicio'};
+        const det=(chq.length?detalleChoque(chq, ETQ, act):'')+(F.choques.length?` ${F.choques.length===1?'Un pago que corregiste o quitaste':F.choques.length+' pagos que corregiste o quitaste'} ya no está como lo viste: revisa la lista de pagos después de recargar.`:'');
+        if(!avisoChoque('#sheet', '#formErr', canon([chq.map(k=>act[k]), F.choques, act.cobros||[]]), det, recargar, otraVez)) return;
+        F=fusionarLista(trabOrig.cobros, act.cobros, draft.cobros||[], limpioPago, true); }
+      /* Sin sobrepagos: si con el cobro que entró por fuera lo cobrado pasaría del monto, no se guarda encima */
+      { const mt='monto' in cambios ? C.monto : num(act.monto), tF=r2(sum(F.lista,c=>num(c.monto))), tH=r2(sum(draft.cobros||[],c=>num(c.monto)));
+        if(F.tocada && (draft.cobros||[]).some(c=>c._nuevo) && tF>mt+0.005 && tH<=mt+0.005){ avisoChoque('#sheet', '#formErr', '', ` Mientras tenías la hoja abierta entró otro cobro a este trabajo. Con el tuyo, lo cobrado (${usd(tF)}) pasaría del monto (${usd(mt)}). Recarga para ver cómo quedó.`, recargar, null, true); return; } }
+      if(F.tocada) cambios.cobros=F.lista;
+      if(!Object.keys(cambios).length){ closeSheets(); toast('Sin cambios: no había nada que guardar'); return; }
+      body={...act, ...C, cobros:F.tocada?F.lista:(act.cobros||[])}; delete body.id;
+      op=opEditar('facturas', idE, {...cambios, actualizado:ah}, 'el trabajo «'+desc.slice(0,50)+'»');
+      /* El registro de cambios se anota después de guardar bien (se compara contra lo que había antes de escribir) */
+      { const old=JSON.parse(JSON.stringify(act)); anotar=()=>{ diffCampos('facturas', idE, old.descripcion||'trabajo', old, body, [['monto','monto',v=>nf.format(num(v))],['cliente','cliente'],['unidad','unidad'],['ods','orden de servicio'],['cancelado','cancelado',v=>v?'sí':'no'],['ejecutado','ejecutado',v=>v?'sí':'no']]);
+        const resumenC=ls=>(ls||[]).map(c=>`${nf.format(num(c.monto))}${num(c.tasa)>0?' a '+nfT.format(num(c.tasa)):''} (${c.fecha||''})`).join('; '); if(resumenC(old.cobros)!==resumenC(body.cobros)) registrarCambio('facturas', idE, `${old.descripcion||'trabajo'}: pagos`, resumenC(old.cobros), resumenC(body.cobros)); }; }
+    } else {
+      body={ orden: docs.reduce((m,d)=>Math.max(m,num(d.orden)),0)+1, ...C, moneda:'USD', cobros:(draft.cobros||[]).map(limpioPago), creado:ah, actualizado:ah };
+      op=opSet('facturas', idEstable('#sheet|trabajo','facturas'), body);
+    }
     const btn=$('#btnSave'); if(btn.dataset.busy) return; btn.dataset.busy='1'; btn.disabled=true; btn.textContent='Guardando…';
-    /* El registro de cambios se anota después de guardar bien (se compara contra lo que había antes de escribir) */
-    let anotar=null;
-    if(editingId){ const old=docs.find(x=>x.id===editingId), idE=editingId; if(old) anotar=()=>{ diffCampos('facturas', idE, old.descripcion||'trabajo', old, body, [['monto','monto',v=>nf.format(num(v))],['cliente','cliente'],['unidad','unidad'],['ods','orden de servicio'],['cancelado','cancelado',v=>v?'sí':'no'],['ejecutado','ejecutado',v=>v?'sí':'no']]);
-      const resumenC=ls=>(ls||[]).map(c=>`${nf.format(num(c.monto))}${num(c.tasa)>0?' a '+nfT.format(num(c.tasa)):''} (${c.fecha||''})`).join('; '); if(resumenC(old.cobros)!==resumenC(body.cobros)) registrarCambio('facturas', idE, `${old.descripcion||'trabajo'}: pagos`, resumenC(old.cobros), resumenC(body.cobros)); }; }
-    try{ await escribirJuntos([opSet('facturas', editingId||idEstable('#sheet|trabajo','facturas'), body)], 'el trabajo «'+desc.slice(0,50)+'»'); if(anotar) anotar(); soltarIntento('#sheet'); (draft.cobros||[]).filter(c=>c._nuevo).forEach(c=>{ if(num(c.tasa)>0 && c.fecha && c.fecha<=today()) aprenderTasa(c.fecha, num(c.tasa), 'cobro'); }); { const nb=(draft.cobros||[]).filter(c=>c._nuevo && modoDe(c)==='banco' && num(c.tasa)>0), bsT=r2(sum(nb,c=>num(c.monto)*num(c.tasa)));
+    try{ await escribirJuntos([op], 'el trabajo «'+desc.slice(0,50)+'»'); if(anotar) anotar(); soltarIntento('#sheet'); (draft.cobros||[]).filter(c=>c._nuevo).forEach(c=>{ if(num(c.tasa)>0 && c.fecha && c.fecha<=today()) aprenderTasa(c.fecha, num(c.tasa), 'cobro'); }); { const nb=(draft.cobros||[]).filter(c=>c._nuevo && modoDe(c)==='banco' && num(c.tasa)>0), bsT=r2(sum(nb,c=>num(c.monto)*num(c.tasa)));
         closeSheets();
         if(bsT>0 && !esRegistro()) toast('Guardado', {label:'Comprar USDT', fn:()=>{ setModulo('gas'); openMov('cambio', null); $('#mvOrig').value='banco'; $('#mvDest').value='binance'; $('#mvFecha').value=nb[nb.length-1].fecha||today(); $('#mvOrigMonto').value=nf.format(bsT); syncMvMoneda(); renderMvConv(); }});
         else toast('Guardado'); } }
@@ -3718,7 +3874,7 @@ Responde solo con un objeto JSON:
   /* Copia el último día registrado: quiénes, cuánto y en qué orden (las horas extra no se copian) */
   function copiarDiaAnterior(){ const u=ultimoDiaAntes(diaSel); if(!u) return; const regs=(asis[u]||{}).registros||{}; dayDraft={}; Object.entries(regs).forEach(([id,r])=>{ const t=trabs.find(x=>x.id===id); if(!t||diaBloqueado(t,diaSel)) return; dayDraft[id]={tipo:r.tipo||'completo', horasExtra:0, trabajoId:r.trabajoId||'', ...(r.dividir&&r.trabajoId2?{dividir:true, trabajoId2:r.trabajoId2}:{})}; }); Object.keys(dayDraft).forEach(id=>diaAgregados.add(id)); dayDirty=true; todosTocado=true; renderNom(); toast(`Copiado el ${fdate(u)}: revisa y guarda`); }
   function renderDia(el){
-    if(!dayDraft){ dayDraft=JSON.parse(JSON.stringify((asis[diaSel]||{}).registros||{})); dayDirty=false; diaAgregados=new Set(); diaCorregir=new Set(); todosTocado=false; calcPrefill(); }
+    if(!dayDraft){ dayDraft=JSON.parse(JSON.stringify((asis[diaSel]||{}).registros||{})); dayBase=regsDe((asis[diaSel]||{}).registros); dayBaseDe=diaSel; quitarChoque('#nMain'); dayDirty=false; diaAgregados=new Set(); diaCorregir=new Set(); todosTocado=false; calcPrefill(); }
     const tieneReg = id => { const r=dayDraft[id]; return !!r && (r.tipo==='completo' || r.tipo==='medio' || num(r.horasExtra)>0 || num(r.bono)>0); };
     const lista=trabs.filter(t=>!esSup(t) && (t.activo!==false || tieneReg(t.id))).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
     const td=tipoDia(diaSel), bloqT = t => diaBloqueado(t, diaSel) && !diaCorregir.has(t.id), bloqueado = lista.length>0 && lista.every(bloqT), algunosBloq = !bloqueado && lista.some(bloqT);
@@ -3771,13 +3927,13 @@ Responde solo con un objeto JSON:
           ${r.tipo==='no'&&num(r.horasExtra)>0?'<div class="tip" style="border:0;margin:2px 0 0;color:var(--so)">No trabajó pero tiene horas extra: cobra solo las horas. ¿Es correcto?</div>':''}
           <div class="wex">
             <label>Horas extra<input type="text" inputmode="decimal" data-hx value="${num(r.horasExtra)?nf.format(num(r.horasExtra)).replace(/,00$/,''):''}" placeholder="0"${bq?' disabled':''}></label>
-            <label>Orden o trabajo (centro de costo)<select data-tj${bq?' disabled':''}><option value="">Sin asignar</option>${trabajosAbiertos.map(d=>`<option value="${esc(d.id)}"${r.trabajoId===d.id?' selected':''}>${esc(etiquetaCentro(d))}</option>`).join('')}</select></label>
+            <label>Orden o trabajo (centro de costo)<select data-tj${bq?' disabled':''}><option value="">Sin asignar</option>${opcionOrden(r.trabajoId)}${trabajosAbiertos.map(d=>`<option value="${esc(d.id)}"${r.trabajoId===d.id?' selected':''}>${esc(etiquetaCentro(d))}</option>`).join('')}</select></label>
           </div>
           <div class="wex dinero">
             <label>Bonificación (USD)<input type="text" inputmode="decimal" data-bono value="${num(r.bono)?nf.format(num(r.bono)):''}" placeholder="0,00"${bq?' disabled':''}></label>
             <label>Motivo (opcional)<input type="text" data-bononota value="${esc(r.bonoNota||'')}" placeholder="Por ejemplo: trabajo nocturno"${bq?' disabled':''}></label>
           </div>
-          ${r.trabajoId2!=null&&r.trabajoId2!==undefined&&r.dividir?`<div class="wex"><label style="grid-column:1/-1">La otra mitad del día (y de las horas extra) en<select data-tj2${bq?' disabled':''}><option value="">Elige la otra orden…</option>${trabajosAbiertos.filter(d=>d.id!==r.trabajoId).map(d=>`<option value="${esc(d.id)}"${r.trabajoId2===d.id?' selected':''}>${esc(d.descripcion)}${d.unidad?' · '+esc(d.unidad):''}${tieneOrden(d)?' · '+esc(d.ods):''}</option>`).join('')}</select></label></div>`:''}
+          ${r.trabajoId2!=null&&r.trabajoId2!==undefined&&r.dividir?`<div class="wex"><label style="grid-column:1/-1">La otra mitad del día (y de las horas extra) en<select data-tj2${bq?' disabled':''}><option value="">Elige la otra orden…</option>${r.trabajoId2!==r.trabajoId?opcionOrden(r.trabajoId2):''}${trabajosAbiertos.filter(d=>d.id!==r.trabajoId).map(d=>`<option value="${esc(d.id)}"${r.trabajoId2===d.id?' selected':''}>${esc(d.descripcion)}${d.unidad?' · '+esc(d.unidad):''}${tieneOrden(d)?' · '+esc(d.ods):''}</option>`).join('')}</select></label></div>`:''}
           <div class="wacts">${!bq&&r.trabajoId&&!r.dividir?`<button type="button" class="lnk" data-dividir="${esc(t.id)}">Dividir el día entre dos órdenes</button>`:''}${!bq&&r.dividir?`<button type="button" class="lnk" data-nodividir="${esc(t.id)}">Todo el día en una orden</button>`:''}${bq&&canWrite&&!esRegistro()?`<button type="button" class="lnk" data-corregir="${esc(t.id)}">Corregir</button>`:''}${canWrite?`<button type="button" class="lnk" data-adelanto="${esc(t.id)}">Adelanto</button>`:''}</div>
         </div>`;}).join('')}</div>
       ${ocultosDia.length?`<div class="panel notrab"><div class="lbl">${asis[diaSel]||visiblesDia.length?'No trabajaron este día':'Trabajadores activos'} (${ocultosDia.length})</div><div class="chips">${ocultosDia.map(t=>bloqT(t)?`<span class="pill co">${esc(t.nombre.split(' ')[0])} · pagado</span>`:`<button type="button" class="btn sec" data-agregardia="${esc(t.id)}">+ ${esc(t.nombre.split(' ').slice(0,2).join(' '))}</button>`).join('')}</div><div class="row-btns" style="margin-top:6px"><button type="button" class="lnk" id="dVerTodos">${visiblesDia.length?'Mostrar a todos':'Registrar con todos'}</button></div></div>`:''}
@@ -3835,7 +3991,7 @@ Responde solo con un objeto JSON:
   function diaSucio(){ return nView==='dia' && !!dayDraft && dayDirty && hayCambiosDia(); }
   /* Salir del registro del día con marcas sin guardar: el mismo aviso y el mismo comportamiento al cambiar de pestaña dentro de Nómina, de módulo o de día.
      El primer toque avisa y no sale; el segundo sale. Lo marcado no se pierde: queda en el teléfono y se ofrece al volver a ese día. */
-  let salidaArmada=0, borrVisto='';
+  let salidaArmada=0, borrVisto='', dayBase={}, dayBaseDe='';   /* dayBase: lo guardado del día cuando se abrió (para saber a quién se tocó aquí) */
   function salirDelDia(){ if(!diaSucio()){ salidaArmada=0; borrVisto=''; guardarBorradorDia(); return true; }
     if(Date.now()-salidaArmada>4000){ salidaArmada=Date.now(); toast(`El día ${fdate(diaSel).slice(0,5)} tiene cambios sin guardar. Toca otra vez para salir sin guardar; podrás recuperarlos al volver a ese día.`); return false; }
     salidaArmada=0; borrVisto=''; const o=borrLeer(); o[diaSel]={d:dayDraft, t:Date.now()}; borrPoner(o); borrVivo=''; dayDraft=null; dayDirty=false; return true; }
@@ -3846,21 +4002,33 @@ Responde solo con un objeto JSON:
   async function quitarDelDia(id){
     { const t=trabs.find(x=>x.id===id); if(t && diaBloqueado(t,diaSel)) return false; }
     if(dayDraft) delete dayDraft[id];
-    const saved=regsDe((asis[diaSel]||{}).registros);
+    const act=asis[diaSel], saved=regsDe((act||{}).registros);
     if(saved[id]){
       delete saved[id];
-      const ref=nDb.collection('asistencia').doc(diaSel);
-      if(Object.keys(saved).length){ const v={fecha:diaSel, registros:saved, actualizado:new Date().toISOString()}; await conLimite(ref.set(v), 0, 'quitar a una persona del día '+fdate(diaSel)); asis[diaSel]=v; }
-      else { await conLimite(ref.delete(), 0, 'quitar a una persona del día '+fdate(diaSel)); delete asis[diaSel]; }
+      const ref=nDb.collection('asistencia').doc(diaSel), ah=new Date().toISOString(), que='quitar a una persona del día '+fdate(diaSel);
+      if(esRegistro()){ if(Object.keys(saved).length){ const v={fecha:diaSel, registros:saved, actualizado:ah}; await conLimite(ref.set(v), 0, que); asis[diaSel]=v; } else { await conLimite(ref.delete(), 0, que); delete asis[diaSel]; } }
+      /* Solo se quita el registro de esa persona: lo que otro teléfono haya guardado ese día para los demás no se toca */
+      else if(Object.keys(saved).length){ await escribirJuntos([opEditar('asistencia', diaSel, rutaSegura(id)?{['registros.'+id]:BORRAR, actualizado:ah}:{registros:saved, actualizado:ah}, que, copia(act))], que); const rr={...(act.registros||{})}; delete rr[id]; asis[diaSel]={...act, registros:rr, actualizado:ah}; }
+      else { await conLimite(ref.delete(), 0, que); delete asis[diaSel]; }
+      if(dayBaseDe===diaSel) delete dayBase[id];
     }
     dayDirty=hayCambiosDia();
     return true;
   }
   async function guardarDia(){
     if(!nDb) return;
-    const regs=regsDe(dayDraft), saved=regsDe((asis[diaSel]||{}).registros), fDia=diaSel, enviado=JSON.stringify(regs); let hecho=false;
+    let regs=regsDe(dayDraft); const actDoc=asis[diaSel]||null, saved=regsDe((actDoc||{}).registros), fDia=diaSel, enviado=JSON.stringify(regs); let hecho=false;
     /* Lo ya pagado no se toca: para esos trabajadores se conserva lo guardado */
-    trabs.filter(t=>diaBloqueado(t,diaSel) && !diaCorregir.has(t.id)).forEach(t=>{ if(saved[t.id]) regs[t.id]=saved[t.id]; else delete regs[t.id]; });
+    const pagados=new Set(trabs.filter(t=>diaBloqueado(t,diaSel) && !diaCorregir.has(t.id)).map(t=>t.id));
+    pagados.forEach(id=>{ if(saved[id]) regs[id]=saved[id]; else delete regs[id]; });
+    /* Solo se guarda a quien se tocó en esta pantalla, encima de lo que haya AHORA en la base: lo que otro teléfono registró ese día para otra persona
+       se conserva. Si a la misma persona la cambiaron por fuera desde que se abrió el día, se avisa antes de pisarla */
+    const base = dayBaseDe===diaSel ? dayBase : saved, propio=!esRegistro();
+    const tocados=[...new Set([...Object.keys(regs), ...Object.keys(base)])].filter(id=>!pagados.has(id) && !igual(regs[id], base[id]));
+    if(propio){ const chq=tocados.filter(id=>!igual(saved[id], base[id]) && !igual(saved[id], regs[id]));
+      if(chq.length && !avisoChoque('#nMain', '#dSum', canon(chq.map(id=>[id, saved[id]])), ` A ${chq.map(id=>`${nombreT(id)} (ahora: ${resumenAsis({registros:saved[id]?{[id]:saved[id]}:{}}).replace(/^\S+ /,'')||'no trabajó'})`).join(', ')} ${chq.length===1?'le':'les'} cambiaron este día mientras lo tenías abierto. «Recargar» muestra lo que hay ahora y descarta lo que marcaste; «Guardar igual» deja lo que marcaste aquí.`,
+        ()=>{ borrQuitar(fDia); dayDraft=null; dayDirty=false; renderNom(); }, ()=>guardarDia())) return;
+      const fin={...saved}; tocados.forEach(id=>{ if(regs[id]) fin[id]=regs[id]; else delete fin[id]; }); regs=fin; }
     /* Días pagados que se corrigen: lo nuevo contra lo que ya se pagó por ese día */
     const difPagados=[...diaCorregir].map(id=>{ const t=trabs.find(x=>x.id===id); const pv=t?valorPagado(id,diaSel):null; if(!t||pv==null) return null; const p=regs[id]?pagoDia(t,regs[id],diaSel):{montoDias:0,montoExtra:0,montoBono:0}; return {t, m:r2(p.montoDias+p.montoExtra+p.montoBono-pv)}; }).filter(x=>x&&Math.abs(x.m)>=0.01);
     const btn=$('#dSave'); if(btn){ if(btn.dataset.busy) return; btn.dataset.busy='1'; btn.disabled=true; btn.textContent='Guardando…'; }
@@ -3870,15 +4038,21 @@ Responde solo con un objeto JSON:
       /* Quien trabajó está activo: si estaba inactivo, se activa solo para que siga saliendo los días siguientes */
       const reactivar = diaSel<today() ? [] : Object.entries(regs).filter(([id,r])=>r.tipo!=='no'||num(r.horasExtra)>0).map(([id])=>trabs.find(t=>t.id===id)).filter(t=>t&&t.activo===false);
       const ajs=difPagados.map(x=>opAjuste(x.t, [{f:diaSel, m:x.m}], `Corrección del ${fdate(diaSel)}`, idEstable(kD+'|aj|'+x.t.id,'adelantos'))).filter(Boolean);
-      await escribirJuntos([(Object.keys(regs).length || (esRegistro() && Object.keys(saved).length)) ? opSet('asistencia', diaSel, {fecha:diaSel, registros:regs, ...(esRegistro()?{base:saved}:{}), actualizado:ah}) : opDel('asistencia', diaSel),
+      let opDia;
+      if(!propio) opDia=(Object.keys(regs).length || Object.keys(saved).length) ? opSet('asistencia', diaSel, {fecha:diaSel, registros:regs, base:saved, actualizado:ah}) : opDel('asistencia', diaSel);
+      else if(!Object.keys(regs).length) opDia=actDoc?opDel('asistencia', diaSel):null;
+      else if(!actDoc) opDia={op:'set', col:'asistencia', id:diaSel, datos:{fecha:diaSel, registros:regs, actualizado:ah}, merge:!!(dbRaiz&&dbRaiz.rutas), nuevo:true};   /* el día todavía no existe: si otro teléfono lo crea al mismo tiempo, se suman */
+      else if(!tocados.length) opDia=null;
+      else opDia=opEditar('asistencia', diaSel, tocados.every(rutaSegura) ? {...Object.fromEntries(tocados.map(id=>['registros.'+id, regs[id]||BORRAR])), actualizado:ah} : {registros:regs, actualizado:ah}, 'el día '+fdate(diaSel), copia(actDoc));
+      await escribirJuntos([opDia,
         ...reactivar.map(t=>opUpd('trabajadores', t.id, {activo:true, actualizado:ah}, `activar a ${t.nombre}`)), ...ajs.map(a=>a.op)], 'el día '+fdate(diaSel));
       soltarIntento(kD); reactivar.forEach(t=>{ t.activo=true; });
       { const dsc=r=>!r?'no trabajó':[r.tipo==='completo'?'día completo':r.tipo==='medio'?'medio día':'no trabajó', num(r.horasExtra)?`${nf.format(num(r.horasExtra)).replace(/,00$/,'')} ${num(r.horasExtra)===1?'hora extra':'horas extra'}`:'', r.trabajoId?nombreCorto(docs.find(d=>d.id===r.trabajoId)||{}):''].filter(Boolean).join(', ');
         if(Object.keys(saved).length) [...new Set([...Object.keys(saved),...Object.keys(regs)])].forEach(id=>{ const a=dsc(saved[id]), b=dsc(regs[id]); if(a!==b) registrarCambio('asistencia', diaSel, `Día ${fdate(diaSel)}: ${nombreT(id)}`, a, b); }); }
       diaCorregir=new Set();
       /* Lo guardado se refleja de una vez (sin esperar el aviso de la base) y la pantalla se vuelve a pintar: así no queda diciendo «sin guardar» */
-      borrQuitar(fDia); hecho=true;
-      if(!esRegistro()){ if(Object.keys(regs).length) asis[fDia]={fecha:fDia, registros:regs, actualizado:ah}; else delete asis[fDia]; }
+      borrQuitar(fDia); hecho=true; quitarChoque('#nMain');
+      if(!esRegistro()){ if(Object.keys(regs).length) asis[fDia]={fecha:fDia, registros:regs, actualizado:ah}; else delete asis[fDia]; if(dayBaseDe===fDia) dayBase=JSON.parse(JSON.stringify(regs)); }
       /* Si mientras guardaba se marcó algo más, eso sigue en pantalla y sigue «sin guardar» */
       if(diaSel===fDia){ if(JSON.stringify(regsDe(dayDraft))===enviado){ dayDirty=false; if(!esRegistro()) dayDraft=null; } else dayDirty=true; }
       toast(`Día ${fdate(fDia)} guardado${difPagados.length?' · '+difPagados.map(x=>`${x.t.nombre.split(' ')[0]} ${x.m<0?'− ':'+ '}${usd(Math.abs(x.m))}`).join(', ')+' en el próximo corte':''}${reactivar.length?` · ${reactivar.map(t=>t.nombre.split(' ')[0]).join(' y ')} ${reactivar.length===1?'queda activo':'quedan activos'}`:''}`);
@@ -4049,7 +4223,7 @@ Responde solo con un objeto JSON:
     const legacy = t && t.pmTelefono===undefined && t.pmBanco===undefined && t.pmCedula===undefined;
     $('#wTel').value = t ? (legacy ? '' : (t.telefono||'')) : '';
     $('#wCargo').innerHTML=cfgN.cargos.map(c=>`<option value="${esc(c.nombre)}">${esc(c.nombre)} (${usd(num(c.tarifa))}/día)</option>`).join('')+`<option value="${SUP}">${SUP} (sueldo semanal)</option>`;
-    $('#wCargo').value=t?t.cargo:(cfgN.cargos[0]||{}).nombre||SUP;
+    $('#wCargo').value=t?t.cargo:(cfgN.cargos[0]||{}).nombre||SUP; if(t) ofrecerGuardado('#wCargo', t.cargo, c=>c+' (cargo que ya no está en la lista)');
     $('#wTarifa').value=t&&num(t.tarifa)>0?nf.format(num(t.tarifa)):''; $('#wHx').value=t&&num(t.horaExtra)>0?nf.format(num(t.horaExtra)):'';
     [['#wFSab','factorSabado'],['#wFDom','factorDomingo'],['#wFFer','factorFeriado']].forEach(([sel,k])=>{ $(sel).value=t&&num(t[k])>0?nf.format(num(t[k])):''; $(sel).placeholder=nf.format(num(cfgN[k])||1); });
     $('#wSueldo').value=t&&num(t.sueldoSemanal)>0?nf.format(num(t.sueldoSemanal)):nf.format(num(cfgN.sueldoSupervisor));
@@ -4058,7 +4232,19 @@ Responde solo con un objeto JSON:
     $('#wPmTel').value = pm.telefono||''; setBanco($('#wBanco'), pm.banco||'');
     $('#wCtaNum').value=t&&t.ctaNumero||''; $('#wCtaTipo').value=t&&t.ctaTipo==='ahorro'?'ahorro':'corriente'; $('#wCtaMismo').checked=!t||t.ctaMismo!==false; $('#wCtaTit').value=t&&t.ctaMismo===false?t.ctaTitular||'':''; $('#wCtaCed').value=t&&t.ctaMismo===false?t.ctaCedula||'':''; syncCta();
     $('#wErr').textContent=''; $('#wDel').hidden=!t; $('#wAdel').hidden=!t; $('#wDel').textContent='Eliminar'; delete $('#wDel').dataset.armed;
-    syncCargo(); syncMismo(); openSheet('#wSheet');
+    syncCargo(); syncMismo(); wOrig = t ? JSON.parse(JSON.stringify(t)) : null; wBase = t ? cuerpoTrab().body : null; openSheet('#wSheet');
+  }
+  let wOrig=null, wBase=null;
+  /* Lo que el formulario guardaría en la ficha (sin validar). Se usa al abrir, para saber después qué cambió el usuario, y al guardar */
+  function cuerpoTrab(){
+    const nombre=$('#wNombre').value.trim().replace(/\s+/g,' '), ced=soloDig($('#wCedula').value), tel=normTel($('#wTel').value);
+    const mismo=$('#wMismo').checked, pmTel=normTel($('#wPmTel').value)||(mismo?normTel($('#wTel').value):''), pmCed=mismo?ced:soloDig($('#wPmCed').value), pmTit=mismo?nombre:$('#wPmTit').value.trim().replace(/\s+/g,' '), pmBanco=$('#wBanco').dataset.code||'';
+    const ctaNum=soloDig($('#wCtaNum').value), ctaMismo=$('#wCtaMismo').checked, ctaTit=ctaMismo?nombre:$('#wCtaTit').value.trim().replace(/\s+/g,' '), ctaCed=ctaMismo?ced:soloDig($('#wCtaCed').value);
+    const cargo=$('#wCargo').value, tar=parseNum($('#wTarifa').value), sue=parseNum($('#wSueldo').value), hx=parseNum($('#wHx').value);
+    const body={nombre, cedula:ced, telefono:tel, cargo, tarifa: cargo!==SUP && tar>0 ? r2(tar) : 0, horaExtra: cargo!==SUP && hx>0 ? r2(hx) : 0,
+      ...Object.fromEntries([['factorSabado','#wFSab'],['factorDomingo','#wFDom'],['factorFeriado','#wFFer']].map(([k,sel])=>{ const v=parseNum($(sel).value); return [k, cargo!==SUP && v>0 ? r2(v) : 0]; })), sueldoSemanal: cargo===SUP && sue>0 && Math.abs(sue-num(cfgN.sueldoSupervisor))>0.004 ? r2(sue) : 0, activo:$('#wActivo').checked,
+      pmMismo:mismo, pmTitular:pmTit, pmCedula:pmCed, pmTelefono:pmTel, pmBanco, ctaNumero:ctaNum, ctaTipo:$('#wCtaTipo').value, ctaMismo, ctaTitular:ctaNum&&!ctaMismo?ctaTit:'', ctaCedula:ctaNum&&!ctaMismo?ctaCed:'', fechaIngreso:$('#wIngreso').value||''};
+    return {body, v:{nombre, ced, tel, mismo, pmTel, pmCed, pmTit, pmBanco, ctaNum, ctaMismo, ctaTit, ctaCed, cargo, tar, sue, hx}};
   }
   function syncCargo(){
     const s=$('#wCargo').value===SUP; $('#wTarifaL').hidden=s; $('#wSueldoL').hidden=!s; $('#wHxL').hidden=s; $('#wHxInfo').hidden=s; $('#wRecL').hidden=s;
@@ -4069,32 +4255,34 @@ Responde solo con un objeto JSON:
     $('#wCtaInfo').textContent = !n ? '' : n.length!==20 ? `Lleva ${n.length} de 20 dígitos.` : `Banco: ${bancoNombre(n.slice(0,4))}`; }
   function syncMismo(){ const m=$('#wMismo').checked; $('#wPmTitL').hidden=m; $('#wPmCedL').hidden=m; if(m && !$('#wPmTel').value.trim() && $('#wTel').value.trim()) $('#wPmTel').value=$('#wTel').value.trim(); }
   async function guardarTrab(){
-    const nombre=$('#wNombre').value.trim().replace(/\s+/g,' '), ced=soloDig($('#wCedula').value), tel=normTel($('#wTel').value);
-    const mismo=$('#wMismo').checked, pmTel=normTel($('#wPmTel').value)||(mismo?normTel($('#wTel').value):''), pmCed=mismo?ced:soloDig($('#wPmCed').value), pmTit=mismo?nombre:$('#wPmTit').value.trim().replace(/\s+/g,' '), pmBanco=$('#wBanco').dataset.code||'';
+    const {body:C, v}=cuerpoTrab(), {nombre, ced, tel, mismo, pmTel, pmCed, pmBanco, ctaNum, ctaMismo, ctaTit, ctaCed, cargo, tar, sue}=v;
     if(!nombre){ $('#wErr').textContent='Escribe el nombre.'; return; }
     if(ced && (ced.length<5||ced.length>9)){ $('#wErr').textContent='Revisa la cédula: solo números, sin la V.'; return; }
     if(tel && !/^0\d{10}$/.test(tel)){ $('#wErr').textContent='El teléfono personal debe tener 11 dígitos, por ejemplo 04141234567.'; return; }
     if(pmTel && !/^0\d{10}$/.test(pmTel)){ $('#wErr').textContent='El teléfono de pago móvil debe tener 11 dígitos, por ejemplo 04146470072.'; return; }
     if(!mismo && pmCed && (pmCed.length<5||pmCed.length>9)){ $('#wErr').textContent='Revisa la cédula del titular del pago móvil.'; return; }
-    const ctaNum=soloDig($('#wCtaNum').value), ctaMismo=$('#wCtaMismo').checked, ctaTit=ctaMismo?nombre:$('#wCtaTit').value.trim().replace(/\s+/g,' '), ctaCed=ctaMismo?ced:soloDig($('#wCtaCed').value);
     if(ctaNum && ctaNum.length!==20){ $('#wErr').textContent=`El número de cuenta debe tener 20 dígitos (tiene ${ctaNum.length}).`; return; }
     if(ctaNum && !BANCOS.some(b=>b[0]===ctaNum.slice(0,4))){ $('#wErr').textContent=`Los 4 primeros dígitos de la cuenta (${ctaNum.slice(0,4)}) no son de ningún banco conocido. Revísala.`; return; }
     if(ctaNum && !ctaMismo && (!ctaTit || ctaCed.length<5)){ $('#wErr').textContent='Escribe el titular y la cédula de la cuenta.'; return; }
     if(ced && trabs.some(x=>x.id!==wEditId && x.id!==idsIntento['#wSheet|trab'] && soloDig(x.cedula)===ced)){ $('#wErr').textContent='Ya hay otro trabajador con esa cédula.'; return; }
-    const cargo=$('#wCargo').value, tar=parseNum($('#wTarifa').value), sue=parseNum($('#wSueldo').value), hx=parseNum($('#wHx').value);
-    const body={nombre, cedula:ced, telefono:tel, cargo, tarifa: cargo!==SUP && tar>0 ? r2(tar) : 0, horaExtra: cargo!==SUP && hx>0 ? r2(hx) : 0,
-      ...Object.fromEntries([['factorSabado','#wFSab'],['factorDomingo','#wFDom'],['factorFeriado','#wFFer']].map(([k,sel])=>{ const v=parseNum($(sel).value); return [k, cargo!==SUP && v>0 ? r2(v) : 0]; })), sueldoSemanal: cargo===SUP && sue>0 && Math.abs(sue-num(cfgN.sueldoSupervisor))>0.004 ? r2(sue) : 0, activo:$('#wActivo').checked,
-      pmMismo:mismo, pmTitular:pmTit, pmCedula:pmCed, pmTelefono:pmTel, pmBanco, ctaNumero:ctaNum, ctaTipo:$('#wCtaTipo').value, ctaMismo, ctaTitular:ctaNum&&!ctaMismo?ctaTit:'', ctaCedula:ctaNum&&!ctaMismo?ctaCed:'', actualizado:new Date().toISOString()};
-    const old=wEditId?trabs.find(x=>x.id===wEditId):null, idW=wEditId, anot=[]; body.creado = old&&old.creado || new Date().toISOString(); body.fechaIngreso=$('#wIngreso').value||'';
+    const body={...C, actualizado:new Date().toISOString()};
+    const old=wEditId?trabs.find(x=>x.id===wEditId):null, idW=wEditId, anot=[]; if(!old) body.creado=new Date().toISOString();
+    if(wEditId && (!old||!wOrig)){ $('#wErr').textContent='Esta ficha ya no existe (la eliminaron desde otro teléfono). Cierra la hoja.'; return; }
+    /* Editar: solo se escribe lo que cambió en esta hoja */
+    const cambios=old?cambiosDe(wBase, C):null, cambiaPago=!old || ['cargo','tarifa','sueldoSemanal','horaExtra'].some(k=>k in cambios);
+    if(old){ const chq=choquesDe(cambios, wOrig, old);
+      if(chq.length && !avisoChoque('#wSheet', '#wErr', canon(chq.map(k=>old[k])), detalleChoque(chq, {nombre:'nombre', cedula:'cédula', telefono:'teléfono', cargo:'cargo', tarifa:'tarifa por día', horaExtra:'hora extra', sueldoSemanal:'sueldo semanal', activo:'activo', fechaIngreso:'fecha de ingreso', pmTelefono:'teléfono de pago móvil', pmBanco:'banco de pago móvil', pmCedula:'cédula de pago móvil', pmTitular:'titular de pago móvil', ctaNumero:'número de cuenta', ctaTipo:'tipo de cuenta'}, old), ()=>openTrab(idW), ()=>guardarTrab())) return; }
     /* Si cambia lo que cobra, la tarifa vieja sigue valiendo para los días anteriores a "vale desde" */
     if(old){ const desde=$('#wDesde').value||today(); body.tarifasAnt=Array.isArray(old.tarifasAnt)?old.tarifasAnt.slice():[];
+      if(cambiaPago){
       const tarOld=esSup(old)?sueldoSup(old):tarifaDe(old), tarNew=cargo===SUP?(sue>0?r2(sue):num(cfgN.sueldoSupervisor)):(tar>0?r2(tar):num((cfgN.cargos.find(c=>c.nombre===cargo)||{}).tarifa));
-      if(Math.abs(tarOld-tarNew)>0.004 && desde>'2000-01-01'){ body.tarifasAnt.push({hasta:sumarDias(desde,-1), tarifa:tarOld, sup:esSup(old)}); anot.push(()=>registrarCambio('trabajadores', idW, `${old.nombre}: ${esSup(old)?'sueldo semanal':'tarifa por día'}`, nf.format(tarOld), `${nf.format(tarNew)} desde el ${fdate(desde)}`)); }
-      anot.push(()=>diffCampos('trabajadores', idW, old.nombre, old, body, [['cargo','cargo'],['horaExtra','hora extra',v=>nf.format(num(v))],['activo','activo',v=>v===false?'no':'sí']])); }
+      if(Math.abs(tarOld-tarNew)>0.004 && desde>'2000-01-01'){ body.tarifasAnt.push({hasta:sumarDias(desde,-1), tarifa:tarOld, sup:esSup(old)}); anot.push(()=>registrarCambio('trabajadores', idW, `${old.nombre}: ${esSup(old)?'sueldo semanal':'tarifa por día'}`, nf.format(tarOld), `${nf.format(tarNew)} desde el ${fdate(desde)}`)); cambios.tarifasAnt=body.tarifasAnt; } }
+      { const o0=JSON.parse(JSON.stringify(old)), b0={...old, ...cambios}; anot.push(()=>diffCampos('trabajadores', idW, o0.nombre, o0, b0, [['cargo','cargo'],['horaExtra','hora extra',v=>nf.format(num(v))],['activo','activo',v=>v===false?'no':'sí']])); } }
     /* La ficha y la diferencia de días ya pagados (si cambió la tarifa) se guardan juntas; el botón queda bloqueado mientras guarda */
     await conBoton($('#wSave'), 'Guardar', async()=>{
-      try{ let aj=0, opAj=null; if(old && !esSup(old) && cargo!==SUP){ const desde=$('#wDesde').value||today(); const t2={...old, ...body, id:idW}; if(Math.abs(tarifaDe(old)-tarifaDe(t2))>0.004 || Math.abs(horaExtraDe(old)-horaExtraDe(t2))>0.004){ const a=opAjusteRetro(t2, desde, `Tarifa nueva desde el ${fdate(desde)}`, idEstable('#wSheet|aj','adelantos')); if(a){ opAj=a.op; aj=a.tot; } } }
-        await escribirJuntos([opSet('trabajadores', idW||idEstable('#wSheet|trab','trabajadores'), body), opAj], 'la ficha de '+nombre);
+      try{ let aj=0, opAj=null; if(old && cambiaPago && !esSup(old) && cargo!==SUP){ const desde=$('#wDesde').value||today(); const t2={...old, ...body, id:idW}; if(Math.abs(tarifaDe(old)-tarifaDe(t2))>0.004 || Math.abs(horaExtraDe(old)-horaExtraDe(t2))>0.004){ const a=opAjusteRetro(t2, desde, `Tarifa nueva desde el ${fdate(desde)}`, idEstable('#wSheet|aj','adelantos')); if(a){ opAj=a.op; aj=a.tot; } } }
+        if(old && !Object.keys(cambios).length && !opAj){ closeSheets(); toast('Sin cambios: no había nada que guardar'); return; }
+        await escribirJuntos([old ? opEditar('trabajadores', idW, {...cambios, actualizado:body.actualizado}, 'la ficha de '+nombre) : opSet('trabajadores', idEstable('#wSheet|trab','trabajadores'), body), opAj], 'la ficha de '+nombre);
         anot.forEach(f=>f()); soltarIntento('#wSheet');
         closeSheets(); setTimeout(renderNom,50); toast((pmOk({telefono:pmTel,cedula:pmCed,banco:pmBanco})?'Trabajador guardado':'Guardado; faltan datos de pago móvil')+(aj?` · diferencia de días ya pagados ${aj<0?'− ':''}${usd(Math.abs(aj))} en el próximo corte`:'')); }
       catch(err){ $('#wErr').textContent=errMsg(err); } });
@@ -4195,7 +4383,7 @@ Responde solo con un objeto JSON:
       const ren=Object.fromEntries(renombres), opsRen=renombres.flatMap(([a,b])=>trabs.filter(t=>t.cargo===a).map(t=>opUpd('trabajadores', t.id, {cargo:b}, `el cargo de ${t.nombre}`)));
       let ajT=0, ajN=0; const opsAj=[];
       if(cambiaron.length && desdeAj<=today()){ cfgN=n; try{ for(const t0 of trabs){ const t=ren[t0.cargo]?{...t0, cargo:ren[t0.cargo]}:t0; if(esSup(t) || !cambiaron.includes(t.cargo) || num(t.tarifa)>0) continue; const a=opAjusteRetro(t, desdeAj, `Tarifa nueva desde el ${fdate(desdeAj)}`, idEstable('ajNom|aj|'+t.id,'adelantos')); if(a){ opsAj.push(a.op); ajT+=a.tot; ajN++; } } } finally{ cfgN=cfg0; } }
-      await escribirJuntos([{op:'set', col:'config', id:'nomina', datos:n, antes:JSON.parse(JSON.stringify(cfg0)), que:'los ajustes de nómina'}, ...opsRen, ...opsAj], 'los ajustes de nómina');
+      await escribirJuntos([opCfg('nomina', cambiosCfg(cfg0, n), 'los ajustes de nómina', n), ...opsRen, ...opsAj], 'los ajustes de nómina'); if(cfgLeida.nomina) cfgLeida.nomina.existe=true;
       if(cambiaron.length && desdeAj<=today()) cfgN=n;
       anot.forEach(f=>f()); soltarIntento('ajNom');
       aDesde=''; toast(ajN?`Ajustes guardados · ${ajN} ${ajN===1?'persona':'personas'} con diferencia de días ya pagados (${ajT<0?'− ':''}${usd(Math.abs(r2(ajT)))}) en el próximo corte`:'Ajustes guardados');
@@ -4307,7 +4495,7 @@ Responde solo con un objeto JSON:
 
   function iniciarNomina(db){
     nDb=db; nCfgRef=db.doc('config/nomina');
-    nCfgRef.onSnapshot(s=>{ const d=s.exists?s.data():null; cfgN = d ? {...CFG_DEF, ...d, cargos:Array.isArray(d.cargos)&&d.cargos.length?d.cargos:CFG_DEF.cargos, feriados:Array.isArray(d.feriados)?d.feriados:CFG_DEF.feriados} : JSON.parse(JSON.stringify(CFG_DEF)); if(nView!=='ajustes') renderNom(); }, ()=>{});
+    nCfgRef.onSnapshot(s=>{ const d=s.exists?s.data():null; cfgOk('nomina', s.exists, d); cfgN = d ? {...CFG_DEF, ...d, cargos:Array.isArray(d.cargos)&&d.cargos.length?d.cargos:CFG_DEF.cargos, feriados:Array.isArray(d.feriados)?d.feriados:CFG_DEF.feriados} : JSON.parse(JSON.stringify(CFG_DEF)); if(nView!=='ajustes') renderNom(); }, ()=>{ cfgMal('nomina'); });
     db.collection('trabajadores').onSnapshot(s=>{ trabs=s.docs.map(d=>Object.assign({id:d.id}, d.data())); nLoaded.t=true; if(!(nView==='dia'&&dayDirty)) renderNom(); }, ()=>{ nLoaded.t=true; renderNom(); });
     db.collection('asistencia').onSnapshot(s=>{ asis={}; s.docs.forEach(d=>{ const v=d.data(); asis[v.fecha||d.id]=v; }); nLoaded.a=true; if(!(nView==='dia'&&dayDirty)){ dayDraft=null; renderNom(); } if(modulo==='cob'){ renderStats(); renderList(); } }, ()=>{ nLoaded.a=true; renderNom(); });
     db.collection('adelantos').onSnapshot(s=>{ adels=s.docs.map(d=>Object.assign({id:d.id}, d.data())); nLoaded.d=true; if(!(nView==='dia'&&dayDirty)) renderNom(); }, ()=>{ nLoaded.d=true; renderNom(); });
@@ -4501,8 +4689,9 @@ Responde solo con un objeto JSON:
     if(cur && (typeof cur==='object' ? cur.de==='escrita' : true)) return;   // la escrita a mano manda
     if(cur && typeof cur==='object' && Math.abs(num(cur.t)-tasa)<0.005) return;
     { const rango=x=>({'cambio entre cuentas':3,'corte de nómina':2,'ingreso':1,'cobro':1}[x]||0); if(cur && typeof cur==='object' && rango(cur.de)>rango(de)) return; }   // un cambio de verdad manda sobre el corte, y el corte sobre la tasa acordada con un cliente
-    const T2={...T, [fecha]:{t:r2(tasa), de:de||'registro'}}; const ks=Object.keys(T2).sort(); while(ks.length>400) delete T2[ks.shift()];
-    gcfg={...gcfg, tasas:T2}; try{ await conLimite(gCfgRef.set(JSON.parse(JSON.stringify(gcfg))), 0, 'la tasa aprendida'); }catch(_){}
+    if(!cfgLista('gastos')) return;   /* si la configuración no se pudo leer, no se escribe nada encima */
+    const T2={...T, [fecha]:{t:r2(tasa), de:de||'registro'}}, cam=rutaSegura(fecha)?{['tasas.'+fecha]:T2[fecha]}:null; const ks=Object.keys(T2).sort(); while(ks.length>400){ const k0=ks.shift(); delete T2[k0]; if(cam && rutaSegura(k0)) cam['tasas.'+k0]=BORRAR; }
+    const g1={...gcfg, tasas:T2}; gcfg=g1; try{ await escribirCfg('gastos', cam||{tasas:T2}, 'la tasa aprendida', JSON.parse(JSON.stringify(g1))); }catch(_){}
   }
   /* Aviso cuando una tasa escrita se aleja más de 20 % de la del día (o de la última usada): devuelve la referencia o 0 */
   function tasaDesviada(t, fecha){ const ref=(tasaDelDia(fecha)||{}).tasa || tasaSugerida(); return ref>0 && t>0 && Math.abs(t-ref)/ref>0.2 ? ref : 0; }
@@ -4516,7 +4705,9 @@ Responde solo con un objeto JSON:
     const td=tasaDelDia(), hoy=today(); const vieja=td && td.fecha<hoy;
     return `<div class="tdia num"><label>Tasa del día (Bs. por USD)<input id="tasaDiaIn" inputmode="decimal" value="${td?nfT.format(td.tasa):''}" placeholder="Ej.: 230,00"></label><small>${td?`${vieja?'Última registrada el '+fdate(td.fecha):'De hoy'} · ${td.de==='escrita'?'escrita por ti':'tomada de un '+esc(td.de)}${vieja?'. Escribe la de hoy si cambió.':''}`:'Sin tasa registrada: escribe la de hoy. Con ella se llevan a dólares los bolívares en todas las pantallas.'}</small></div>`;
   }
-  async function guardarTasaDia(v){ const t=parseNum(v); if(!(t>0)||!gCfgRef||!esDueno()) return; const T={...((gcfg&&gcfg.tasas)||{}), [today()]:{t:r2(t), de:'escrita'}}; gcfg={...gcfg, tasas:T}; try{ await conLimite(gCfgRef.set(JSON.parse(JSON.stringify(gcfg))), 0, 'la tasa del día'); toast(`Tasa del día: ${nfT.format(t)}`); }catch(e){ toast(errMsg(e)); } }
+  async function guardarTasaDia(v){ const t=parseNum(v); if(!(t>0)||!gCfgRef||!esDueno()) return; const hoy=today(), T={...((gcfg&&gcfg.tasas)||{}), [hoy]:{t:r2(t), de:'escrita'}}, g1={...gcfg, tasas:T};
+    /* Solo se escribe la tasa de hoy (un campo), no la configuración entera; y si la configuración no se pudo leer, no se escribe nada */
+    try{ await escribirCfg('gastos', {['tasas.'+hoy]:T[hoy]}, 'la tasa del día', JSON.parse(JSON.stringify(g1))); gcfg={...gcfg, tasas:{...((gcfg&&gcfg.tasas)||{}), [hoy]:T[hoy]}}; toast(`Tasa del día: ${nfT.format(t)}`); }catch(e){ if(!(e&&e.code==='config_sin_leer')) toast(errMsg(e)); } }
   document.addEventListener('change', e=>{ if(e.target.id==='tasaDiaIn') guardarTasaDia(e.target.value); });
   function renderMov(el){
     const hoy=today(), sinSaldos=!gcfg.cuentas.some(c=>((gcfg.saldos||{})[c.id]||{}).fecha);
@@ -4708,7 +4899,10 @@ Responde solo con un objeto JSON:
       let ia=null;
       if(window.__standalone && $('#iaClave')){ const cr=parseNum(($('#iaCredito')||{value:''}).value); if(isNaN(cr)||cr<0){ $('#gAjErr').textContent='El crédito de Claude IA debe ser un número.'; return; }
         ia={clave:$('#iaClave').value.trim(), modelo:($('#iaModelo')||{value:''}).value.trim(), credito:r2(cr)}; if(!(ia.clave!==iaCfg.clave||ia.modelo!==iaCfg.modelo||ia.credito!==num(iaCfg.credito))) ia=null; }
-      await conLimite(gCfgRef.set(n), 0, 'los ajustes de Gastos'); gcfg=n; anotar();
+      { const cam=cambiosCfg(g0, n); delete cam.saldos;
+        Object.keys(n.saldos||{}).forEach(id=>{ const a=(g0.saldos||{})[id]||{}, b=n.saldos[id]; if(num(a.monto)!==num(b.monto) || (a.fecha||'')!==(b.fecha||'') || num(a.tasa)!==num(b.tasa)){ if(rutaSegura(id)) cam['saldos.'+id]=b; else cam.saldos=n.saldos; } });
+        await escribirCfg('gastos', cam, 'los ajustes de Gastos', n); }
+      gcfg=n; anotar();
       if(ia){ await conLimite(gDb.doc('config/ia').set(ia,{merge:true}), 0, 'los ajustes del asistente'); iaCfg={...iaCfg, ...ia}; publicarIA(); }
       toast('Ajustes guardados'); renderGas();
     }catch(err){ $('#gAjErr').textContent=errMsg(err); } });
@@ -4723,14 +4917,14 @@ Responde solo con un objeto JSON:
   function fillFactTrab(sel){ const ls=docs.filter(d=>saldo(d)>0).sort((a,b)=>(tieneOrden(b)-tieneOrden(a)) || byOrden(a,b)); $('#mvFactTrab').innerHTML = '<option value="__rep">Todavía sin orden: queda por repartir después</option>' + (ls.length ? ls.map(d=>`<option value="${esc(d.id)}">${tieneOrden(d)?esc(d.ods):'Sin orden'} · ${esc(d.descripcion)}${d.unidad?' ('+esc(d.unidad)+')':''} · saldo ${usd(saldo(d))}</option>`).join('') : ''); $('#mvFactTrab').value = sel && ls.some(d=>d.id===sel) ? sel : (ls[0]?ls[0].id:'__rep'); }
   function fillMvSelects(){
     const opts=gcfg.cuentas.map(c=>`<option value="${esc(c.id)}">${esc(c.nombre)} (${c.moneda==='VES'?'Bs.':'USD'})</option>`).join('');
-    ['#mvCuenta','#mvOrig','#mvDest'].forEach(s=>{ const v=$(s).value; $(s).innerHTML=opts; if(v) $(s).value=v; });
+    ['#mvCuenta','#mvOrig','#mvDest'].forEach(s=>{ const v=$(s).value; $(s).innerHTML=opts; if(v) ofrecerGuardado(s, v, x=>x+' (cuenta que ya no existe)'); });
     const ts=centrosCosto();
-    const v=$('#mvTrab').value; $('#mvTrab').innerHTML='<option value="">Ninguno (gasto general)</option>'+ts.map(d=>`<option value="${esc(d.id)}">${esc(d.descripcion)}${d.unidad?' · '+esc(d.unidad):''}${tieneOrden(d)?' · '+esc(d.ods):''}</option>`).join(''); $('#mvTrab').value=v||'';
+    const v=$('#mvTrab').value; $('#mvTrab').innerHTML='<option value="">Ninguno (gasto general)</option>'+ts.map(d=>`<option value="${esc(d.id)}">${esc(d.descripcion)}${d.unidad?' · '+esc(d.unidad):''}${tieneOrden(d)?' · '+esc(d.ods):''}</option>`).join(''); $('#mvTrab').value=''; if(v) ofrecerGuardado('#mvTrab', v, rotuloOrden);
   }
   function fillCats(sel){
     const ls=catsPara(mvTipo, $('#mvACargo').value);
     $('#mvCat').innerHTML=(mvTipo==='gasto'&&!sel?'<option value="">Elige la categoría…</option>':'')+ls.filter(c=>c!=='Nómina'&&c!=='Sueldos de supervisores'||sel===c).map(c=>`<option value="${esc(c)}">${c===COBRO_FACT?'Cobro a cliente (factura, abono o anticipo)':c===PAGO_REP?'Pago de cliente sin orden (se reparte después)':esc(c)}</option>`).join('');
-    if(sel && !ls.includes(sel)) $('#mvCat').insertAdjacentHTML('afterbegin', `<option value="${esc(sel)}">${esc(sel)}</option>`);
+    if(sel && !ls.includes(sel)) $('#mvCat').insertAdjacentHTML('afterbegin', `<option value="${esc(sel)}">${esc(sel)} (ya no está en la lista)</option>`);
     if(sel) $('#mvCat').value=sel;
   }
   function syncMvTipo(){
@@ -4769,7 +4963,8 @@ Responde solo con un objeto JSON:
       const o=cuentaDe($('#mvOrig').value), d=cuentaDe($('#mvDest').value), mo=parseNum($('#mvOrigMonto').value);
       const md=parseNum($('#mvDestMonto').value), omEl=$('#mvOrigMonto'), dmEl=$('#mvDestMonto');
       /* Con la tasa se calcula el lado que no escribiste: de lo que sale a lo que entra, o de lo que entra a lo que sale. Lo que escribes no se toca */
-      if(o.moneda!==d.moneda && t>0 && dmEl.dataset.manual && !omEl.dataset.manual && md>0){ const calcO = o.moneda==='USD' ? r2(md/t) : r2(md*t); omEl.value=nf.format(calcO); txt=`Salen <b>${enMoneda(calcO,o.moneda)}</b>`; }
+      if(mvCamQuieto){ if(o.moneda!==d.moneda && md>0) txt=`Entran <b>${enMoneda(md,d.moneda)}</b>`; }
+      else if(o.moneda!==d.moneda && t>0 && dmEl.dataset.manual && !omEl.dataset.manual && md>0){ const calcO = o.moneda==='USD' ? r2(md/t) : r2(md*t); omEl.value=nf.format(calcO); txt=`Salen <b>${enMoneda(calcO,o.moneda)}</b>`; }
       else if(o.moneda!==d.moneda && t>0 && mo>0){ const calc = o.moneda==='USD' ? r2(mo*t) : r2(mo/t); txt=`Entran <b>${enMoneda(calc,d.moneda)}</b>`; if(!dmEl.dataset.manual) dmEl.value=nf.format(calc); }
       else if(o.moneda===d.moneda && mo>0 && !$('#mvDestMonto').dataset.manual){ $('#mvDestMonto').value=nf.format(mo); }
     } else {
@@ -4943,14 +5138,14 @@ Responde solo con un objeto JSON:
   ['#mvViaBs','#mvViaTasa'].forEach(x=>$(x).addEventListener('input', ()=>{ const vb=parseNum($('#mvViaBs').value)||0, vt=parseNum($('#mvViaTasa').value)||0; if(vb>0&&vt>0) $('#mvMonto').value=nf.format(r2(vb/vt)); renderMvConv(); }));
   function openMov(tipo, id){ mvDeuda=null; mvVia='directo'; $('#mvViaBs').value=''; $('#mvViaTasa').value='';
     const m=id?movs.find(x=>x.id===id):null; mvEditId=id||null; mvAplicando=false; mvTipo=m?m.tipo:tipo;
-    fillMvSelects();
+    ['#mvTrab','#mvCuenta','#mvOrig','#mvDest'].forEach(s=>{ $(s).value=''; }); fillMvSelects();
     $('#mvTitle').textContent = m ? 'Editar movimiento' : mvTipo==='gasto'?'Nuevo gasto':mvTipo==='ingreso'?'Nuevo ingreso':'Cambio entre cuentas';
     $('#mvFecha').value=m?m.fecha:today(); $('#mvACargo').value=m&&m.aCargo||'Empresa';
-    $('#mvConcepto').value=m?m.concepto||'':''; $('#mvRef').value=m?m.referencia||'':''; $('#mvTrab').value=m&&m.trabajoId||'';
-    $('#mvCuenta').value=m&&m.cuenta||(mvTipo==='ingreso'?'banco':'binance');   /* lo que sale, sale de Binance salvo que se diga otra cosa */ $('#mvMonto').value=m&&num(m.monto)?nf.format(num(m.monto)):'';
-    $('#mvOrig').value=m&&m.cuentaOrigen||'banco'; $('#mvDest').value=m&&m.cuentaDestino||'binance';   /* lo normal: con los bolívares del banco se compran USDT */
+    $('#mvConcepto').value=m?m.concepto||'':''; $('#mvRef').value=m?m.referencia||'':''; $('#mvTrab').value=''; if(m&&m.trabajoId) ofrecerGuardado('#mvTrab', m.trabajoId, rotuloOrden);
+    $('#mvCuenta').value=(mvTipo==='ingreso'?'banco':'binance'); if(m&&m.cuenta) ofrecerGuardado('#mvCuenta', m.cuenta, x=>x+' (cuenta que ya no existe)');   /* lo que sale, sale de Binance salvo que se diga otra cosa */ $('#mvMonto').value=m&&num(m.monto)?nf.format(num(m.monto)):'';
+    $('#mvOrig').value='banco'; $('#mvDest').value='binance'; if(m&&m.cuentaOrigen) ofrecerGuardado('#mvOrig', m.cuentaOrigen, x=>x+' (cuenta que ya no existe)'); if(m&&m.cuentaDestino) ofrecerGuardado('#mvDest', m.cuentaDestino, x=>x+' (cuenta que ya no existe)');   /* lo normal: con los bolívares del banco se compran USDT */
     $('#mvBs').value=m&&m.tipo==='gasto'&&num(m.montoBs)>0?nf.format(num(m.montoBs)):'';
-    $('#mvOrigMonto').value=m&&num(m.montoOrigen)?nf.format(num(m.montoOrigen)):''; $('#mvDestMonto').value=m&&num(m.montoDestino)?nf.format(num(m.montoDestino)):''; delete $('#mvDestMonto').dataset.manual; delete $('#mvOrigMonto').dataset.manual; if(m&&m.tipo==='cambio'){ $('#mvDestMonto').dataset.manual='1'; $('#mvOrigMonto').dataset.manual='1'; }
+    $('#mvOrigMonto').value=m&&num(m.montoOrigen)?nf.format(num(m.montoOrigen)):''; $('#mvDestMonto').value=m&&num(m.montoDestino)?nf.format(num(m.montoDestino)):''; delete $('#mvDestMonto').dataset.manual; delete $('#mvOrigMonto').dataset.manual; /* Cambio que se edita: lo guardado se muestra tal cual; «lo que entra» se recalcula en cuanto cambian lo que sale, la tasa o las cuentas, salvo que se escriba esa casilla en esta sesión */ mvCamQuieto=!!(m&&m.tipo==='cambio'); if(mvCamQuieto) $('#mvOrigMonto').dataset.manual='1';
     delete $('#mvTasa').dataset.manual; if(m) $('#mvTasa').dataset.manual='1';
     const ts=mvTipo==='ingreso' ? ((ultimaTasa()||{}).tasa||tasaSugerida()) : tasaSugerida(); $('#mvTasa').value = m ? (num(m.tasa)?nfT.format(num(m.tasa)):'') : (ts?nfT.format(ts):'');
     $('#mvErr').textContent=''; $('#mvDel').hidden=!m; $('#mvDel').textContent='Eliminar'; delete $('#mvDel').dataset.armed;
@@ -4962,7 +5157,20 @@ Responde solo con un objeto JSON:
     $('#mvCredChk').checked=false; $('#mvCredAcre').value='Cashea'; $('#mvCredIni').value=''; $('#mvCredN').value='3'; $('#mvCredDias').value='14'; $('#mvCredF1').value=''; delete $('#mvCredF1').dataset.manual;
     $('#mvFactNum').value=''; $('#mvModo').value='banco';
     limpiarFiltros('#mvSheet'); fillCats(m&&m.categoria); syncMvTipo();
+    mvOrig = m ? JSON.parse(JSON.stringify(m)) : null; mvBase = m ? cuerpoMov() : null;
     openSheet('#mvSheet');
+  }
+  let mvOrig=null, mvBase=null, mvCamQuieto=false;
+  /* Lo que el formulario guardaría en el movimiento (sin validar). Se usa al abrir, para saber después qué cambió el usuario, y al guardar */
+  function cuerpoMov(){
+    const f=$('#mvFecha').value, t=parseNum($('#mvTasa').value), body={tipo:mvTipo, fecha:f, referencia:$('#mvRef').value.trim()};
+    if(mvTipo==='cambio') return Object.assign(body,{cuentaOrigen:$('#mvOrig').value, montoOrigen:r2(parseNum($('#mvOrigMonto').value)), cuentaDestino:$('#mvDest').value, montoDestino:r2(parseNum($('#mvDestMonto').value)), tasa:t>0?t:0, concepto:$('#mvConcepto').value.trim()});
+    const m=parseNum($('#mvMonto').value), cta=$('#mvCuenta').value;
+    Object.assign(body,{concepto:$('#mvConcepto').value.trim(), categoria:$('#mvCat').value, aCargo: mvTipo==='gasto'?$('#mvACargo').value:'Empresa', cuenta:cta, monto:r2(m), tasa:t>0?t:0, trabajoId: mvTipo==='gasto'&&$('#mvACargo').value==='Empresa'?$('#mvTrab').value:''});
+    const bsReg=esRegistro() && cuentaDe(cta).moneda!=='VES' ? (parseNum($('#mvBs').value)||0) : 0;
+    if(esRegistro()){ body.tasa=0; if(bsReg>0){ body.montoBs=r2(bsReg); if(!(m>0)) body.monto=0; } }
+    else if(mvTipo==='gasto' && cuentaDe(cta).moneda!=='VES'){ const bG=parseNum($('#mvBs').value)||0, tuG=tasaBsBinance(f); body.tasa=0; if(bG>0&&m>0){ body.montoBs=r2(bG); body.tasa=r4(bG/m); } else if(bG>0&&tuG){ body.montoBs=r2(bG); body.tasa=tuG.tasa; } }
+    return body;
   }
   /* Lo escrito en una hoja, para saber si un reintento es «lo mismo» */
   const firmaHoja = sel => JSON.stringify([...document.querySelectorAll(sel+' input,'+sel+' select,'+sel+' textarea')].map(x=>x.type==='checkbox'||x.type==='radio'?x.checked:x.value));
@@ -4974,14 +5182,17 @@ Responde solo con un objeto JSON:
     const enviar=(ops, que, fin)=>conBoton(btnMv, 'Guardar', async()=>{ try{ await guardarOps('#mvSheet', firma, ops, que, fin); fin(); }catch(e){ err(errMsg(e)); } });
     { const du=reintento('#mvSheet', firma); if(du&&du.cambio) return err(TXT_DUDA); if(du) return enviar(du.ops, 'el movimiento', du.fin); }
     if(!f) return err('Pon la fecha.');
-    let body={tipo:mvTipo, fecha:f, referencia:$('#mvRef').value.trim(), actualizado:new Date().toISOString()};
+    const C=cuerpoMov(); let body={...C, actualizado:new Date().toISOString()};
     if(mvTipo==='cambio'){
       const o=$('#mvOrig').value, d=$('#mvDest').value, mo=parseNum($('#mvOrigMonto').value), md=parseNum($('#mvDestMonto').value);
       if(o===d) return err('Elige dos cuentas distintas.');
       if(!(mo>0)) return err('Escribe el monto que sale.');
       if(!(md>0)) return err('Escribe el monto que entra.');
       if(cuentaDe(o).moneda!==cuentaDe(d).moneda && !(t>0)) return err('Escribe la tasa del cambio.');
-      Object.assign(body,{cuentaOrigen:o, montoOrigen:r2(mo), cuentaDestino:d, montoDestino:r2(md), tasa:t>0?t:0, concepto:$('#mvConcepto').value.trim()});
+      /* Entre monedas distintas, lo que entra tiene que ser lo que sale por (o entre) la tasa, con un céntimo de tolerancia; si no, se pide confirmar */
+      if(cuentaDe(o).moneda!==cuentaDe(d).moneda){ const esp=cuentaDe(o).moneda==='USD'?r2(mo*t):r2(mo/t), tocado=!mvEditId || !mvBase || ['montoOrigen','montoDestino','tasa','cuentaOrigen','cuentaDestino'].some(k=>!igual(mvBase[k], C[k])), kC='mvCam|'+r2(mo)+'|'+r2(md)+'|'+t;
+        if(tocado && Math.abs(esp-r2(md))>0.0105 && tasaArmada!==kC){ tasaArmada=kC; return err(`Lo que entra (${enMoneda(r2(md),cuentaDe(d).moneda)}) no coincide con lo que sale a esa tasa (${enMoneda(esp,cuentaDe(d).moneda)}). Corrige el monto o la tasa; si de verdad es así, toca Guardar otra vez.`); }
+        if(tasaArmada===kC) tasaArmada=''; }
     } else if(esCobroFact()){
       const d=docs.find(x=>x.id===$('#mvFactTrab').value), m=parseNum($('#mvMonto').value);
       if(!d) return err('Elige el trabajo facturado.');
@@ -5016,12 +5227,9 @@ Responde solo con un objeto JSON:
       if(mvTipo==='gasto' && cuentaDe(cta).moneda==='VES' && !esRegistro() && !$('#mvDeudaChk').checked && !(!$('#mvCredL').hidden && $('#mvCredChk').checked)){ const old=mvEditId?movs.find(x=>x.id===mvEditId):null, disp=r2(saldoCuenta(cta, f>today()?f:today())+(old&&old.cuenta===cta?num(old.monto):0)), kN='mvNeg|'+cta+'|'+r2(m);
         if(disp-m < -0.005 && tasaArmada!==kN){ tasaArmada=kN; return err(`El banco quedaría en − Bs. ${nf.format(r2(m-disp))}. Si esos bolívares salieron de vender USDT, elige Binance como cuenta y escribe el monto en Bs. Si de verdad salió del banco, toca Guardar otra vez.`); }
         if(tasaArmada===kN) tasaArmada=''; }
-      Object.assign(body,{concepto, categoria:$('#mvCat').value, aCargo: mvTipo==='gasto'?$('#mvACargo').value:'Empresa', cuenta:cta, monto:r2(m), tasa:t>0?t:0, trabajoId: mvTipo==='gasto'&&$('#mvACargo').value==='Empresa'?$('#mvTrab').value:''});
       if(!mvEditId && (mvTipo==='gasto'||mvTipo==='ingreso')){ const dias=(a,b)=>Math.abs(new Date(a+'T12:00:00')-new Date(b+'T12:00:00'))/864e5, cN=normTxt(concepto);
         const igual=movs.find(x=>x.id!==idsIntento['#mvSheet|mov'] && x.tipo===mvTipo && (x.cuenta||'')===cta && Math.abs(num(x.monto)-r2(m))<0.005 && dias(x.fecha,f)<=3 && (normTxt(x.concepto)===cN || (cN.length>3 && (normTxt(x.concepto).includes(cN)||cN.includes(normTxt(x.concepto))))));
         const kD='mvDup|'+(igual?igual.id:''); if(igual && tasaArmada!==kD){ tasaArmada=kD; return err(`Ya hay uno igual el ${fdate(igual.fecha)}: «${igual.concepto||igual.categoria}» por ${enMoneda(num(igual.monto),cuentaDe(cta).moneda)}. Si de verdad es otro, toca Guardar otra vez.`); } if(igual) tasaArmada=''; }
-      if(esRegistro()){ body.tasa=0; if(bsReg>0){ body.montoBs=r2(bsReg); if(!(m>0)) body.monto=0; } }
-      else if(mvTipo==='gasto' && cuentaDe(cta).moneda!=='VES'){ const bG=parseNum($('#mvBs').value)||0, tuG=tasaBsBinance(f); body.tasa=0; delete body.montoBs; if(bG>0&&m>0){ body.montoBs=r2(bG); body.tasa=r4(bG/m); } else if(bG>0&&tuG){ body.montoBs=r2(bG); body.tasa=tuG.tasa; } }
       /* Queda por pagar: se anota la deuda; el dinero sale cuando se paga */
       if(mvTipo==='gasto' && !mvEditId && !mvDeuda && !esRegistro() && $('#mvDeudaChk').checked){ body.tipo='deuda'; body.pagado=false; }
     }
@@ -5036,7 +5244,16 @@ Responde solo con un objeto JSON:
     if(mvDeuda && mvDeuda.cuotas && !mvEditId && body.tipo==='gasto') body.credito={deudaId:mvDeuda.deudaId, cuotas:[...mvDeuda.cuotas]};
     /* El movimiento y todo lo que arrastra (cuotas pagadas, cuenta por pagar saldada, entradas de inventario enlazadas) se guardan juntos: todo o nada.
        El movimiento nuevo recibe su identificador una vez por hoja abierta: tocar Guardar otra vez escribe encima, no crea otro */
-    const idEd=mvEditId, idMv=idEd||idEstable('#mvSheet|mov','movimientos'), ops=[opSet('movimientos', idMv, body, body.tipo==='deuda'?'la cuenta por pagar':body.tipo==='cambio'?'el cambio entre cuentas':body.tipo==='ingreso'?'el ingreso':'el gasto')], avisos=[];
+    const idEd=mvEditId, idMv=idEd||idEstable('#mvSheet|mov','movimientos'), queMv=body.tipo==='deuda'?'la cuenta por pagar':body.tipo==='cambio'?'el cambio entre cuentas':body.tipo==='ingreso'?'el ingreso':'el gasto', avisos=[]; let ops, cambiosMv=null;
+    if(idEd){
+      /* Editar: solo se escribe lo que cambió en esta hoja; lo que la hoja no muestra (enlaces, reparto, bolívares, orden) queda como está */
+      if(!old||!mvOrig) return err('Este movimiento ya no existe (lo eliminaron desde otro teléfono). Cierra la hoja.');
+      cambiosMv=cambiosDe(mvBase, C); const chq=choquesDe(cambiosMv, mvOrig, old);
+      if(chq.length && !avisoChoque('#mvSheet', '#mvErr', canon(chq.map(k=>old[k])), detalleChoque(chq, {fecha:'fecha', concepto:'concepto', categoria:'categoría', aCargo:'a cargo de', cuenta:'cuenta', monto:'monto', tasa:'tasa', trabajoId:'orden', referencia:'referencia', montoBs:'monto en bolívares', cuentaOrigen:'cuenta de la que sale', montoOrigen:'monto que sale', cuentaDestino:'cuenta a la que entra', montoDestino:'monto que entra'}, old), ()=>openMov(mvTipo, idEd), ()=>guardarMov())) return;
+      if(!Object.keys(cambiosMv).length){ closeSheets(); toast('Sin cambios: no había nada que guardar'); return; }
+      ops=[opEditar('movimientos', idEd, {...cambiosMv, actualizado:body.actualizado}, queMv)];
+      { const b2=aplicarCambios(old, cambiosMv); delete b2.id; b2.actualizado=body.actualizado; body=b2; }
+    } else ops=[opSet('movimientos', idMv, body, queMv)];
     let D = (mvDeuda && !idEd && body.tipo==='gasto') ? mvDeuda : null; const esPago=!!D;
     /* Pago de cuotas de una compra a crédito: se marcan pagadas; con la última, la cuenta por pagar queda saldada */
     if(D && D.deudaId && D.cuotas){ const d=movs.find(x=>x.id===D.deudaId);
@@ -5049,13 +5266,14 @@ Responde solo con un objeto JSON:
     if(D && D.ids){ const pagU=usdDe(body, tasaSugerida()), f0=D.usd>0?pagU/D.usd:1;
       for(const id of D.ids){ const e=invMovs.find(x=>x.id===id); if(!e) continue; const upd={movId:idMv, porPagar:false, actualizado:new Date().toISOString()}; if(num(e.costoUnit)>0 && Math.abs(f0-1)>0.0001) upd.costoUnit=r4(num(e.costoUnit)*f0); ops.push(opUpd('invMovs', id, upd, 'enlazar la entrada de inventario con su pago')); }
       avisos.push(()=>setTimeout(()=>{ if(gView==='mov') renderGas(); },300)); D=null; }
-    return enviar(ops, ops[0].que, ()=>{
-      if(idEd){ const o=old||movs.find(x=>x.id===idEd); if(o) diffCampos('movimientos', idEd, o.concepto||o.tipo, o, body, [['monto','monto',v=>nf.format(num(v))],['tasa','tasa',v=>nfT.format(num(v))],['fecha','fecha'],['cuenta','cuenta'],['categoria','categoría'],['montoOrigen','monto que sale',v=>nf.format(num(v))],['montoDestino','monto que entra',v=>nf.format(num(v))],['trabajoId','orden']]); }
+    const old0=old?JSON.parse(JSON.stringify(old)):null;
+    return enviar(ops, queMv, ()=>{
+      if(idEd){ const o=old0; if(o) diffCampos('movimientos', idEd, o.concepto||o.tipo, o, body, [['monto','monto',v=>nf.format(num(v))],['tasa','tasa',v=>nfT.format(num(v))],['fecha','fecha'],['cuenta','cuenta'],['categoria','categoría'],['montoOrigen','monto que sale',v=>nf.format(num(v))],['montoDestino','monto que entra',v=>nf.format(num(v))],['trabajoId','orden']]); }
       soltarIntento('#mvSheet'); if(esPago) mvDeuda=null;
       if(body.tipo==='deuda') setTimeout(()=>toast('Quedó en cuentas por pagar: no salió dinero todavía'),50);
       avisos.forEach(a=>a());
       /* La tasa del día se aprende de operaciones de mercado (cambios e ingresos), no de gastos: la tasa de un gasto en bolívares es la de llegada de esos bolívares */
-      if(num(body.tasa)>0 && body.fecha<=today() && (body.tipo==='cambio' || (body.tipo==='ingreso' && cuentaDe(body.cuenta).moneda==='VES'))) aprenderTasa(body.fecha, num(body.tasa), body.tipo==='cambio'?'cambio entre cuentas':'ingreso'); closeSheets(); toast('Movimiento guardado');
+      if(num(body.tasa)>0 && body.fecha<=today() && (!idEd || 'tasa' in cambiosMv || 'fecha' in cambiosMv) && (body.tipo==='cambio' || (body.tipo==='ingreso' && cuentaDe(body.cuenta).moneda==='VES'))) aprenderTasa(body.fecha, num(body.tasa), body.tipo==='cambio'?'cambio entre cuentas':'ingreso'); closeSheets(); toast('Movimiento guardado');
       if(body.tipo==='gasto'||body.tipo==='cambio'){ const cS=body.tipo==='cambio'?body.cuentaOrigen:body.cuenta; setTimeout(()=>{ const sl=saldoCuenta(cS,today()), cc=cuentaDe(cS); if(sl<-0.004) toast(`${cc.nombre} queda en − ${cc.moneda==='VES'?bs(-sl):usd(-sl)}. ¿Falta un cobro o un cambio?`); },900); } });
   }
   async function eliminarMov(){
@@ -5400,12 +5618,12 @@ Responde solo con un objeto JSON:
       const enBs=cuentaDe($('#mvCuenta').value).moneda==='VES'; $('#mvMonto').value = u>0 ? nf.format(enBs&&t>0?r2(u*t):u) : ''; if(t>0) $('#mvTasa').value=nfT.format(t);
       if(!$('#mvConcepto').value) $('#mvConcepto').placeholder='Cliente o embarcación, por ejemplo: Pago Lupara V'; renderMvConv(); $('#mvConcepto').focus(); return; }
     const d=docs.find(x=>x.id===$('#mvFactTrab').value); if(d && !mvAplicando) $('#mvMonto').value=nf.format(saldo(d)); renderMvConv(); });
-  ['#mvCuenta','#mvOrig','#mvDest'].forEach(s=>$(s).addEventListener('change', ()=>{ delete $('#mvDestMonto').dataset.manual; syncMvMoneda(); }));
-  ['#mvMonto','#mvOrigMonto'].forEach(s=>$(s).addEventListener('input', renderMvConv));
+  ['#mvCuenta','#mvOrig','#mvDest'].forEach(s=>$(s).addEventListener('change', ()=>{ mvCamQuieto=false; delete $('#mvDestMonto').dataset.manual; syncMvMoneda(); }));
+  ['#mvMonto','#mvOrigMonto'].forEach(s=>$(s).addEventListener('input', ()=>{ mvCamQuieto=false; renderMvConv(); }));
   const tasaBsBinance = f => tasaUsdt(f) || (td=>td?{tasa:td.tasa, fecha:td.fecha}:null)(tasaDelDia(f)) || (tasaSugerida()>0?{tasa:tasaSugerida(), fecha:f}:null);
   function mvBsCambio(){ const b=parseNum($('#mvBs').value)||0, tu=tasaBsBinance($('#mvFecha').value||today()); if(b>0&&tu) $('#mvMonto').value=nf.format(r2(b/tu.tasa)); syncMvCredito(); renderMvConv(); }
   $('#mvBs').addEventListener('input', mvBsCambio);
-  $('#mvTasa').addEventListener('input', ()=>{ $('#mvTasa').dataset.manual='1'; renderMvConv(); });
+  $('#mvTasa').addEventListener('input', ()=>{ $('#mvTasa').dataset.manual='1'; mvCamQuieto=false; renderMvConv(); });
   $('#mvFecha').addEventListener('change', ()=>{ syncMvCredito(); renderMvConv(); });
   $('#mvDestMonto').addEventListener('input', ()=>{ $('#mvDestMonto').dataset.manual='1'; if(!$('#mvDestMonto').value.trim()) delete $('#mvDestMonto').dataset.manual; renderMvConv(); });
   $('#mvOrigMonto').addEventListener('input', ()=>{ $('#mvOrigMonto').dataset.manual='1'; if(!$('#mvOrigMonto').value.trim()) delete $('#mvOrigMonto').dataset.manual; });
@@ -5425,7 +5643,7 @@ Responde solo con un objeto JSON:
 
   function iniciarGastos(db){
     gDb=db; gCfgRef=db.doc('config/gastos');
-    gCfgRef.onSnapshot(s=>{ const d=s.exists?s.data():null; gcfg = d ? {...JSON.parse(JSON.stringify(GCFG_DEF)), ...d, saldos:{...GCFG_DEF.saldos, ...(d.saldos||{})}} : JSON.parse(JSON.stringify(GCFG_DEF)); gLoaded.c=true; if(gView!=='aj') renderGas(); }, ()=>{ gLoaded.c=true; renderGas(); });
+    gCfgRef.onSnapshot(s=>{ const d=s.exists?s.data():null; cfgOk('gastos', s.exists, d); gcfg = d ? {...JSON.parse(JSON.stringify(GCFG_DEF)), ...d, saldos:{...GCFG_DEF.saldos, ...(d.saldos||{})}} : JSON.parse(JSON.stringify(GCFG_DEF)); gLoaded.c=true; if(gView!=='aj') renderGas(); }, ()=>{ cfgMal('gastos'); gLoaded.c=true; renderGas(); });
     if(window.__standalone && !esRegistro()) db.collection('acceso').onSnapshot(s=>{ accesos=s.docs.map(d=>Object.assign({id:d.id}, d.data())).sort((a,b)=>String(a.nombre||a.id).localeCompare(String(b.nombre||b.id),'es')); if(modulo==='gas'&&gView==='aj'&&!$('#iaClave')) renderGas(); }, ()=>{});
     if(window.__standalone) db.collection('solicitudes').onSnapshot(s=>{ solicitudes=s.docs.map(d=>Object.assign({id:d.id}, d.data())); if(modulo==='res') renderRes(); if(modulo==='reg') renderReg(); avisarPendientes(); }, ()=>{});
     db.collection('movimientos').onSnapshot(s=>{ movs=s.docs.map(d=>Object.assign({id:d.id}, d.data())); gLoaded.m=true; renderGas(); }, ()=>{ gLoaded.m=true; renderGas(); });
@@ -5764,30 +5982,42 @@ Responde solo con un objeto JSON:
     const it=id?itemDe(id):null; itEditId=id||null; fillItemSelects();
     $('#itTitle').textContent=it?'Ítem del inventario':'Nuevo ítem';
     $('#itNombre').value=it?it.nombre:''; $('#itCat').value=it&&it.categoria||icfg.categorias[0]; if(it&&it.categoria&&!icfg.categorias.includes(it.categoria)){ $('#itCat').insertAdjacentHTML('afterbegin',`<option value="${esc(it.categoria)}">${esc(it.categoria)}</option>`); $('#itCat').value=it.categoria; }
-    $('#itUni').value=it&&it.unidad||'und'; $('#itMin').value=it&&num(it.minimo)>0?nq.format(num(it.minimo)):''; $('#itUbi').value=it&&it.ubicacion||''; $('#itProv').value=it&&it.proveedor||''; $('#itActivo').checked=!it||it.activo!==false;
+    $('#itUni').value='und'; if(it&&it.unidad) ofrecerGuardado('#itUni', it.unidad, u=>u+' (unidad fuera de la lista)'); $('#itMin').value=it&&num(it.minimo)>0?nq.format(num(it.minimo)):''; $('#itUbi').value=it&&it.ubicacion||''; $('#itProv').value=it&&it.proveedor||''; $('#itActivo').checked=!it||it.activo!==false;
     $('#itErr').textContent=''; $('#itDel').hidden=!it; $('#itDel').textContent='Eliminar'; delete $('#itDel').dataset.armed; $('#itEntrada').hidden=!it; $('#itSalida').hidden=!it;
     $('#itPrecio').value=it&&num(it.precioRef)>0?nf.format(num(it.precioRef)):''; $('#itPrecioBs').value='';
-    { const sinP=it?invMovs.filter(m=>m.itemId===it.id&&m.tipo==='entrada'&&!(num(m.costoUnit)>0)).reduce((a,m)=>a+num(m.cantidad),0):0; $('#itPrecioTip').textContent = sinP>0 ? `Hay ${cant(sinP,it.unidad)} que entraron sin precio propio: con un precio aquí valen ese precio en todo (existencias, salidas y costos por orden) y al guardar queda escrito en esas entradas.` : 'Se propone al registrar entradas y vale para cualquier entrada que llegue sin precio.'; }
+    { const sinP=it?invMovs.filter(m=>m.itemId===it.id&&m.tipo==='entrada'&&!(num(m.costoUnit)>0)).reduce((a,m)=>a+num(m.cantidad),0):0; $('#itPrecioTip').textContent = sinP>0 ? `Hay ${cant(sinP,it.unidad)} que entraron sin precio propio: valen el precio de referencia en todo (existencias, salidas y costos por orden). Si pones o cambias el precio aquí, al guardar queda escrito en esas entradas.` : 'Se propone al registrar entradas y vale para cualquier entrada que llegue sin precio.'; }
     if(it){
       const e=estadoItem(it.id), ms=invMovs.filter(m=>m.itemId===it.id).sort(byFechaCreado).reverse().slice(0,8), det=detallesInv();
       $('#itEstado').innerHTML=`<div class="panel num" style="margin-top:10px"><div class="brk"><div><span>Existencia</span><b>${cant(e.existencia,it.unidad)}</b></div><div><span>Valor al costo de los lotes</span><b>${usd(e.valor)}</b></div>${e.lotes.length?`<div><span>Lotes</span><b>${e.lotes.map(l=>`${nq.format(l.q)} a ${usd(l.cu)}`).join(' · ')}</b></div>`:''}</div>
         ${ms.length?`<div class="tip" style="border:0;margin:8px 0 0">Últimos movimientos</div><div class="blist" style="margin-bottom:0">${ms.map(m=>{ const d=det[m.id]||{}; const q=m.tipo==='conteo'?`contado ${nq.format(num(m.contado))} (${num(d.diferencia)>0?'+':''}${nq.format(num(d.diferencia))})`:`${m.tipo==='salida'?'−':'+'}${nq.format(num(m.cantidad))}`; return `<div><span>${fdate(m.fecha)} · ${TIPO_INV[m.tipo]}${m.trabajoId&&docs.find(x=>x.id===m.trabajoId)?' · '+esc(docs.find(x=>x.id===m.trabajoId).descripcion):''}</span><b>${q} ${esc(uni(it.unidad))}</b></div>`; }).join('')}</div>`:''}</div>`;
     } else $('#itEstado').innerHTML='';
+    itOrig = it ? JSON.parse(JSON.stringify(it)) : null; itBase = it ? cuerpoItem().body : null;
     pintarProveedores(); limpiarFiltros('#itSheet'); openSheet('#itSheet');
   }
+  let itOrig=null, itBase=null;
+  /* Lo que el formulario guardaría en el ítem (sin validar). Se usa al abrir, para saber después qué cambió el usuario, y al guardar */
+  function cuerpoItem(){ let pUsd=parseNum($('#itPrecio').value)||0, pTasa=0; const pBs=parseNum($('#itPrecioBs').value)||0;
+    if(pBs>0 && !(pUsd>0)){ pTasa=tasaSugerida(); if(pTasa>0) pUsd=r4(pBs/pTasa); }
+    return {pUsd, pBs, pTasa, body:{nombre:$('#itNombre').value.trim(), precioRef:pUsd>0?pUsd:0, categoria:$('#itCat').value, unidad:$('#itUni').value, minimo:Math.max(0,parseNum($('#itMin').value)||0), ubicacion:$('#itUbi').value.trim(), proveedor:proveedorNormalizado($('#itProv').value), activo:$('#itActivo').checked}}; }
   async function guardarItem(){
     const nombre=$('#itNombre').value.trim(); if(!nombre){ $('#itErr').textContent='Escribe el nombre del ítem.'; return; }
     const rep=items.find(x=>x.id!==itEditId && x.id!==idsIntento['#itSheet|item'] && norm(x.nombre)===norm(nombre)); if(rep){ $('#itErr').textContent=`Ya existe «${rep.nombre}».`; return; }
     const old=itEditId?itemDe(itEditId):null;
-    let pUsd=parseNum($('#itPrecio').value)||0, pBs=parseNum($('#itPrecioBs').value)||0, pTasa=0;
-    if(pBs>0 && !(pUsd>0)){ pTasa=tasaSugerida(); if(!(pTasa>0)){ $('#itErr').textContent='No hay tasa registrada para llevar los bolívares a dólares: pon el precio en dólares.'; return; } pUsd=r4(pBs/pTasa); }
-    const body={nombre, precioRef:pUsd>0?pUsd:0, categoria:$('#itCat').value, unidad:$('#itUni').value, minimo:Math.max(0,parseNum($('#itMin').value)||0), ubicacion:$('#itUbi').value.trim(), proveedor:proveedorNormalizado($('#itProv').value), activo:$('#itActivo').checked, creado:old&&old.creado||new Date().toISOString(), actualizado:new Date().toISOString()};
+    const {pUsd, pBs, pTasa, body:C}=cuerpoItem();
+    if(pBs>0 && !(pUsd>0)){ $('#itErr').textContent='No hay tasa registrada para llevar los bolívares a dólares: pon el precio en dólares.'; return; }
+    const ah=new Date().toISOString(), body={...C, creado:old&&old.creado||ah, actualizado:ah};
+    if(itEditId && (!old||!itOrig)){ $('#itErr').textContent='Este ítem ya no existe (lo eliminaron desde otro teléfono). Cierra la hoja.'; return; }
+    /* Editar: solo se escribe lo que cambió en esta hoja; las entradas sin precio se costean solo cuando se cambia el precio de referencia */
+    const cambios=old?cambiosDe(itBase, C):null, costear=!!old && pUsd>0 && ('precioRef' in cambios || pBs>0);
+    if(old){ const chq=choquesDe(cambios, itOrig, old);
+      if(chq.length && !avisoChoque('#itSheet', '#itErr', canon(chq.map(k=>old[k])), detalleChoque(chq, {nombre:'nombre', precioRef:'precio de referencia', categoria:'categoría', unidad:'unidad', minimo:'mínimo', ubicacion:'ubicación', proveedor:'proveedor', activo:'activo'}, old), ()=>openItem(old.id), ()=>guardarItem())) return; }
     /* El ítem y las entradas sin precio que se costean con él se guardan juntos; el botón queda bloqueado mientras guarda */
     await conBoton($('#itSave'), 'Guardar', async()=>{
-    try{ const ops=[opSet('inventario', itEditId||idEstable('#itSheet|item','inventario'), body)];
+    try{ const ops=[old ? opEditar('inventario', old.id, Object.keys(cambios).length?{...cambios, actualizado:ah}:{}, 'el ítem «'+nombre.slice(0,50)+'»') : opSet('inventario', idEstable('#itSheet|item','inventario'), body)];
       let n=0;
-      if(old && pUsd>0){ const ahora=new Date().toISOString();
+      if(costear){ const ahora=new Date().toISOString();
         for(const m of invMovs.filter(m=>m.itemId===old.id && m.tipo==='entrada' && !(num(m.costoUnit)>0))){ const g=m.movId&&movs.find(x=>x.id===m.movId); const t=pBs>0?pTasa:(g?tasaParaBs(m.fecha,0,g.cuenta).tasa:tasaSugerida()); ops.push(opUpd('invMovs', m.id, {costoUnit:pUsd, costoUnitBs:pBs>0?r2(pBs):(t>0?r2(pUsd*t):0), tasa:t>0?r4(t):0, sinCosto:false, actualizado:ahora}, 'costear una entrada sin precio')); n++; } }
+      if(old && !ops.filter(Boolean).length){ closeSheets(); toast('Sin cambios: no había nada que guardar'); return; }
       await escribirJuntos(ops, 'el ítem «'+nombre.slice(0,50)+'»'); soltarIntento('#itSheet');
       closeSheets(); toast(n?`Ítem guardado · ${n} ${n===1?'entrada sin precio costeada':'entradas sin precio costeadas'} a ${usd(pUsd)}`:(old?'Ítem guardado':'Ítem agregado')); }
     catch(e){ $('#itErr').textContent=errMsg(e); } });
@@ -5864,18 +6094,34 @@ Responde solo con un objeto JSON:
     $('#imFecha').value = m ? m.fecha : (pre&&pre.fecha) || today();
     $('#imCant').value = m ? (m.tipo==='conteo'?nq.format(num(m.contado)):nq.format(num(m.cantidad))) : (pre&&num(pre.cantidad)?nq.format(num(pre.cantidad)):'');
     $('#imCostoU').value = m&&num(m.costoUnit)>0 ? nf.format(num(m.costoUnit)) : ''; $('#imCostoU').placeholder='0,00';
-    $('#imCostoT').value = (!m && pre && num(pre.total)>0) ? nf.format(num(pre.total)) : ''; $('#imBs').value=''; $('#imTasa').value='';
+    $('#imCostoT').value = (!m && pre && num(pre.total)>0) ? nf.format(num(pre.total)) : ''; $('#imBs').value = m&&num(m.totalBs)>0 ? nf.format(num(m.totalBs)) : ''; $('#imTasa').value = m&&num(m.totalBs)>0&&num(m.tasa)>0 ? nfT.format(num(m.tasa)) : '';   /* una entrada con total en bolívares lo muestra al editarla */
     $('#imProv').value = m ? m.proveedor||'' : (pre&&pre.proveedor)||''; $('#imRef').value = m ? m.referencia||'' : (pre&&pre.referencia)||'';
     let ultT='', ultQ=''; try{ ultT=localStorage.getItem('imUltTrab')||''; ultQ=localStorage.getItem('imUltQuien')||''; }catch(_){}
     $('#imTrab').value = m ? m.trabajoId||'' : ((pre&&pre.trabajoId) || (docs.some(d=>d.id===ultT&&abiertoCosto(d))?ultT:'')); $('#imQuien').value = m ? m.quienId||'' : (trabs.some(t=>t.id===ultQ&&t.activo!==false)?ultQ:'');
+    if(m){ ofrecerGuardado('#imTrab', m.trabajoId, rotuloOrden); ofrecerGuardado('#imQuien', m.quienId, id=>{ const t=trabs.find(x=>x.id===id); return t?`${t.nombre} (inactivo)`:'Persona que ya no existe'; }); }
     delete $('#imTrab').dataset.manual; if(m||(pre&&pre.trabajoId)) $('#imTrab').dataset.manual='1';
     if(!m) proponerOrdenSalida(false); $('#imNota').value = m ? m.nota||'' : (pre&&pre.nota)||'';
     $('#imGasto').checked=!m && imTipo==='entrada' && !(pre&&pre.movId); $('#imPorPagar').checked=!!(m&&m.porPagar); $('#imGastoCampos').hidden=!$('#imGasto').checked; $('#imGTasa').value=tasaSugerida()?nfT.format(tasaSugerida()):''; $('#imCuenta').value='binance';
     $('#imErr').textContent=''; $('#imDel').hidden=!m; $('#imDel').textContent='Eliminar'; delete $('#imDel').dataset.armed;
     $('#imCuadrar').hidden = !(m && m.tipo==='entrada' && (m.proveedor||m.referencia) && canWrite);
     $('#imNuevo').value=''; if(!m && pre && pre.nuevo && !pre.itemId){ $('#imItem').value='__nuevo'; imNuevoSync(); $('#imNuevo').value=pre.nuevo; $('#imNuevoU').value='und'; if(pre.categoria && [...$('#imNuevoC').options].some(o=>o.value===pre.categoria)) $('#imNuevoC').value=pre.categoria; comboSync($('#imItem')); }
-    pintarProveedores(); limpiarFiltros('#imSheet'); syncIMTipo(); imNuevoSync(); openSheet('#imSheet');
+    pintarProveedores(); limpiarFiltros('#imSheet'); syncIMTipo(); imNuevoSync();
+    imOrig = m ? JSON.parse(JSON.stringify(m)) : null; imBase = m ? cuerpoIMov() : null; openSheet('#imSheet');
   }
+  let imOrig=null, imBase=null;
+  /* Lo que el formulario guardaría en el movimiento de inventario (sin validar). Se usa al abrir, para saber después qué cambió el usuario, y al guardar */
+  function cuerpoIMov(){ const it=itemDe($('#imItem').value), f=$('#imFecha').value, q=parseNum($('#imCant').value), old=imEditId?invMovs.find(x=>x.id===imEditId):null;
+    const b={tipo:imTipo, fecha:f, itemId:it?it.id:'', nota:$('#imNota').value.trim()};
+    if(imTipo==='conteo') b.contado=r2q(q); else b.cantidad=r2q(q);
+    if(imTipo==='entrada'){
+      let cu=parseNum($('#imCostoU').value)||0; const ct=parseNum($('#imCostoT').value)||0, tb=parseNum($('#imBs').value)||0; let tt=parseNum($('#imTasa').value)||0;
+      if(!(cu>0) && ct>0) cu=ct/q;
+      if(!(cu>0) && tb>0){ if(!(tt>0)) tt=tasaParaBs(f, tb, $('#imGasto').checked?$('#imCuenta').value:'binance').tasa; if(tt>0) cu=tb/tt/q; }
+      Object.assign(b,{costoUnit:cu>0?r4(cu):0, sinCosto:!(cu>0), proveedor:proveedorNormalizado($('#imProv').value), referencia:$('#imRef').value.trim()});
+      if(tb>0) Object.assign(b,{costoUnitBs:r4(tb/q), totalBs:r2(tb), tasa:tt>0?tt:0});   // el precio de lista en bolívares se guarda aunque falte la tasa
+      if(old) b.porPagar = !$('#imPorPagarL').hidden && $('#imPorPagar').checked && !old.movId;
+    } else if(imTipo==='salida'||imTipo==='devolucion'){ b.trabajoId=$('#imTrab').value||''; if(imTipo==='salida') b.quienId=$('#imQuien').value||''; }
+    return b; }
   async function guardarIMov(otro){
     otro = otro===true;
     const err=x=>{ $('#imErr').textContent=x; };
@@ -5892,12 +6138,9 @@ Responde solo con un objeto JSON:
     const old=imEditId?invMovs.find(x=>x.id===imEditId):null;
     const body={tipo:imTipo, fecha:f, itemId:it.id, nota:$('#imNota').value.trim(), registradoPor:old&&old.registradoPor||quienRegistra(), creado:old&&old.creado||new Date().toISOString(), actualizado:new Date().toISOString()};
     if(imTipo==='conteo') body.contado=r2q(q); else body.cantidad=r2q(q);
+    const CI=cuerpoIMov();
     if(imTipo==='entrada'){
-      let cu=parseNum($('#imCostoU').value)||0; const ct=parseNum($('#imCostoT').value)||0, tb=parseNum($('#imBs').value)||0; let tt=parseNum($('#imTasa').value)||0;
-      if(!(cu>0) && ct>0) cu=ct/q;
-      if(!(cu>0) && tb>0){ if(!(tt>0)) tt=tasaParaBs(f, tb, $('#imGasto').checked?$('#imCuenta').value:'binance').tasa; if(tt>0) cu=tb/tt/q; }
-      Object.assign(body,{costoUnit:cu>0?r4(cu):0, sinCosto:!(cu>0), proveedor:proveedorNormalizado($('#imProv').value), referencia:$('#imRef').value.trim(), movId:old&&old.movId||(imPre&&imPre.movId)||''});
-      if(tb>0) Object.assign(body,{costoUnitBs:r4(tb/q), totalBs:r2(tb), tasa:tt>0?tt:0});   // el precio de lista en bolívares se guarda aunque falte la tasa
+      ['costoUnit','sinCosto','proveedor','referencia','costoUnitBs','totalBs','tasa'].forEach(k=>{ if(k in CI) body[k]=CI[k]; }); body.movId=old&&old.movId||(imPre&&imPre.movId)||'';
     } else if(imTipo==='salida'||imTipo==='devolucion'){
       body.trabajoId=$('#imTrab').value||''; if(imTipo==='salida') body.quienId=$('#imQuien').value||'';
       try{ localStorage.setItem('imUltTrab', body.trabajoId); if(body.quienId) localStorage.setItem('imUltQuien', body.quienId); }catch(_){}
@@ -5928,12 +6171,19 @@ Responde solo con un objeto JSON:
       }
       if(imTipo==='entrada') body.porPagar = !$('#imPorPagarL').hidden && $('#imPorPagar').checked && !body.movId;
     }
+    /* Editar: solo se escribe lo que cambió en esta hoja; el costo con todos sus decimales, el precio en bolívares, la tasa, la orden y los enlaces a sus gastos quedan como están */
+    let cambiosIM=null;
+    if(imEditId){ if(!old||!imOrig) return err('Este movimiento ya no existe (lo eliminaron desde otro teléfono). Cierra la hoja.');
+      cambiosIM=cambiosDe(imBase, CI); const chq=choquesDe(cambiosIM, imOrig, old), idE=imEditId;
+      if(chq.length && !avisoChoque('#imSheet', '#imErr', canon(chq.map(k=>old[k])), detalleChoque(chq, {fecha:'fecha', itemId:'ítem', nota:'nota', cantidad:'cantidad', contado:'cantidad contada', costoUnit:'costo por unidad', proveedor:'proveedor', referencia:'referencia', totalBs:'total en bolívares', tasa:'tasa', trabajoId:'orden', quienId:'quién retira', porPagar:'por pagar'}, old), ()=>openIMov(imTipo, idE), ()=>guardarIMov())) return;
+      if(!Object.keys(cambiosIM).length){ imContados=0; closeSheets(); toast('Sin cambios: no había nada que guardar'); return; } }
     const lblIM=imTipo==='conteo'?'Guardar conteo':'Guardar', btnUso=otro&&btnOtro?btnOtro:btnIM, lblUso=otro&&btnOtro?btnOtro.textContent:lblIM;
     if(btnIM) btnIM.disabled=true; if(btnOtro) btnOtro.disabled=true;
     await conBoton(btnUso, lblUso, async()=>{
     try{
       const marcaMov = body.movId && imPre && imPre.movId && !old && movs.some(m=>m.id===body.movId);
-      await escribirJuntos([opItem, opGasto, opSet('invMovs', imEditId||idEstable('#imSheet|mov','invMovs'), body, TIPO_INV[imTipo]?`el movimiento de inventario (${TIPO_INV[imTipo].toLowerCase()})`:'el movimiento de inventario'),
+      const queIM=TIPO_INV[imTipo]?`el movimiento de inventario (${TIPO_INV[imTipo].toLowerCase()})`:'el movimiento de inventario';
+      await escribirJuntos([opItem, opGasto, imEditId ? opEditar('invMovs', imEditId, {...cambiosIM, actualizado:body.actualizado}, queIM) : opSet('invMovs', idEstable('#imSheet|mov','invMovs'), body, queIM),
         marcaMov?opUpd('movimientos', body.movId, {inventario:true, actualizado:new Date().toISOString()}, 'marcar el gasto como compra de inventario'):null], imTipo==='entrada'&&opGasto?'la entrada de inventario con su gasto':'el movimiento de inventario');
       soltarIntento('#imSheet');
       if(otro){ /* misma fecha, orden y persona; se limpia el ítem y la cantidad para seguir con el siguiente */
@@ -5963,23 +6213,34 @@ Responde solo con un objeto JSON:
     $('#acTitle').textContent=a?'Herramienta o equipo':'Nueva herramienta o equipo';
     $('#acResp').innerHTML='<option value="taller">En el taller</option>'+trabs.filter(t=>t.activo!==false||(a&&a.responsableId===t.id)).sort((x,y)=>x.nombre.localeCompare(y.nombre,'es')).map(t=>`<option value="${esc(t.id)}">${esc(t.nombre)}${t.activo===false?' (inactivo)':''}</option>`).join('');
     $('#itUbiL').innerHTML=icfg.ubicaciones.map(u=>`<option value="${esc(u)}">`).join('');
-    $('#acNombre').value=a?a.nombre:''; $('#acCodigo').value=a&&a.codigo||''; $('#acEstado').value=a&&ESTADOS_AC.includes(a.estado)?a.estado:'Bueno'; $('#acResp').value=a&&a.responsableId&&trabs.some(t=>t.id===a.responsableId)?a.responsableId:'taller';
+    $('#acNombre').value=a?a.nombre:''; $('#acCodigo').value=a&&a.codigo||''; $('#acEstado').value='Bueno'; if(a&&a.estado) ofrecerGuardado('#acEstado', a.estado); $('#acResp').value='taller'; if(a&&a.responsableId) ofrecerGuardado('#acResp', a.responsableId, ()=>'Persona que ya no existe');
     $('#acUbi').value=a&&a.ubicacion||''; $('#acFecha').value=a&&a.fechaCompra||''; $('#acCosto').value=a&&num(a.costo)>0?nf.format(num(a.costo)):''; $('#acNota').value=a&&a.nota||'';
     $('#acHist').innerHTML = a&&Array.isArray(a.historial)&&a.historial.length ? `<div class="tip" style="border:0;margin:8px 0 0">Historial de entregas</div><div class="blist">${a.historial.slice().reverse().slice(0,8).map(h=>`<div><span>${fdate(h.fecha)}</span><b>${esc(respNombre(h.de))} → ${esc(respNombre(h.a))}</b></div>`).join('')}</div>` : '';
     $('#acErr').textContent=''; $('#acDel').hidden=!a; $('#acDel').textContent='Eliminar'; delete $('#acDel').dataset.armed;
+    acOrig = a ? JSON.parse(JSON.stringify(a)) : null; acBase = a ? cuerpoActivo() : null;
     limpiarFiltros('#acSheet'); openSheet('#acSheet');
   }
+  let acOrig=null, acBase=null;
+  /* Lo que el formulario guardaría en el equipo (sin validar). Se usa al abrir, para saber después qué cambió el usuario, y al guardar */
+  const cuerpoActivo = () => ({nombre:$('#acNombre').value.trim(), codigo:$('#acCodigo').value.trim(), estado:$('#acEstado').value, responsableId:$('#acResp').value, ubicacion:$('#acUbi').value.trim(), fechaCompra:$('#acFecha').value||'', costo:r2(parseNum($('#acCosto').value)||0), nota:$('#acNota').value.trim()});
   async function guardarActivo(){
     const nombre=$('#acNombre').value.trim(); if(!nombre){ $('#acErr').textContent='Escribe el nombre.'; return; }
     const old=acEditId?activos.find(x=>x.id===acEditId):null, resp=$('#acResp').value;
     const hist=Array.isArray(old&&old.historial)?old.historial.slice():[];
     if(old && (old.responsableId||'taller')!==resp) hist.push({fecha:today(), de:old.responsableId||'taller', a:resp});
-    const body={nombre, codigo:$('#acCodigo').value.trim(), estado:$('#acEstado').value, responsableId:resp, ubicacion:$('#acUbi').value.trim(), fechaCompra:$('#acFecha').value||'', costo:r2(parseNum($('#acCosto').value)||0), nota:$('#acNota').value.trim(), historial:hist, creado:old&&old.creado||new Date().toISOString(), actualizado:new Date().toISOString()};
+    const C=cuerpoActivo(), body={...C, historial:hist, creado:old&&old.creado||new Date().toISOString(), actualizado:new Date().toISOString()};
+    /* Editar: solo se escribe lo que cambió en esta hoja; el historial de entregas se suma a lo que haya ahora */
+    let cambiosAc=null;
+    if(acEditId){ if(!old||!acOrig){ $('#acErr').textContent='Este equipo ya no existe (lo eliminaron desde otro teléfono). Cierra la hoja.'; return; }
+      cambiosAc=cambiosDe(acBase, C); const chq=choquesDe(cambiosAc, acOrig, old), idE=acEditId;
+      if(chq.length && !avisoChoque('#acSheet', '#acErr', canon(chq.map(k=>old[k])), detalleChoque(chq, {nombre:'nombre', codigo:'código', estado:'estado', responsableId:'quién lo tiene', ubicacion:'ubicación', fechaCompra:'fecha de compra', costo:'costo', nota:'nota'}, old), ()=>openActivo(idE), ()=>guardarActivo())) return;
+      if('responsableId' in cambiosAc) cambiosAc.historial=hist;
+      if(!Object.keys(cambiosAc).length){ closeSheets(); toast('Sin cambios: no había nada que guardar'); return; } }
     if(!acEditId && acPre && acPre.movId) body.movId=acPre.movId; else if(old && old.movId) body.movId=old.movId;
     /* El botón queda bloqueado mientras guarda y el equipo nuevo usa un identificador fijo por hoja: dos toques no crean dos equipos */
     await conBoton($('#acSave'), 'Guardar', async()=>{
     try{ const idA=acEditId||idEstable('#acSheet|activo','activos'), enlaza=!acEditId && acPre && acPre.movId && movs.some(m=>m.id===acPre.movId);
-      await escribirJuntos([opSet('activos', idA, body), enlaza?opUpd('movimientos', acPre.movId, {activoId:idA, actualizado:new Date().toISOString()}, 'enlazar el gasto con el equipo'):null], 'el equipo «'+nombre.slice(0,50)+'»');
+      await escribirJuntos([acEditId ? opEditar('activos', idA, {...cambiosAc, actualizado:body.actualizado}, 'el equipo «'+nombre.slice(0,50)+'»') : opSet('activos', idA, body), enlaza?opUpd('movimientos', acPre.movId, {activoId:idA, actualizado:new Date().toISOString()}, 'enlazar el gasto con el equipo'):null], 'el equipo «'+nombre.slice(0,50)+'»');
       if(!acEditId && acPre && acPre.movId) acPre=null; soltarIntento('#acSheet');
       closeSheets(); toast(old?'Guardado':'Agregado a herramientas y equipos'); }
     catch(e){ $('#acErr').textContent=errMsg(e); } });
@@ -6086,7 +6347,7 @@ Responde solo con un objeto JSON:
   $('#iMain').addEventListener('click', e=>{ const b=e.target.closest('[data-imon]'); if(b){ iMon=b.dataset.imon; renderInv(); } });
   $('#iMain').addEventListener('change', e=>{ const t=e.target; if(t.dataset.icat!=null){ iCat=t.dataset.icat; const l=$('#iList'); if(l) l.innerHTML=listaItems(); document.querySelectorAll('#iMain [data-icat]').forEach(x=>x.closest('label').classList.toggle('on', x.checked)); } });
   $('#iMain').addEventListener('input', e=>{ if(e.target.id==='iQ'){ iQ=e.target.value; const l=$('#iList'); if(!l) return; if(iView==='ex') l.innerHTML=listaItems(); else { const q=norm(iQ); const ls=items.filter(it=>!q||norm(it.nombre).includes(q)||norm(it.categoria).includes(q)); l.innerHTML=ls.map(tarjetaItem).join('')||'<div class="empty"><b>Nada coincide</b></div>'; } } });
-  async function guardarICfg(n){ try{ await conLimite(iDb.doc('config/inventario').set(n), 0, 'los ajustes de inventario'); icfg=n; renderInv(); toast('Guardado'); }catch(e){ toast(errMsg(e)); } }
+  async function guardarICfg(n){ try{ await escribirCfg('inventario', cambiosCfg(icfg, n), 'los ajustes de inventario', n); icfg=n; renderInv(); toast('Guardado'); }catch(e){ if(!(e&&e.code==='config_sin_leer')) toast(errMsg(e)); } }
   $('#itSave').addEventListener('click', guardarItem);
   $('#itDel').addEventListener('click', eliminarItem);
   $('#itEntrada').addEventListener('click', ()=>{ if(!dejarHoja()) return; const id=itEditId; closeSheets(); openIMov('entrada', null, {itemId:id}); });
@@ -6321,7 +6582,7 @@ Responde solo con un objeto JSON:
     db.collection('inventario').onSnapshot(s=>{ items=s.docs.map(d=>Object.assign({id:d.id}, d.data())); iLoaded.i=true; rp(); }, ()=>{ iLoaded.i=true; rp(); });
     db.collection('invMovs').onSnapshot(s=>{ invMovs=s.docs.map(d=>Object.assign({id:d.id}, d.data())); iLoaded.m=true; rp(); if(modulo==='cob'){ renderStats(); renderList(); } }, ()=>{ iLoaded.m=true; rp(); });
     db.collection('activos').onSnapshot(s=>{ activos=s.docs.map(d=>Object.assign({id:d.id}, d.data())); iLoaded.a=true; rp(); }, ()=>{ iLoaded.a=true; rp(); });
-    db.doc('config/inventario').onSnapshot(s=>{ const d=s.exists?(s.data()||{}):{}; icfg={categorias:Array.isArray(d.categorias)&&d.categorias.length?d.categorias.map(String):ICFG_DEF.categorias.slice(), ubicaciones:Array.isArray(d.ubicaciones)?d.ubicaciones.map(String):ICFG_DEF.ubicaciones.slice()}; iLoaded.c=true; rp(); }, ()=>{ iLoaded.c=true; rp(); });
+    db.doc('config/inventario').onSnapshot(s=>{ const d=s.exists?(s.data()||{}):{}; cfgOk('inventario', s.exists, d); icfg={categorias:Array.isArray(d.categorias)&&d.categorias.length?d.categorias.map(String):ICFG_DEF.categorias.slice(), ubicaciones:Array.isArray(d.ubicaciones)?d.ubicaciones.map(String):ICFG_DEF.ubicaciones.slice()}; iLoaded.c=true; rp(); }, ()=>{ cfgMal('inventario'); iLoaded.c=true; rp(); });
   }
 
   /* ---------- asistente de inventario ---------- */
@@ -6656,12 +6917,12 @@ Responde solo con un objeto JSON:
     iniciarInventario(db);
     cfgRef=db.doc('config/clientes');
     uniRef=db.doc('config/unidades');
-    uniRef.onSnapshot(s=>{ const l=s.exists&&Array.isArray((s.data()||{}).lista)?s.data().lista:[]; unidadesExtra=l.filter(u=>u&&u.cliente&&u.unidad).map(u=>({cliente:String(u.cliente), unidad:String(u.unidad)})); renderClientes(); }, ()=>{});
-    cfgRef.onSnapshot(s=>{ const l=s.exists&&Array.isArray((s.data()||{}).lista)?s.data().lista:[]; clientesExtra=l.map(String); renderClientes(); }, ()=>{});
+    uniRef.onSnapshot(s=>{ cfgOk('unidades', s.exists, s.exists?s.data():null); const l=s.exists&&Array.isArray((s.data()||{}).lista)?s.data().lista:[]; unidadesExtra=l.filter(u=>u&&u.cliente&&u.unidad).map(u=>({cliente:String(u.cliente), unidad:String(u.unidad)})); renderClientes(); }, ()=>{ cfgMal('unidades'); });
+    cfgRef.onSnapshot(s=>{ cfgOk('clientes', s.exists, s.exists?s.data():null); const l=s.exists&&Array.isArray((s.data()||{}).lista)?s.data().lista:[]; clientesExtra=l.map(String); renderClientes(); }, ()=>{ cfgMal('clientes'); });
     coll.onSnapshot(snap=>{
       docs=snap.docs.map(d=>Object.assign({id:d.id}, d.data()));
       for(const id of [...sel]) if(!docs.some(d=>d.id===id)) sel.delete(id);
-      loaded=true; renderClientes(); render();
+      loaded=true; renderClientes(); render(); avRefrescar();
     }, err=>{ failed='Se perdió la conexión con el registro. Recarga la página.'; render(); });
     try{ const user=c.use?await c.use('user'):null; if(user){ const w=await user.can('data.write'); if(w===false){ canWrite=false; render(); } } }catch(_){}
     try{
