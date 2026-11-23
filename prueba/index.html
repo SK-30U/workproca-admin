@@ -24,7 +24,7 @@
 #login button{border:0;background:#0D5C63;color:#fff;border-radius:12px;padding:13px 18px;font-weight:700;font-size:15px;width:100%}
 </style>
 </head>
-<body><div style="background:#B26A00;color:#fff;font:700 12px/1.3 system-ui,sans-serif;text-align:center;padding:4px 8px">VERSIÓN DE PRUEBA · v148 trabajo adicional · trabaja con tus datos reales</div>
+<body><div style="background:#B26A00;color:#fff;font:700 12px/1.3 system-ui,sans-serif;text-align:center;padding:4px 8px">VERSIÓN DE PRUEBA · v149 opciones del reporte · trabaja con tus datos reales</div>
 <div id="login" class="scrim-login">
   <div class="box">
     <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:#5A6A75">Workproca · Trabajos Profesionales C.A.</div>
@@ -1731,17 +1731,34 @@ input,select,textarea{min-width:0;max-width:100%}
           const repintar=!igual(acts, mias) || (avFallaA && !avEnVuelo); if(avFallaA && !avEnVuelo) avFallaA=null; if(repintar && !$('#avSheet').hidden) avRepintar(); avLimpiarMarca(); if(ok) toast(ok); },
         e=>{ avEnVuelo--; if(avId!==id || $('#avSheet').hidden){ toast('No se guardó el avance: '+errMsg(e)); return; }
           avFallaA={donde:(e&&e.choque&&e.choque[0])||donde||'', msg:errMsg(e), choque:!!(e&&e.choque)}; marcarCambio('#avSheet'); avRepintar(); const x=document.querySelector('#avSheet .avfalla'); if(x&&x.scrollIntoView) x.scrollIntoView({block:'center'}); toast(e&&e.choque?'Este registro cambió desde otro teléfono: mira el aviso en rojo':'No se guardó el avance: mira el aviso en rojo'); }); }
-  function buildAvance(d, acts){
+  /* Qué incluye el reporte de avance: 'todo', 'sin0' (sin las que están en 0 %) u 'hoy' (lo que avanzó hoy más lo ya terminado). Se recuerda en este teléfono. */
+  let avRepModo=(()=>{ try{ const v=localStorage.getItem('avRepModo'); return ['todo','sin0','hoy'].includes(v)?v:'todo'; }catch(_){ return 'todo'; } })();
+  function renderAvRepFiltros(){ const ops=[['todo','Todas'],['sin0','Sin las de 0 %'],['hoy','Hoy y terminadas']];
+    $('#ecFiltros').innerHTML=`<div class="seg" role="group" aria-label="Qué actividades salen en el reporte">${ops.map(([k,t])=>`<button type="button" data-avrm="${k}" aria-pressed="${k===avRepModo}"${k===avRepModo?' class="on"':''}>${t}</button>`).join('')}</div>
+      <div class="tip" style="border:0;margin:6px 0 8px">${avRepModo==='todo'?'Salen todas las actividades, también las que no han empezado.':avRepModo==='sin0'?'Las que están en 0 % no se listan: sale solo cuántas son.':'Sale lo que avanzó hoy y lo ya terminado; del resto, solo cuántas son.'} El avance total siempre cuenta todas.</div>`;
+    $('#ecFiltros').hidden=false; }
+  function buildAvance(d, acts, modo){ modo=modo||avRepModo;
     const base=acts.filter(a=>!a.adicional), adic=acts.filter(a=>a.adicional), L=['*WORKPROCA, Trabajos Profesionales C.A.*', `*Reporte de avance · ${d.descripcion||''}*`];
     const m=[d.cliente, d.unidad].filter(Boolean).join(' · '); if(m) L.push(m);
     if(tieneOrden(d)) L.push(`Orden de servicio: ${d.ods}`);
     if(String(d.nota||'').trim()) L.push(`Requisición: ${String(d.nota).trim()}`);
     L.push(`Fecha: ${fdate(today())}`);
     const linea=(a,n)=>`${n}. ${a.nombre}: ${avPct(pctAct(a))}${estAct(a)==='det'?` · Detenida${txtFreno(a)?': '+txtFreno(a):''}`:''}`;
-    const bloque=xs=>{ const n0={}; xs.forEach((a,i)=>n0[a.id]=i+1);
-      [['fin','Terminadas'],['eje','En ejecución'],['det','Detenidas'],['ini','Por iniciar']].forEach(([k,t])=>{ const g=porAvance(xs.filter(a=>estAct(a)===k)); if(!g.length) return; L.push(`_${t}_`); g.forEach(a=>L.push(linea(a,n0[a.id]))); }); };
+    const hoyR=today(), snapR=d.avanceSnap||{}, kAnt=Object.keys(snapR).filter(k=>k<hoyR).sort().pop(), fotoAnt=(kAnt&&snapR[kAnt])||{};
+    const antes=a=>{ const v=fotoAnt[a.id]; return v===undefined||v===null ? 0 : Math.max(0,Math.min(100,num(v))); }, movioHoy=a=>Math.abs(pctAct(a)-antes(a))>=0.05;
+    const cuantas=(n,uno,varias)=>`${n} ${n===1?uno:varias}`;
+    const bloque=xs=>{ const n0={}; xs.forEach((a,i)=>n0[a.id]=i+1); const de=k=>porAvance(xs.filter(a=>estAct(a)===k));
+      if(modo==='hoy'){ const hoyX=porAvance(xs.filter(movioHoy)), fin=de('fin').filter(a=>!movioHoy(a)), resto=xs.filter(a=>!movioHoy(a) && estAct(a)!=='fin');
+        if(hoyX.length){ L.push('_Avance de hoy_'); hoyX.forEach(a=>L.push(`${linea(a,n0[a.id])} (antes ${avPct(antes(a))})`)); }
+        if(fin.length){ L.push('_Terminadas_'); fin.forEach(a=>L.push(linea(a,n0[a.id]))); }
+        const r=[['eje','en ejecución','en ejecución'],['det','detenida','detenidas'],['ini','por iniciar','por iniciar']].map(([k,u,v])=>{ const n=resto.filter(a=>estAct(a)===k).length; return n?cuantas(n,u,v):''; }).filter(Boolean);
+        if(r.length) L.push(`_Sin cambios hoy: ${r.join(' · ')}_`); return; }
+      [['fin','Terminadas'],['eje','En ejecución'],['det','Detenidas'],['ini','Por iniciar']].forEach(([k,t])=>{ const g=de(k); if(!g.length) return;
+        if(k==='ini' && modo==='sin0'){ L.push(`_Por iniciar: ${cuantas(g.length,'actividad','actividades')}_`); return; }
+        L.push(`_${t}_`); g.forEach(a=>L.push(linea(a,n0[a.id]))); }); };
     if(base.length){ L.push('', '*Actividades de la ODS*'); bloque(base); }
     if(adic.length){ L.push('', '*Trabajos adicionales (no incluidos en la ODS)*'); bloque(adic); }
+    if(modo==='hoy' && acts.length && !acts.some(movioHoy)) L.push('', '_Hoy no se registró avance._');
     if(acts.length) L.push('', `*Avance total${base.length&&adic.length?' (ODS más adicionales)':''}: ${avPct(avanceActs(acts))}*`);
     if(acts.length && d.id===avId){ const c=avCurva(d, acts); if(c.fin && c.pHoy!==null) L.push(`Planificado a la fecha: ${avPct(c.pHoy)}`, `Fecha de compromiso: ${fdate(c.fin)}`); }
     return L.join('\n');
@@ -1879,7 +1896,7 @@ input,select,textarea{min-width:0;max-width:100%}
       avF={...avF, dias:{...(avF.dias||{}), [f]:Math.round(h*10)/10}}; marcarCambio('#avSheet'); avRepintar(); { const dh=$('#avDiaH'), df=$('#avDiaF'); if(dh) dh.value=''; if(df) df.value=''; } guardarAvF('Día con horario distinto guardado'); return; }
     { const q=t.closest('[data-avdiadel]'); if(q){ const ds={...(avF.dias||{})}; delete ds[q.dataset.avdiadel]; avF={...avF, dias:ds}; avHorOpen=true; marcarCambio('#avSheet'); avRepintar(); guardarAvF('Horario guardado'); return; } }
     if(t.closest('#avRep')){ const d=docs.find(x=>x.id===avId); if(!d || !dejarHoja()) return; const txt=buildAvance(d, avActs);
-      shareMode='av'; avCurvaOn=true; $('#ecFiltros').hidden=true; $('#ecFiltros').innerHTML=''; $('#shareTitle').textContent='Reporte de avance'; $('#shareDesc').textContent='Porcentaje de cada actividad y avance total de la orden, con formato de WhatsApp.';
+      shareMode='av'; avCurvaOn=true; renderAvRepFiltros(); $('#shareTitle').textContent='Reporte de avance'; $('#shareDesc').textContent='Porcentaje de cada actividad y avance total de la orden, con formato de WhatsApp.';
       $('#shareText').value=txt; $('#avSheet').hidden=true; openSheet('#shareSheet'); return; }
   });
 
@@ -1929,7 +1946,7 @@ input,select,textarea{min-width:0;max-width:100%}
   /* =====================================================================
      GUARDADO SEGURO: todo o nada, identificadores estables por intento, cola del teléfono y causa real de cada error
      ===================================================================== */
-  const APP_VERSION='148';
+  const APP_VERSION='149';
   let dbRaiz=null;                                       /* la base de datos (se asigna al arrancar) */
   const cacheActiva = () => !!window.__persistencia;     /* versión independiente con la caché del teléfono activa: lo escrito queda en cola y sube solo */
   const sinRed = () => typeof navigator!=='undefined' && navigator.onLine===false;
@@ -2520,6 +2537,7 @@ input,select,textarea{min-width:0;max-width:100%}
     $('#shareText').value=buildShare(); openSheet('#shareSheet');
   }
   $('#ecFiltros').addEventListener('click', e=>{
+    const am=e.target.closest('[data-avrm]'); if(am){ avRepModo=am.dataset.avrm; try{ localStorage.setItem('avRepModo', avRepModo); }catch(_){} renderAvRepFiltros(); const d=docs.find(x=>x.id===avId); if(d) $('#shareText').value=buildAvance(d, avActs); return; }
     const ir=e.target.closest('[data-ir]'); if(ir){ invRep.tipo=ir.dataset.ir; renderInvFiltros(); $('#shareText').value=buildInv(); return; }
     const ip=e.target.closest('[data-iper]'); if(ip){ invRep.periodo=ip.dataset.iper; renderInvFiltros(); $('#shareText').value=buildInv(); return; }
     const im=e.target.closest('[data-imonr]'); if(im){ iMon=im.dataset.imonr; renderInvFiltros(); $('#shareText').value=buildInv(); return; }
