@@ -1,0 +1,30 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // El dueño lee y escribe todo. Las personas invitadas (las que el dueño agrega en Gastos › Ajustes › Personas con acceso)
+    // leen lo necesario para registrar y solo pueden crear solicitudes, que el dueño aprueba.
+    function esDueno() { return request.auth != null && request.auth.token.email in ['fran.laguna.v@gmail.com']; }
+    function invitado() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/acceso/$(request.auth.token.email))
+        && get(/databases/$(database)/documents/acceso/$(request.auth.token.email)).data.activo != false;
+    }
+    match /{document=**} { allow read, write: if esDueno(); }
+    match /acceso/{email} { allow read: if request.auth != null && request.auth.token.email == email; }
+    match /solicitudes/{id} {
+      allow create: if invitado() && request.resource.data.autor == request.auth.token.email && request.resource.data.estado == 'pendiente';
+      allow read: if invitado() && resource.data.autor == request.auth.token.email;
+      // la persona puede retirar lo suyo mientras esté pendiente
+      allow update: if invitado() && resource.data.autor == request.auth.token.email && resource.data.estado == 'pendiente' && request.resource.data.estado == 'retirada';
+    }
+    // Solo lee copias livianas (sin montos, cédulas, pagos ni tarifas) que mantiene la app del dueño
+    match /trabajadoresLite/{id} { allow read: if invitado(); }
+    match /ordenesLite/{id} { allow read: if invitado(); }
+    match /cortesLite/{id} { allow read: if invitado(); }
+    match /asistencia/{id} { allow read: if invitado(); }
+    match /inventarioLite/{id} { allow read: if invitado(); }
+    match /invMovsLite/{id} { allow read: if invitado(); }
+    match /activosLite/{id} { allow read: if invitado(); }
+    match /config/{id} { allow read: if invitado() && id in ['gastosLite', 'nominaLite', 'inventario', 'clientes', 'unidades']; }
+  }
+}
