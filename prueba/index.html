@@ -24,7 +24,7 @@
 #login button{border:0;background:#0D5C63;color:#fff;border-radius:12px;padding:13px 18px;font-weight:700;font-size:15px;width:100%}
 </style>
 </head>
-<body><div style="background:#B26A00;color:#fff;font:700 12px/1.3 system-ui,sans-serif;text-align:center;padding:4px 8px">VERSIÓN DE PRUEBA · etapas 1 a 3 · trabaja con tus datos reales</div>
+<body><div style="background:#B26A00;color:#fff;font:700 12px/1.3 system-ui,sans-serif;text-align:center;padding:4px 8px">VERSIÓN DE PRUEBA · etapas 1 a 4 · trabaja con tus datos reales</div>
 <div id="login" class="scrim-login">
   <div class="box">
     <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:#5A6A75">Workproca · Trabajos Profesionales C.A.</div>
@@ -2481,7 +2481,7 @@ select.combo-oculto{display:none}
   function costoTrabajoCalc(d, generales){
     let mo=0, dias=0, horas=0, moPend=0; const porT={};
     Object.values(asis).forEach(a=>Object.entries(a.registros||{}).forEach(([id,r])=>{
-      const pt=partesReg(r).find(x=>x.tid===d.id); if(!pt) return; const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return;
+      const pt=partesReg(r).find(x=>x.tid===d.id); if(!pt) return; const t=trabs.find(x=>x.id===id); if(!t||supEn(t,a.fecha)) return;
       const p0=pagoDia(t,r,a.fecha), pv=valorPagado(id,a.fecha), p={dias:p0.dias*pt.f, horas:p0.horas*pt.f}, v=(pv!=null?pv:(p0.montoDias+p0.montoExtra+p0.montoBono))*pt.f; if(v<=0) return;
       mo+=v; if(!diaPagado(id,a.fecha)) moPend+=v; dias+=p.dias; horas+=p.horas; const o=porT[t.nombre]||(porT[t.nombre]={v:0,dias:0,horas:0}); o.v=r2(o.v+v); o.dias+=p.dias; o.horas+=p.horas;
     }));
@@ -2499,14 +2499,14 @@ select.combo-oculto{display:none}
     const tasaRep=tasaSugerida();
     movs.filter(m=>m.tipo==='gasto' && m.fecha && (m.aCargo||'Empresa')==='Empresa' && !m.inventario && !['Nómina','Sueldos de supervisores','Adelantos de nómina'].includes(m.categoria) && !tieneTrabajo(m.trabajoId)).forEach(m=>add(inicioSemana(m.fecha),'gastos',usdDe(m,tasaRep)));
     Object.entries(mermasPorSemana()).forEach(([w,v])=>add(w,'gastos',v));   // lo que faltó en los conteos de inventario
-    Object.values(asis).forEach(a=>Object.entries(a.registros||{}).forEach(([id,r])=>{ const f=sum(partesReg(r).filter(x=>!tieneTrabajo(x.tid)),x=>x.f); if(!(f>0)) return; const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return; const p=pagoDia(t,r,a.fecha); const v=(p.montoDias+p.montoExtra+p.montoBono)*f; if(v>0) add(inicioSemana(a.fecha),'mo',v); }));
+    Object.values(asis).forEach(a=>Object.entries(a.registros||{}).forEach(([id,r])=>{ const f=sum(partesReg(r).filter(x=>!tieneTrabajo(x.tid)),x=>x.f); if(!(f>0)) return; const t=trabs.find(x=>x.id===id); if(!t||supEn(t,a.fecha)) return; const p=pagoDia(t,r,a.fecha); const v=(p.montoDias+p.montoExtra+p.montoBono)*f; if(v>0) add(inicioSemana(a.fecha),'mo',v); }));
     cortes.forEach(k=>(k.lineas||[]).forEach(l=>{ if(l.cargo!==SUP || !(num(l.sueldoFijo)>0)) return; const sem=Array.isArray(l.semanas)&&l.semanas.length?l.semanas:[inicioSemana(k.hasta)]; sem.forEach(w=>add(w,'sup',num(l.sueldoFijo)/sem.length)); }));
     return por;
   }
   /* Actividad por semana y trabajo: días-persona asignados (la hora extra cuenta como fracción de jornada); un gasto directo también cuenta como actividad */
   function actividadPorSemana(){
     const out={}; const jor=num(cfgN.horasJornada)||8.5;
-    Object.values(asis).forEach(a=>Object.entries(a.registros||{}).forEach(([id,r])=>{ const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return; const p=pagoDia(t,r,a.fecha); if(!p.dias&&!p.horas) return; partesReg(r).forEach(x=>{ if(!tieneTrabajo(x.tid)) return; const w=inicioSemana(a.fecha), o=out[w]||(out[w]={}); o[x.tid]=(o[x.tid]||0)+(p.dias+p.horas/jor)*x.f; }); }));
+    Object.values(asis).forEach(a=>Object.entries(a.registros||{}).forEach(([id,r])=>{ const t=trabs.find(x=>x.id===id); if(!t||supEn(t,a.fecha)) return; const p=pagoDia(t,r,a.fecha); if(!p.dias&&!p.horas) return; partesReg(r).forEach(x=>{ if(!tieneTrabajo(x.tid)) return; const w=inicioSemana(a.fecha), o=out[w]||(out[w]={}); o[x.tid]=(o[x.tid]||0)+(p.dias+p.horas/jor)*x.f; }); }));
     movs.filter(m=>m.tipo==='gasto' && m.fecha && tieneTrabajo(m.trabajoId)).forEach(m=>{ const w=inicioSemana(m.fecha), o=out[w]||(out[w]={}); if(!(m.trabajoId in o)) o[m.trabajoId]=0; });
     invMovs.filter(m=>m.tipo==='salida' && m.fecha && tieneTrabajo(m.trabajoId)).forEach(m=>{ const w=inicioSemana(m.fecha), o=out[w]||(out[w]={}); if(!(m.trabajoId in o)) o[m.trabajoId]=0; });
     return out;
@@ -3541,7 +3541,7 @@ Responde solo con un objeto JSON:
       }
       for(let i=0;i<aiAdels.length;i++){
         const a=aiAdels[i], chk=document.querySelector(`[data-achk="${i}"]`); if(!chk||!chk.checked||chk.disabled) continue;
-        const cs=document.querySelector(`[data-acta="${i}"]`), cta=(cs&&cs.value)||a.cuenta||'efectivo'; try{ localStorage.setItem('adCuenta',cta); }catch(_){}
+        const cs=document.querySelector(`[data-acta="${i}"]`), cta=(cs&&cs.value)||a.cuenta||'efectivo';
         try{ await escribirJuntos([{...opSet('adelantos', a._id||(a._id=nuevoId('adelantos')), {trabajadorId:a.t.id, fecha:a.fecha, monto:a.monto, nota:a.nota, cuenta:cta, tasa:0, corteId:'', creado:new Date().toISOString()}, `el adelanto a ${a.t.nombre}`), nuevo:true}], 'un adelanto (asistente)'); }
         catch(e){ fallas.push(`el adelanto a ${a.t.nombre}: ${errMsg(e)}`); continue; }
         aiHecho(chk); na++;
@@ -3569,7 +3569,7 @@ Responde solo con un objeto JSON:
   function setModulo(m){
     if(esRegistro() && !['reg','nom'].includes(m) && !(m==='inv'&&iView==='eq')) m='reg';
     /* Salir de Nómina con el día marcado y sin guardar: mismo aviso que al cambiar de pestaña o de día */
-    if(modulo==='nom' && m!=='nom' && !salirDelDia()){ try{ history.replaceState(null,'','#nomina'); }catch(_){} return; }
+    if(modulo==='nom' && m!=='nom' && (!salirDelDia() || !salirDeAjustes())){ try{ history.replaceState(null,'','#nomina'); }catch(_){} return; }
     modulo = ['nom','gas','inv','res','reg','av','dat'].includes(m) ? m : 'cob';
     document.querySelectorAll('#modTabs button').forEach(b=>b.setAttribute('aria-selected', String(b.dataset.m===modulo)));
     $('#modCob').hidden = modulo!=='cob'; $('#cobHead').hidden = modulo!=='cob'; $('#cobBtns').hidden = modulo!=='cob';
@@ -3641,10 +3641,10 @@ Responde solo con un objeto JSON:
     if(op==='delete') return `Eliminar ${c==='invMovs'?'un movimiento de inventario':c==='movimientos'?'un movimiento de caja':c==='adelantos'?'un adelanto':'un registro'} (${c})`;
     if(c==='movimientos') return `${d.tipo==='ingreso'?'Ingreso':d.tipo==='cambio'?'Cambio entre cuentas':'Gasto'}: ${d.concepto||d.categoria||''} · ${cuentaDe(d.cuenta||d.cuentaOrigen).moneda==='VES'?bs(num(d.monto||d.montoOrigen)):usd(num(d.monto||d.montoOrigen))} (${cuentaDe(d.cuenta||d.cuentaOrigen).nombre}) · ${fdate(d.fecha)}`;
     if(c==='adelantos') return `Adelanto a ${nombreT(d.trabajadorId)}: ${usd(num(d.monto))} desde ${cuentaDe(d.cuenta).nombre} · ${fdate(d.fecha)}`;
-    if(c==='asistencia'){ const regs=Object.entries(d.registros||{}).filter(([,r])=>r.tipo!=='no'||num(r.horasExtra)>0); return `Asistencia del ${fdate(d.fecha||x.id)}: ${regs.length} ${regs.length===1?'persona':'personas'} (${regs.map(([id,r])=>`${(nombreT(id)||'').split(' ')[0]} ${r.tipo==='medio'?'½':r.tipo==='completo'?'día':''}${num(r.horasExtra)?' +'+nf.format(num(r.horasExtra)).replace(/,00$/,'')+'h':''}`).join(', ')})`; }
+    if(c==='asistencia'){ const regs=Object.entries(d.registros||{}).filter(([,r])=>r.tipo!=='no'||num(r.horasExtra)>0); return `Asistencia del ${fdate(d.fecha||x.docId||x.id)}: ${regs.length} ${regs.length===1?'persona':'personas'} (${regs.map(([id,r])=>`${(nombreT(id)||'').split(' ')[0]} ${r.tipo==='medio'?'½':r.tipo==='completo'?'día':''}${num(r.horasExtra)?' +'+nf.format(num(r.horasExtra)).replace(/,00$/,'')+'h':''}`).join(', ')})`; }
     if(c==='invMovs'){ const it=itemDe(d.itemId)||{nombre:'ítem',unidad:'und'}; const tj=d.trabajoId&&docs.find(z=>z.id===d.trabajoId); return `${TIPO_INV[d.tipo]||'Movimiento'} de inventario: ${d.tipo==='conteo'?'contado '+cant(d.contado,it.unidad):cant(d.cantidad,it.unidad)} ${it.nombre}${tj?' · '+nombreTrabajo(tj):''} · ${fdate(d.fecha)}`; }
-    if(c==='trabajadores') return `${op==='update'?'Cambio en':'Ficha de'} ${d.nombre||nombreT(x.id)}`;
-    if(c==='facturas') return `${op==='update'?'Cambio en':'Trabajo'} ${d.descripcion||((docs.find(z=>z.id===x.id)||{}).descripcion)||''}`;
+    if(c==='trabajadores') return `${op==='update'?'Cambio en':'Ficha de'} ${d.nombre||nombreT(x.docId||x.id)}`;
+    if(c==='facturas') return `${op==='update'?'Cambio en':'Trabajo'} ${d.descripcion||((docs.find(z=>z.id===(x.docId||x.id))||{}).descripcion)||''}`;
     return `${op==='update'?'Cambio':'Registro'} en ${c}`;
   }
   /* El registro actual, si existe, para comparar con lo que se envió */
@@ -3695,6 +3695,12 @@ Responde solo con un objeto JSON:
         if(c.moneda!=='VES' && num(d.montoBs)>0 && !(num(d.monto)>0)){ const tu=tasaUsdt(d.fecha)||tasaDelDia(d.fecha); if(tu&&tu.tasa>0){ d.tasa=tu.tasa; d.monto=r2(num(d.montoBs)/tu.tasa); } }
         x={...x, datos:d}; }
       if(aprobar && x.col==='adelantos' && x.op!=='delete' && x.datos && cuentaDe(x.datos.cuenta).moneda==='VES' && !(num(x.datos.tasa)>0)) x={...x, datos:{...x.datos, tasa:(tasaDelDia(x.datos.fecha)||{}).tasa||tasaSugerida()||0}};
+      /* Un día que ya se pagó no se cambia al aprobar (no pasaría por «Corregir» y no se crearía la diferencia): a esas personas se les deja lo que tienen y se avisa */
+      if(aprobar && x.col==='asistencia'){ const f=String((x.datos||{}).fecha||x.docId||''), ra=((actualDe('asistencia', x.docId)||asis[f]||{}).registros)||{}; let pag=[];
+        if(x.op==='delete'){ pag=Object.keys(ra).filter(id=>diaPagado(id,f)); if(pag.length) x={...x, op:'set', datos:{fecha:f, registros:Object.fromEntries(pag.map(id=>[id,ra[id]])), actualizado:new Date().toISOString()}}; }
+        else if(x.op==='update'){ const d={...(x.datos||{})}; Object.keys(d).forEach(k=>{ const id=k.startsWith('registros.')?k.slice(10):''; if(id && diaPagado(id,f)){ pag.push(id); delete d[k]; } }); if(d.registros && typeof d.registros==='object'){ const re={...d.registros}; [...new Set([...Object.keys(re),...Object.keys(ra)])].forEach(id=>{ if(diaPagado(id,f) && !igual(re[id]||null, ra[id]||null)){ pag.push(id); if(ra[id]) re[id]=ra[id]; else delete re[id]; } }); d.registros=re; } if(pag.length) x={...x, datos:d}; }
+        else if(x.datos && x.datos.registros){ const re={...x.datos.registros}; pag=[...new Set([...Object.keys(re),...Object.keys(ra)])].filter(id=>diaPagado(id,f) && !igual(re[id]||null, ra[id]||null)); pag.forEach(id=>{ if(ra[id]) re[id]=ra[id]; else delete re[id]; }); if(pag.length) x={...x, datos:{...x.datos, registros:re}}; }
+        if(pag.length) aviso+=` · A ${[...new Set(pag)].map(id=>nombreT(id)).join(', ')} no se le cambió el ${fdate(f)} porque ya está pagado: corrígelo en el Registro del día con «Corregir»`; }
       /* El registro aprobado y la marca de «aprobada» en la solicitud entran juntos: todo o nada */
       let opReg=null;
       if(aprobar){
@@ -3755,15 +3761,20 @@ Responde solo con un objeto JSON:
   const SUP='Supervisor';
   let nDb=null, nFallo=false, nCfgRef=null, cfgN=JSON.parse(JSON.stringify(CFG_DEF));
   let trabs=[], asis={}, adels=[], cortes=[], nLoaded={t:false,a:false,d:false,c:false};
-  let corteCuenta='binance', corteFechaPago=today();
+  /* La cuenta desde la que se paga: Binance, salvo que la última vez se haya elegido otra en este teléfono (y entonces el corte lo dice) */
+  let corteCuenta='binance', corteFechaPago=today();   /* regla del dueño: todo sale de Binance salvo que él elija otra cuenta en ese corte; no se recuerda la última */
   let nView='dia', diaSel=today(), dayDraft=null, dayDirty=false, corteHasta=today(), corteTasa='', corteTasaToco=false, supMontos={}, wEditId=null, nDelArmed='';
   /* Mientras el dueño no toque "Hasta" ni "Fecha del pago", van al día de hoy cada vez que se abre el corte (la app puede quedar abierta de un día a otro) */
   let corteFechasAuto=true, corteTasaDe=null, corteAnulado=null;
 
   const esSup = t => t.cargo===SUP;
+  /* Si era supervisor en una fecha: lo dice el historial de cambios de la ficha (tarifasAnt, con su marca «sup»); sin historial, el cargo de hoy.
+     Así, pasar a alguien a Supervisor (o quitarle ese cargo) no cambia cómo se cuentan sus días ni sus semanas anteriores al cambio */
+  function supEn(t, f){ if(!t) return false; if(f && Array.isArray(t.tarifasAnt)){ const h=t.tarifasAnt.filter(x=>typeof x.sup==='boolean' && x.hasta>=f).sort((a,b)=>String(a.hasta).localeCompare(String(b.hasta)))[0]; if(h) return h.sup; } return esSup(t); }
+  const tuvoOtroRol = t => !!t && Array.isArray(t.tarifasAnt) && t.tarifasAnt.some(x=>typeof x.sup==='boolean' && x.sup!==esSup(t));
   const nombreT = id => { const t=trabs.find(x=>x.id===id); return t?t.nombre:'Trabajador eliminado'; };
   /* Tarifa por día; con fecha, la que valía ese día (los cambios de tarifa no reescriben el pasado) */
-  function tarifaDe(t, f){ if(!t||esSup(t)) return 0; if(f && Array.isArray(t.tarifasAnt)){ const h=t.tarifasAnt.filter(x=>!x.sup && x.hasta>=f).sort((a,b)=>String(a.hasta).localeCompare(String(b.hasta)))[0]; if(h) return num(h.tarifa); } if(num(t.tarifa)>0) return num(t.tarifa); const c=cfgN.cargos.find(c=>c.nombre===t.cargo); if(!c) return 0; if(f && Array.isArray(c.ant)){ const h=c.ant.filter(x=>x.hasta>=f).sort((a,b)=>String(a.hasta).localeCompare(String(b.hasta)))[0]; if(h) return num(h.tarifa); } return num(c.tarifa); }
+  function tarifaDe(t, f){ if(!t||(f?supEn(t,f):esSup(t))) return 0; if(f && Array.isArray(t.tarifasAnt)){ const h=t.tarifasAnt.filter(x=>!x.sup && x.hasta>=f).sort((a,b)=>String(a.hasta).localeCompare(String(b.hasta)))[0]; if(h) return num(h.tarifa); } if(num(t.tarifa)>0) return num(t.tarifa); const c=cfgN.cargos.find(c=>c.nombre===t.cargo); if(!c) return 0; if(f && Array.isArray(c.ant)){ const h=c.ant.filter(x=>x.hasta>=f).sort((a,b)=>String(a.hasta).localeCompare(String(b.hasta)))[0]; if(h) return num(h.tarifa); } return num(c.tarifa); }
   /* Valor de la hora extra: la propia del trabajador si la tiene; si no, la general (tarifa del día ÷ jornada × factor) */
   function horaExtraDe(t, tar){ if(t && num(t.horaExtra)>0) return num(t.horaExtra); const base=tar!=null?tar:tarifaDe(t); return r2(base/(num(cfgN.horasJornada)||8.5)*(num(cfgN.factorHoraExtra)||1)); }
   function sueldoSup(t, f){ if(f && t && Array.isArray(t.tarifasAnt)){ const h=t.tarifasAnt.filter(x=>x.sup && x.hasta>=f).sort((a,b)=>String(a.hasta).localeCompare(String(b.hasta)))[0]; if(h) return num(h.tarifa); } return num(t.sueldoSemanal)>0 ? num(t.sueldoSemanal) : num(cfgN.sueldoSupervisor); }
@@ -3839,7 +3850,7 @@ Responde solo con un objeto JSON:
     const linea = id => lineas[id] || (lineas[id]={trabajadorId:id, completos:0, medios:0, horasExtra:0, especiales:{}, montoDias:0, montoExtra:0, montoBono:0, sueldoFijo:0, adelantos:0, adelantoIds:[], atrasados:0, ajuste:0, ajustes:[]});
     Object.values(asis).filter(a=>a.fecha<=hasta).forEach(a=>{
       Object.entries(a.registros||{}).forEach(([id,reg])=>{
-        const t=trabs.find(x=>x.id===id); if(!t||esSup(t)||!incl(t)) return;
+        const t=trabs.find(x=>x.id===id); if(!t||supEn(t,a.fecha)||!incl(t)) return;
         if(diaPagado(id,a.fecha)) return;
         const p=pagoDia(t,reg,a.fecha); if(!p.dias && !p.horas && !p.montoBono) return;
         const L=linea(id); if(!L.desde||a.fecha<L.desde) L.desde=a.fecha; if(!desdeMin||a.fecha<desdeMin) desdeMin=a.fecha;   // el período empieza en el primer día que de verdad se paga
@@ -3851,19 +3862,22 @@ Responde solo con un objeto JSON:
       });
     });
     const supPagados=[], semanasSupPend=new Set();
-    trabs.filter(t=>esSup(t) && t.activo!==false && incl(t)).forEach(t=>{
+    trabs.filter(t=>(esSup(t)||tuvoOtroRol(t)) && t.activo!==false && incl(t)).forEach(t=>{
+      /* Quien cambió de cargo: de cada semana cuentan solo los días en que fue supervisor */
+      const mixto=tuvoOtroRol(t), diasS=w=>{ const o=[]; for(let i=0;i<7;i++){ const d=sumarDias(w,i); if(supEn(t,d) && (!t.fechaIngreso || d>=t.fechaIngreso)) o.push(d); } return o; };
       const pag=semanasPagadasSup(t.id), creado=ingresoDe(t), iniN=inicioNomina();
       /* Desde su ingreso, pero nunca antes de que la app llevara la nómina: las semanas anteriores se pagaron fuera de la app */
       let inicio = t.fechaIngreso ? creado : (creado && creado>primeraAsis ? creado : primeraAsis); if(iniN && inicio<iniN) inicio=iniN;
-      const pend=semanasDe(inicioSemana(inicio),hasta).filter(w=>!pag.has(w) && (!creado || finSemana(w)>=creado) && (!F.soloCerradas || semanaCerrada(w,hasta)));
+      const pend=semanasDe(inicioSemana(inicio),hasta).filter(w=>!pag.has(w) && (!creado || finSemana(w)>=creado) && (!F.soloCerradas || semanaCerrada(w,hasta)) && (!mixto || diasS(w).length>0));
       pend.forEach(w=>semanasSupPend.add(w));
       /* Sin elección expresa entran solo las semanas ya terminadas; la que está en curso se marca a propósito */
       const sem=pend.filter(w=>F.semanasSup ? F.semanasSup.includes(w) : semanaCerrada(w,hasta));
-      if(!sem.length && supMontos[t.id]==null){ const w=inicioSemana(hasta); if(pag.has(w)) supPagados.push({nombre:t.nombre, fecha:pag.get(w)}); return; }
-      const L=linea(t.id); L.semanas=sem; L.desde=sem[0]||''; if(sem[0]&&(!desdeMin||sem[0]<desdeMin)) desdeMin=sem[0];
+      if(!sem.length && (supMontos[t.id]==null || !esSup(t))){ const w=inicioSemana(hasta); if(esSup(t) && pag.has(w)) supPagados.push({nombre:t.nombre, fecha:pag.get(w)}); return; }
+      const L=linea(t.id); L.semanas=sem; L.desde = L.desde && (!sem[0] || L.desde<=sem[0]) ? L.desde : (sem[0]||''); if(sem[0]&&(!desdeMin||sem[0]<desdeMin)) desdeMin=sem[0];
       /* La semana en que entró se paga en proporción a los días desde su ingreso */
       const ingE=t.fechaIngreso||'', frac = w => ingE && ingE>w ? Math.max(0, Math.min(1, (Math.round((new Date(finSemana(w)+'T12:00:00')-new Date(ingE+'T12:00:00'))/864e5)+1)/7)) : 1;
-      L.sueldoFijo = supMontos[t.id]!=null ? num(supMontos[t.id]) : r2(sum(sem,w=>sueldoSup(t, finSemana(w))*frac(w))); if(sem.some(w=>frac(w)<1)) L.proporcional=true; });
+      const fracM = w => mixto ? diasS(w).length/7 : frac(w), refS = w => mixto ? (diasS(w).pop()||finSemana(w)) : finSemana(w);
+      L.sueldoFijo = supMontos[t.id]!=null ? num(supMontos[t.id]) : r2(sum(sem,w=>sueldoSup(t, refS(w))*fracM(w))); if(sem.some(w=>fracM(w)<1)){ L.proporcional=true; if(mixto) L.cambioRol=true; } });
     adels.filter(a=>!a.corteId && (esAjuste(a) || a.fecha<=hasta)).forEach(a=>{ const t=trabs.find(x=>x.id===a.trabajadorId); if(t && !incl(t)) return; const L=linea(a.trabajadorId);
       if(esAjuste(a)){ L.ajuste=r2(L.ajuste+num(a.monto)); L.ajustes.push({id:a.id, monto:num(a.monto), nota:a.nota||'', fecha:a.fecha}); } else L.adelantos+=num(a.monto); L.adelantoIds.push(a.id); });
     const activoT=id=>(trabs.find(t=>t.id===id)||{}).activo!==false;
@@ -3879,8 +3893,30 @@ Responde solo con un objeto JSON:
     const ds=(L.dias||[]).slice().sort((a,b)=>a.f.localeCompare(b.f)); if(!ds.length) return '';
     const tj=id=>{ const d=docs.find(x=>x.id===id); return d ? (tieneOrden(d)?d.ods:d.descripcion) : ''; };
     return `<div class="ddias num">${ds.map(x=>{ const dow=DIAS[new Date(x.f+'T12:00:00').getDay()]; const partes=[x.t==='completo'?'Día completo':x.t==='medio'?'Medio día':'Solo horas extra', x.h?`${nf.format(x.h).replace(/,00$/,'')} ${x.h===1?'hora extra':'horas extra'}`:'', x.e?x.e:'', x.tj?tj(x.tj):''].filter(Boolean).join(' · ');
-      return `<div><span><b style="text-transform:capitalize">${dow.slice(0,3)} ${fdate(x.f).slice(0,5)}</b> · ${esc(partes)}</span><b>${usd(x.m)}</b></div>`; }).join('')}</div>`;
+      return `<div><span><b style="text-transform:capitalize">${dow.slice(0,3)} ${fdate(x.f).slice(0,5)}</b> · ${esc(partes)}</span><b>${usd(x.m)}</b></div>`; }).join('')}${(L.semanas||[]).map(w=>`<div><span>Sueldo de supervisor, semana del ${fdate(w)} al ${fdate(finSemana(w))}</span><b>${usd(r2(num(L.sueldoFijo)/L.semanas.length))}</b></div>`).join('')}</div>`;
   }
+  /* Descuentos y pagos extra de una línea de corte. Los cortes pagados desde la etapa 4 de la corrección los guardan en la línea. Para los pagados antes se reconstruyen:
+     son los ajustes que ese corte marcó como aplicados; si ya no están, la diferencia entre el devengado y lo trabajado, en un solo renglón */
+  function ajustesLinea(l, kk){ if(Array.isArray(l.ajustes)) return l.ajustes;
+    const dif=r2(num(l.bruto)-(num(l.montoDias)+num(l.montoExtra)+num(l.montoBono)+num(l.sueldoFijo)));
+    const k=(kk&&kk.id)?kk:cortes.find(c=>(c.lineas||[]).includes(l)), ids=new Set((k&&k.adelantoIds)||[]);
+    const ls=k?adels.filter(a=>esAjuste(a) && a.trabajadorId===l.trabajadorId && (ids.has(a.id) || a.corteId===k.id)).map(a=>({id:a.id, monto:num(a.monto), nota:a.nota||'', fecha:a.fecha||''})):[];
+    if(ls.length && Math.abs(r2(sum(ls,a=>a.monto))-dif)<0.03) return ls;
+    return Math.abs(dif)<0.03 ? [] : [{monto:dif, nota:'', fecha:''}]; }   /* menos de 3 céntimos es redondeo de las partes, no un ajuste */
+  const ajusteLinea = (l, k) => l.ajuste!=null ? num(l.ajuste) : r2(sum(ajustesLinea(l,k),a=>num(a.monto)));
+  const txtAjuste = (l, k) => { const a=ajusteLinea(l,k); return Math.abs(a)>0.004 ? ` (ajustes ${a<0?'− ':'+ '}${usd(Math.abs(a))})` : ''; };
+  /* Un resto de adelanto que un corte dejó para después: está respaldado si existe el adelanto pendiente (o ya descontado) que lo lleva */
+  const restoRespaldado = (k, L) => adels.some(a=>a.trabajadorId===L.trabajadorId && esResto(a) && (a.origenCorteId===k.id || (!a.origenCorteId && String(a.fecha)>String(k.hasta) && Math.abs(num(a.monto)+num(L.totalUsd))<0.005)));
+  /* Cortes viejos con una línea en negativo (el adelanto superó lo ganado) que no dejaron ese resto pendiente: se le avisa al dueño, no se corrige solo */
+  function restosSinRespaldo(){ const no=new Set(cfgN.restosDescartados||[]), out=[]; cortes.forEach(k=>(k.lineas||[]).forEach(L=>{ if(num(L.totalUsd)<-0.004 && !restoRespaldado(k,L) && !no.has(k.id+'|'+L.trabajadorId)) out.push({k, L, clave:k.id+'|'+L.trabajadorId, falta:r2(-num(L.totalUsd))}); })); return out; }
+  function avisoRestosHtml(){ if(esRegistro() || !canWrite) return ''; const ls=restosSinRespaldo(); if(!ls.length) return '';
+    return ls.map(x=>`<div class="lock" data-restocaso="${esc(x.clave)}" role="alert" style="margin-top:12px"><b>Adelanto marcado como descontado sin haberse descontado.</b> En el corte pagado el ${fdate(x.k.fecha||x.k.hasta)}, a ${esc(x.L.nombre||nombreT(x.L.trabajadorId))} se le dio por descontado un adelanto mayor que lo que ganó: faltaron ${usd(x.falta)} por descontar y no quedaron anotados para después.<div class="row-btns" style="margin-top:8px"><button type="button" class="btn pri" data-restopend="${esc(x.clave)}">Dejar ${usd(x.falta)} como adelanto pendiente</button><button type="button" class="btn sec" data-restono="${esc(x.clave)}">No hace falta: quitar este aviso</button></div></div>`).join(''); }
+  async function resolverResto(clave, dejar, btn){ const x=restosSinRespaldo().find(z=>z.clave===clave); if(!x) return renderNom();
+    await conBoton(btn, btn.textContent, async()=>{ try{
+      if(dejar){ await escribirJuntos([{op:'set', col:'adelantos', id:idEstable('restoViejo|'+clave,'adelantos'), nuevo:true, que:`el resto de adelanto de ${nombreT(x.L.trabajadorId)}`, datos:{trabajadorId:x.L.trabajadorId, fecha:today(), monto:x.falta, nota:`Resto del adelanto no descontado en el corte del ${fdate(x.k.fecha||x.k.hasta)}`, corteId:'', origenCorteId:x.k.id, resto:true, creado:new Date().toISOString()}}], 'el resto de adelanto pendiente'); soltarIntento('restoViejo|'+clave);
+        registrarCambio('adelantos', x.k.id, `Resto de adelanto de ${nombreT(x.L.trabajadorId)} (corte del ${fdate(x.k.fecha||x.k.hasta)})`, 'sin anotar', `${nf.format(x.falta)} USD pendiente`); toast(`${usd(x.falta)} quedó como adelanto pendiente de ${nombreT(x.L.trabajadorId)}`); }
+      else { const lista=[...new Set([...(cfgN.restosDescartados||[]), clave])]; await escribirCfg('nomina', {restosDescartados:lista}, 'quitar el aviso', {...cfgN, restosDescartados:lista}); cfgN={...cfgN, restosDescartados:lista}; toast('Aviso quitado. No se cambió ningún dato'); }
+      renderNom(); }catch(err){ toast(errMsg(err)); } }); }
   /* Recibo de pago para mandarle al trabajador por WhatsApp: día por día, horas extra, recargos, adelantos y total */
   function reciboTrabajador(L, corte){
     const t=trabs.find(x=>x.id===L.trabajadorId)||{nombre:L.nombre||''}, tasa=num(corte.tasa), tar=tarifaDe(t);
@@ -3904,12 +3940,14 @@ Responde solo con un objeto JSON:
       if(lsH.length) Ls.push(`Horas extra: ${lsH.map(o=>`${fh(o.h)} ${o.h===1?'hora':'horas'} a ${usd(o.ph)}`).join(' + ')} = ${usd(r2(L.montoExtra))}`);
       if(num(L.montoBono)>0) Ls.push(`Bonificación: ${usd(r2(num(L.montoBono)))}`);
     }
-    (L.ajustes||[]).forEach(a=>Ls.push(`${num(a.monto)<0?'Descuento':'Pago extra'}${a.nota?' ('+a.nota+')':''}: ${num(a.monto)<0?'− ':'+ '}${usd(Math.abs(num(a.monto)))}`));
+    if(L.semanas && L.semanas.length && (L.dias||[]).length) L.semanas.forEach(w=>Ls.push(`Sueldo de supervisor, semana del ${fdate(w)} al ${fdate(finSemana(w))}: ${usd(r2(num(L.sueldoFijo)/L.semanas.length))}`));
+    if(num(L.atrasados)>0) Ls.push(`Incluye ${L.atrasados} ${num(L.atrasados)===1?'día atrasado':'días atrasados'} de un período ya pagado.`);
+    ajustesLinea(L, corte).forEach(a=>Ls.push(`${num(a.monto)<0?'Descuento':'Pago extra'}${a.nota?' ('+a.nota+')':''}: ${num(a.monto)<0?'− ':'+ '}${usd(Math.abs(num(a.monto)))}`));
     Ls.push(`Devengado: ${usd(L.bruto)}`);
     if(L.adelantos>0){ const ads=(L.adelantoIds||[]).map(id=>adels.find(a=>a.id===id)).filter(a=>a&&!esAjuste(a)); Ls.push(`Adelantos descontados: − ${usd(L.adelantos)}${ads.length?` (${ads.map(a=>`${fdate(a.fecha).slice(0,5)} ${usd(num(a.monto))}`).join('; ')})`:''}`); }
     const neto=Math.max(0,L.totalUsd);
     Ls.push(`*A pagar: ${usd(neto)}${tasa>0?` = ${bs(r2(neto*tasa))} (tasa ${nfT.format(tasa)} Bs por dólar)`:''}*`);
-    if(L.totalUsd<-0.004) Ls.push(`Queda ${usd(-L.totalUsd)} de adelanto pendiente para el próximo pago.`);
+    if(L.totalUsd<-0.004 && (!corte.id || restoRespaldado(corte, L))) Ls.push(`Queda ${usd(-L.totalUsd)} de adelanto pendiente para el próximo pago.`);
     return Ls.join('\n');
   }
   function detalleLinea(L){
@@ -3971,7 +4009,7 @@ Responde solo con un objeto JSON:
     const L=['*WORKPROCA, Trabajos Profesionales C.A.*', `*Nómina · corte del ${fdate(c.fecha||today())}*`, `Período: ${fdate(c.desde)} al ${fdate(c.hasta)}`, `Tasa: ${nfT.format(c.tasa)} Bs por dólar`, ''];
     c.lineas.forEach(l=>{
       L.push(`• ${l.nombre||nombreT(l.trabajadorId)}${l.cargo?' ('+l.cargo+')':''}: ${detalleLinea(l)||'sin días'}`);
-      L.push(`   Devengado: ${usd(l.bruto)}${Math.abs(num(l.ajuste))>0.004?` (ajustes ${num(l.ajuste)<0?'− ':'+ '}${usd(Math.abs(num(l.ajuste)))})`:''}${l.adelantos?` · Adelantos: − ${usd(l.adelantos)}`:''} · A pagar: ${usd(Math.max(0,l.totalUsd))} = ${bs(l.totalBs)}${l.totalUsd<-0.004?` (quedan ${usd(-l.totalUsd)} de adelanto para el próximo corte)`:''}`);
+      L.push(`   Devengado: ${usd(l.bruto)}${txtAjuste(l)}${l.adelantos?` · Adelantos: − ${usd(l.adelantos)}`:''} · A pagar: ${usd(Math.max(0,l.totalUsd))} = ${bs(l.totalBs)}${l.totalUsd<-0.004?` (quedan ${usd(-l.totalUsd)} de adelanto para el próximo corte)`:''}`);
     });
     L.push(''); L.push(`*Total: ${usd(sum(c.lineas,l=>Math.max(0,l.totalUsd)))} = ${bs(sum(c.lineas,l=>l.totalBs))}*`);
     return L.join('\n');
@@ -3981,6 +4019,7 @@ Responde solo con un objeto JSON:
   function renderNom(){
     if(modulo==='res') return renderRes();
     if(modulo!=='nom') return;
+    revisarCambioDeDia();
     document.querySelectorAll('#nTabs button').forEach(b=>b.setAttribute('aria-selected', String(b.dataset.v===nView)));
     const el=$('#nMain');
     if(!nDb){ el.innerHTML = nFallo ? `<div class="empty"><b>No se pudo abrir la nómina</b>Abre esta página desde tu cuenta de Claude.</div>` : `<div class="empty"><b>Cargando nómina…</b>Trabajadores, días registrados y cortes.</div>`; return; }
@@ -3989,6 +4028,16 @@ Responde solo con un objeto JSON:
   }
 
   /* Orden sugerida para cada trabajador: la del último día registrado antes de esta fecha (se usa solo si el día no tiene registro guardado) */
+  /* diaInval: lo mal escrito en horas extra o bonificación (no se convierte a cero: se dice y no deja guardar). diaVisto: la fecha de hoy la última vez que se miró */
+  let diaInval={}, diaVisto=today(), diaQuedo='';
+  const TXT_HX='Las horas extra deben ser un número entre 0 y 24.', TXT_BONO='La bonificación debe ser un monto en dólares, de cero en adelante.';
+  function marcarInval(id, campo, msg, input){ const k=id+'|'+campo; if(msg) diaInval[k]={txt:input.value, msg}; else delete diaInval[k];
+    const w=input.closest('[data-w]'), e=w?w.querySelector('[data-werr]'):$('#dTodosErr'); if(e) e.textContent = w ? ['hx','bono'].map(c=>(diaInval[id+'|'+c]||{}).msg).filter(Boolean).join(' ') : (msg||''); }
+  /* La app puede quedar abierta de un día para otro: al volver, el registro del día pasa a hoy. Si el día abierto tiene marcas sin guardar, se queda ahí y lo dice */
+  function revisarCambioDeDia(){ const h=today(); if(h===diaVisto) return; diaVisto=h; if(diaSel===h) return;
+    if(nView==='dia' && dayDraft && dayDirty && hayCambiosDia()) diaQuedo=diaSel;
+    else { diaSel=h; dayDraft=null; dayDirty=false; diaQuedo=''; if(modulo==='nom' && nView==='dia') toast(`Ya es ${DIAS[new Date(h+'T12:00:00').getDay()]} ${fdate(h)}: el registro del día pasó a hoy`); }
+    if(modulo==='nom' && nView==='dia' && nDb) renderNom(); }
   let dayPrefill={}, todosTocado=false, diaAgregados=new Set(), diaCorregir=new Set(); const diaVerTodos=new Set();
   /* Un día ya registrado, o un día viejo sin registro, muestra solo a quienes trabajaron; los demás quedan en una lista corta para agregarlos.
      Un día nuevo (hoy o después del último registrado) muestra a todos, para seguir de un día al otro. */
@@ -4004,13 +4053,13 @@ Responde solo con un objeto JSON:
   /* Copia el último día registrado: quiénes, cuánto y en qué orden (las horas extra no se copian) */
   function copiarDiaAnterior(){ const u=ultimoDiaAntes(diaSel); if(!u) return; const regs=(asis[u]||{}).registros||{}; dayDraft={}; Object.entries(regs).forEach(([id,r])=>{ const t=trabs.find(x=>x.id===id); if(!t||diaBloqueado(t,diaSel)) return; dayDraft[id]={tipo:r.tipo||'completo', horasExtra:0, trabajoId:r.trabajoId||'', ...(r.dividir&&r.trabajoId2?{dividir:true, trabajoId2:r.trabajoId2}:{})}; }); Object.keys(dayDraft).forEach(id=>diaAgregados.add(id)); dayDirty=true; todosTocado=true; renderNom(); toast(`Copiado el ${fdate(u)}: revisa y guarda`); }
   function renderDia(el){
-    if(!dayDraft){ dayDraft=JSON.parse(JSON.stringify((asis[diaSel]||{}).registros||{})); dayBase=regsDe((asis[diaSel]||{}).registros); dayBaseDe=diaSel; quitarChoque('#nMain'); dayDirty=false; diaAgregados=new Set(); diaCorregir=new Set(); todosTocado=false; calcPrefill(); }
+    if(!dayDraft){ dayDraft=JSON.parse(JSON.stringify((asis[diaSel]||{}).registros||{})); dayBase=regsDe((asis[diaSel]||{}).registros); dayBaseDe=diaSel; quitarChoque('#nMain'); dayDirty=false; diaAgregados=new Set(); diaCorregir=new Set(); todosTocado=false; diaInval={}; calcPrefill(); }
     const tieneReg = id => { const r=dayDraft[id]; return !!r && (r.tipo==='completo' || r.tipo==='medio' || num(r.horasExtra)>0 || num(r.bono)>0); };
-    const lista=trabs.filter(t=>!esSup(t) && (t.activo!==false || tieneReg(t.id))).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
+    const lista=trabs.filter(t=>!supEn(t,diaSel) && (t.activo!==false || tieneReg(t.id))).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
     const td=tipoDia(diaSel), bloqT = t => diaBloqueado(t, diaSel) && !diaCorregir.has(t.id), bloqueado = lista.length>0 && lista.every(bloqT), algunosBloq = !bloqueado && lista.some(bloqT);
     const compactoDia=diaCompacto(), visiblesDia = compactoDia ? lista.filter(t=>tieneReg(t.id)||diaAgregados.has(t.id)) : lista, ocultosDia = compactoDia ? lista.filter(t=>!visiblesDia.includes(t)) : [];
     const trabajosAbiertos = centrosCosto();
-    const inactivos=trabs.filter(t=>t.activo===false && !esSup(t) && !tieneReg(t.id)).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
+    const inactivos=trabs.filter(t=>t.activo===false && !supEn(t,diaSel) && !tieneReg(t.id)).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
     const bloqueInact = `<details class="inact"${!lista.length&&inactivos.length?' open':''}><summary>Trabajadores inactivos (${inactivos.length})</summary>
         ${inactivos.length?`<div class="lns">${inactivos.map(t=>`<div class="wcard off" style="align-items:center"><div class="l"><b>${esc(t.nombre)}</b><small class="num">${esc(t.cargo||'')}<span class="dinero"> · ${usd(tarifaDe(t))}/día</span></small></div><button type="button" class="btn sec" data-activar="${esc(t.id)}">Activar</button></div>`).join('')}</div>`:'<div class="tip">No hay trabajadores inactivos.</div>'}
       </details>
@@ -4020,7 +4069,7 @@ Responde solo con un objeto JSON:
     const ofertas = nLoaded.a && nLoaded.t ? borrValidos() : {}, bo=ofertas[diaSel];
     const borrHTML = (bo?`<div class="lock" id="dBorr" role="alert"><b>Este día tiene marcas que no se guardaron</b> (del ${fechaHora(new Date(num(bo.t)).toISOString())}): ${esc(Object.entries(regsDe(bo.d)).map(([id,r])=>`${(nombreT(id)||'alguien').split(' ')[0]} ${r.tipo==='completo'?'día completo':r.tipo==='medio'?'medio día':'no trabajó'}${num(r.horasExtra)?' y '+nf.format(num(r.horasExtra)).replace(/,00$/,'')+' h extra':''}${num(r.bono)?' y bonificación':''}`).join(', ')||'nadie marcado')}. ${asis[diaSel]?'Lo guardado en la base es distinto':'En la base el día no está registrado'}. Todavía no se han aplicado.<div class="row-btns" style="margin-top:8px"><button type="button" class="btn pri" id="dBorrRec">Recuperar lo que marcaste</button><button type="button" class="btn sec" id="dBorrDes">Descartar</button></div></div>`:'')
       + Object.keys(ofertas).filter(f=>f!==diaSel).sort().map(f=>`<div class="lock" data-borrotro="${f}">El ${DIAS[new Date(f+'T12:00:00').getDay()]} ${fdate(f).slice(0,5)} tiene marcas que no se guardaron. <button type="button" class="lnk" data-borrir="${f}">Ver ese día</button></div>`).join('');
-    const navDia = `<div class="daynav"><button type="button" id="dPrev" aria-label="Día anterior">‹</button><input type="date" id="dFecha" value="${diaSel}"><button type="button" id="dNext" aria-label="Día siguiente">›</button></div>${borrHTML}`;
+    const navDia = `<div class="daynav"><button type="button" id="dPrev" aria-label="Día anterior">‹</button><input type="date" id="dFecha" value="${diaSel}"><button type="button" id="dNext" aria-label="Día siguiente">›</button></div>${diaQuedo===diaSel&&diaSel!==today()?`<div class="lock" id="dOtroDia" role="alert">Hoy ya es ${DIAS[new Date(today()+'T12:00:00').getDay()]} ${fdate(today())}. Sigues en el registro del <b>${fdate(diaSel)}</b> porque tiene marcas sin guardar: si tocas «Guardar día» se guardan en ese día. <button type="button" class="lnk" id="dIrHoy">Ir al día de hoy</button></div>`:''}${avisoRestosHtml()}${borrHTML}`;
     /* La oferta queda a la vista la primera vez que se llega al día (la pantalla puede venir corrida hacia abajo) */
     if(bo && borrVisto!==diaSel){ borrVisto=diaSel; setTimeout(()=>{ const e=$('#dBorr'); if(e && modulo==='nom' && e.scrollIntoView) e.scrollIntoView({block:'center'}); },0); } else if(!bo && borrVisto===diaSel) borrVisto='';
     if(!lista.length){ dayDirty=hayCambiosDia(); el.innerHTML=`${navDia}<div class="empty"><b>No hay trabajadores activos</b>${inactivos.length?'Activa los que trabajan este día aquí abajo.':'Agrega el primero para empezar a registrar días.'}</div>${btnAIDia&&trabs.some(t=>!esSup(t))?`<div class="row-btns">${btnAIDia}</div>`:''}${bloqueInact}${dayDirty&&!bloqueado?'<div class="nsum"><div class="row-btns" style="margin-top:0"><button type="button" class="btn pri" id="dSave">Guardar día</button></div></div>':''}`; return; }
@@ -4043,6 +4092,7 @@ Responde solo con un objeto JSON:
           <label>Horas extra para todos<input type="text" inputmode="decimal" id="dTodosHx" value="${hxC!=null&&num(hxC)?nf.format(num(hxC)).replace(/,00$/,''):''}" placeholder="${hxC==null?'varían':'0'}"></label>
           <label>Orden o trabajo para todos<select data-combo id="dTodosTrab"><option value="">${tjC==null?'Varían…':'Elige…'}</option>${trabajosAbiertos.map(d=>`<option value="${esc(d.id)}"${tjC===d.id?' selected':''}>${esc(etiquetaCentro(d))}</option>`).join('')}<option value="__ninguno"${tjC===''?' selected':''}>Sin asignar</option></select></label>
         </div>`; })()}
+        <div class="err" id="dTodosErr" style="min-height:0;margin-top:2px">${esc((diaInval['todos|hx']||{}).msg||'')}</div>
         <div class="tip" style="margin-top:6px">Se aplica a todos; después ajustas el que sea distinto en su fila.</div>
       </div>`:''}
       <div class="row-btns">${btnAIDia}${canWrite?'<button type="button" class="btn sec" id="dAdelanto">Registrar adelanto</button>':''}${!bloqueado&&!asis[diaSel]&&ultimoDiaAntes(diaSel)?`<button type="button" class="btn sec" id="dCopiarAnt">Igual que el ${fdate(ultimoDiaAntes(diaSel)).slice(0,5)}</button>`:''}</div>
@@ -4056,13 +4106,14 @@ Responde solo con un objeto JSON:
           <div class="seg" role="group" aria-label="Asistencia de ${esc(t.nombre)}">${[['completo','Día completo'],['medio','Medio día'],['no','No trabajó']].map(([k,l])=>`<button type="button" data-t="${k}" class="${r.tipo===k?'on':''}"${bq?' disabled':''}>${l}</button>`).join('')}</div>
           ${r.tipo==='no'&&num(r.horasExtra)>0?'<div class="tip" style="border:0;margin:2px 0 0;color:var(--so)">No trabajó pero tiene horas extra: cobra solo las horas. ¿Es correcto?</div>':''}
           <div class="wex">
-            <label>Horas extra<input type="text" inputmode="decimal" data-hx value="${num(r.horasExtra)?nf.format(num(r.horasExtra)).replace(/,00$/,''):''}" placeholder="0"${bq?' disabled':''}></label>
+            <label>Horas extra<input type="text" inputmode="decimal" data-hx value="${diaInval[t.id+'|hx']?esc(diaInval[t.id+'|hx'].txt):num(r.horasExtra)?nf.format(num(r.horasExtra)).replace(/,00$/,''):''}" placeholder="0"${bq?' disabled':''}></label>
             <label>Orden o trabajo (centro de costo)<select data-tj${bq?' disabled':''}><option value="">Sin asignar</option>${opcionOrden(r.trabajoId)}${trabajosAbiertos.map(d=>`<option value="${esc(d.id)}"${r.trabajoId===d.id?' selected':''}>${esc(etiquetaCentro(d))}</option>`).join('')}</select></label>
           </div>
           <div class="wex dinero">
-            <label>Bonificación (USD)<input type="text" inputmode="decimal" data-bono value="${num(r.bono)?nf.format(num(r.bono)):''}" placeholder="0,00"${bq?' disabled':''}></label>
+            <label>Bonificación (USD)<input type="text" inputmode="decimal" data-bono value="${diaInval[t.id+'|bono']?esc(diaInval[t.id+'|bono'].txt):num(r.bono)?nf.format(num(r.bono)):''}" placeholder="0,00"${bq?' disabled':''}></label>
             <label>Motivo (opcional)<input type="text" data-bononota value="${esc(r.bonoNota||'')}" placeholder="Por ejemplo: trabajo nocturno"${bq?' disabled':''}></label>
           </div>
+          <div class="err" data-werr style="min-height:0;margin-top:2px">${esc(['hx','bono'].map(c=>(diaInval[t.id+'|'+c]||{}).msg).filter(Boolean).join(' '))}</div>
           ${r.trabajoId2!=null&&r.trabajoId2!==undefined&&r.dividir?`<div class="wex"><label style="grid-column:1/-1">La otra mitad del día (y de las horas extra) en<select data-tj2${bq?' disabled':''}><option value="">Elige la otra orden…</option>${r.trabajoId2!==r.trabajoId?opcionOrden(r.trabajoId2):''}${trabajosAbiertos.filter(d=>d.id!==r.trabajoId).map(d=>`<option value="${esc(d.id)}"${r.trabajoId2===d.id?' selected':''}>${esc(d.descripcion)}${d.unidad?' · '+esc(d.unidad):''}${tieneOrden(d)?' · '+esc(d.ods):''}</option>`).join('')}</select></label></div>`:''}
           <div class="wacts">${!bq&&r.trabajoId&&!r.dividir?`<button type="button" class="lnk" data-dividir="${esc(t.id)}">Dividir el día entre dos órdenes</button>`:''}${!bq&&r.dividir?`<button type="button" class="lnk" data-nodividir="${esc(t.id)}">Todo el día en una orden</button>`:''}${bq&&canWrite&&!esRegistro()?`<button type="button" class="lnk" data-corregir="${esc(t.id)}">Corregir</button>`:''}${canWrite?`<button type="button" class="lnk" data-adelanto="${esc(t.id)}">Adelanto</button>`:''}</div>
         </div>`;}).join('')}</div>
@@ -4083,7 +4134,7 @@ Responde solo con un objeto JSON:
   function renderDiaSum(){
     const el=$('#dSum'); if(!el) return;
     let c=0,m=0,h=0,cost=0,bo=0;
-    Object.entries(dayDraft||{}).forEach(([id,r])=>{ const t=trabs.find(x=>x.id===id); if(!t||esSup(t)) return; const p=pagoDia(t,r,diaSel); if(p.dias===1)c++; else if(p.dias===0.5)m++; h+=p.horas; cost+=p.montoDias+p.montoExtra+p.montoBono; bo+=p.montoBono; });
+    Object.entries(dayDraft||{}).forEach(([id,r])=>{ const t=trabs.find(x=>x.id===id); if(!t||supEn(t,diaSel)) return; const p=pagoDia(t,r,diaSel); if(p.dias===1)c++; else if(p.dias===0.5)m++; h+=p.horas; cost+=p.montoDias+p.montoExtra+p.montoBono; bo+=p.montoBono; });
     const soloHx=Object.entries(dayDraft||{}).filter(([id,r])=>r.tipo==='no'&&num(r.horasExtra)>0).length;
     const partes=[c?`${c} ${c===1?'persona':'personas'} día completo`:'', m?`${m} ${m===1?'persona':'personas'} medio día`:'', h?`${nf.format(h).replace(/,00$/,'')} h extra`:'', bo?`<span class="dinero">bonificaciones ${usd(r2(bo))}</span>`:'', soloHx?`<span class="warn">${soloHx} ${soloHx===1?'cobra':'cobran'} solo horas extra</span>`:''].filter(Boolean);
     el.innerHTML = `${partes.length?partes.join(' · '):'Nadie registrado todavía'}<span class="dinero"> · Costo del día: <b>${usd(r2(cost))}</b></span>${dayDirty&&hayCambiosDia()?' · <span class="warn">sin guardar</span>':''}`;
@@ -4117,7 +4168,8 @@ Responde solo con un objeto JSON:
     else if(borrVivo===diaSel){ borrVivo=''; if(o[diaSel]){ delete o[diaSel]; borrPoner(o); } } }
   setInterval(guardarBorradorDia, 3000);
   /* El iPhone puede cerrar la app en cuanto pasa a segundo plano: el borrador se copia en ese momento, sin esperar los 3 segundos */
-  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) guardarBorradorDia(); }); window.addEventListener('pagehide', guardarBorradorDia);
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) guardarBorradorDia(); else revisarCambioDeDia(); }); window.addEventListener('pagehide', guardarBorradorDia);
+  window.addEventListener('focus', revisarCambioDeDia); window.addEventListener('pageshow', revisarCambioDeDia); setInterval(revisarCambioDeDia, 20000);
   function diaSucio(){ return nView==='dia' && !!dayDraft && dayDirty && hayCambiosDia(); }
   /* Salir del registro del día con marcas sin guardar: el mismo aviso y el mismo comportamiento al cambiar de pestaña dentro de Nómina, de módulo o de día.
      El primer toque avisa y no sale; el segundo sale. Lo marcado no se pierde: queda en el teléfono y se ofrece al volver a ese día. */
@@ -4155,6 +4207,8 @@ Responde solo con un objeto JSON:
        se conserva. Si a la misma persona la cambiaron por fuera desde que se abrió el día, se avisa antes de pisarla */
     const base = dayBaseDe===diaSel ? dayBase : saved, propio=!esRegistro();
     const tocados=[...new Set([...Object.keys(regs), ...Object.keys(base)])].filter(id=>!pagados.has(id) && !igual(regs[id], base[id]));
+    { const malos=[...new Set([...Object.keys(diaInval).map(k=>k.split('|')[0]), ...tocados.filter(id=>regs[id] && (num(regs[id].horasExtra)<0 || num(regs[id].horasExtra)>24 || num(regs[id].bono)<0))])];
+      if(malos.length){ avisoFijo('#dSum', `No se guardó el día. Revisa ${malos.includes('todos')&&malos.length===1?'las horas extra para todos':'a '+malos.filter(id=>id!=='todos').map(id=>nombreT(id)).join(', ')}: las horas extra van de 0 a 24 y la bonificación no puede ser negativa.`); return; } }
     if(propio){ const chq=tocados.filter(id=>!igual(saved[id], base[id]) && !igual(saved[id], regs[id]));
       if(chq.length && !avisoChoque('#nMain', '#dSum', canon(chq.map(id=>[id, saved[id]])), ` A ${chq.map(id=>`${nombreT(id)} (ahora: ${resumenAsis({registros:saved[id]?{[id]:saved[id]}:{}}).replace(/^\S+ /,'')||'no trabajó'})`).join(', ')} ${chq.length===1?'le':'les'} cambiaron este día mientras lo tenías abierto. «Recargar» muestra lo que hay ahora y descarta lo que marcaste; «Guardar igual» deja lo que marcaste aquí.`,
         ()=>{ borrQuitar(fDia); dayDraft=null; dayDirty=false; renderNom(); }, ()=>guardarDia())) return;
@@ -4219,7 +4273,7 @@ Responde solo con un objeto JSON:
         <label class="f">Fecha del pago<input type="date" id="cFechaPago" value="${corteFechaPago}"></label>
         <label class="f">Se paga desde<select id="cCuenta"><option value="binance"${corteCuenta==='binance'?' selected':''}>Binance (vendiendo USDT)</option><option value="banco"${corteCuenta==='banco'?' selected':''}>Banco (bolívares)</option><option value="efectivo"${corteCuenta==='efectivo'?' selected':''}>Efectivo (dólares)</option></select></label>
       </div>
-      ${(()=>{ const avisos=[]; const ult=(()=>{ const td=tasaDelDia(corteFechaPago); if(td) return td.tasa; const u=ultimoCorte(); return u&&num(u.tasa)>0?num(u.tasa):(tasaSugerida()||0); })();
+      ${(()=>{ const avisos=[]; if(corteCuenta!=='binance') avisos.push(`Este corte se paga desde ${cuentaDe(corteCuenta).nombre}. Si sale de Binance, cámbialo en «Se paga desde».`); const ult=(()=>{ const td=tasaDelDia(corteFechaPago); if(td) return td.tasa; const u=ultimoCorte(); return u&&num(u.tasa)>0?num(u.tasa):(tasaSugerida()||0); })();
         if(tasaOk && ult>0 && Math.abs(tasa-ult)/ult>0.2) avisos.push(`La tasa ${nfT.format(tasa)} se aleja mucho de la del día (${nfT.format(ult)}). Revísala.`);
         if(corteAnulado && corteAnulado.hasta===corteHasta){ const nuevos=ls.flatMap(l=>(l.dias||[]).filter(x=>!corteAnulado.dias.has(l.trabajadorId+'|'+x.f)).map(x=>`${nombreT(l.trabajadorId).split(' ')[0]} ${fdate(x.f).slice(0,5)}`)); if(nuevos.length) avisos.push(`No estaban en el corte anulado: ${nuevos.join(', ')}.`); }
         { const prim=Object.keys(asis).sort()[0]||''; let d0=ph?sumarDias(ph,1):c.desde; if(prim && d0<prim) d0=prim; const tope=corteHasta<today()?corteHasta:today(), vacios=[];
@@ -4245,8 +4299,8 @@ Responde solo con un objeto JSON:
         const t=trabs.find(x=>x.id===l.trabajadorId), okB=datosBancoOk(t);
         return `<div class="ln" data-l="${esc(l.trabajadorId)}">
           <div class="h"><b>${esc(nombreT(l.trabajadorId))}</b><span class="money num">${tasaOk?`<small>Bs.</small>${nf.format(l.totalBs)}`:`<small>USD</small>${nf.format(Math.max(0,l.totalUsd))}`}</span></div>
-          <div class="d num">${esc(t?t.cargo:'')}${detalleLinea(l)?' · '+detalleLinea(l):''}<br>Devengado <b>${usd(l.bruto)}</b>${Math.abs(num(l.ajuste))>0.004?` (ajustes ${num(l.ajuste)<0?'− ':'+ '}${usd(Math.abs(num(l.ajuste)))})`:''}${l.adelantos?` · Adelantos <b>− ${usd(l.adelantos)}</b>`:''} · A pagar <b>${usd(Math.max(0,l.totalUsd))}</b>${l.totalUsd<0?` <span class="warn">(el adelanto supera lo devengado por ${usd(-l.totalUsd)}; ese resto pasa al próximo corte)</span>`:''}</div>
-          ${t&&esSup(t)?`<div class="sup">Sueldo de este corte (USD)<input data-sup="${esc(t.id)}" inputmode="decimal" value="${nf.format(l.sueldoFijo)}"></div>${l.proporcional?`<div class="tip" style="margin:4px 0 0">Entró el ${fdate(ingresoDe(t))}: su primera semana va en proporción a los días.</div>`:''}`:''}
+          <div class="d num">${esc(t?t.cargo:'')}${detalleLinea(l)?' · '+detalleLinea(l):''}<br>Devengado <b>${usd(l.bruto)}</b>${txtAjuste(l)}${l.adelantos?` · Adelantos <b>− ${usd(l.adelantos)}</b>`:''} · A pagar <b>${usd(Math.max(0,l.totalUsd))}</b>${l.totalUsd<0?` <span class="warn">(el adelanto supera lo devengado por ${usd(-l.totalUsd)}; ese resto pasa al próximo corte)</span>`:''}</div>
+          ${t&&(esSup(t)||(l.semanas&&l.semanas.length))?`<div class="sup">Sueldo de este corte (USD)<input data-sup="${esc(t.id)}" inputmode="decimal" value="${nf.format(l.sueldoFijo)}"></div>${l.cambioRol?'<div class="tip" style="margin:4px 0 0">Cambió de cargo: de la semana del cambio se paga el sueldo en proporción a los días en que fue supervisor.</div>':l.proporcional?`<div class="tip" style="margin:4px 0 0">Entró el ${fdate(ingresoDe(t))}: su primera semana va en proporción a los días.</div>`:''}`:''}
           ${detalleDias(l)?`<details class="ddet"><summary>Ver detalle por día</summary>${detalleDias(l)}</details>`:''}
           ${l.totalBs>0||!tasaOk?detTransfer(ctaOk(ctaDe(t))?ctaDe(t):null, tasaOk?l.totalBs:0, l.trabajadorId):''}
           <div class="acts">${(()=>{ if(!(l.totalBs>0)) return ''; const cta=ctaDe(t), okC=ctaOk(cta); if(!okB&&!okC) return '<span class="warn">Faltan datos de pago móvil o de cuenta: complétalos en “Trabajadores”.</span>'; if(!okB) return ''; if(!tasaOk) return '<span class="warn">Escribe la tasa para copiar el pago.</span>';
@@ -4277,7 +4331,7 @@ Responde solo con un objeto JSON:
     L.push('');
     items.forEach(({l,tasa,estado})=>{ const u=Math.max(0,num(l.totalUsd)), b=num(l.totalBs);
       L.push(`• ${l.nombre||nombreT(l.trabajadorId)}${l.cargo?' ('+l.cargo+')':''}: ${detalleLinea(l)||'sin días'}`);
-      L.push(`   Devengado: ${usd(num(l.bruto))}${Math.abs(num(l.ajuste))>0.004?` (ajustes ${num(l.ajuste)<0?'− ':'+ '}${usd(Math.abs(num(l.ajuste)))})`:''}${num(l.adelantos)?` · Adelantos: − ${usd(num(l.adelantos))}`:''} · A pagar: ${usd(u)}${b>0?` = ${bs(b)}`:''}${!unaTasa&&tasa>0?` (tasa ${nfT.format(tasa)})`:''}`);
+      L.push(`   Devengado: ${usd(num(l.bruto))}${txtAjuste(l)}${num(l.adelantos)?` · Adelantos: − ${usd(num(l.adelantos))}`:''} · A pagar: ${usd(u)}${b>0?` = ${bs(b)}`:''}${!unaTasa&&tasa>0?` (tasa ${nfT.format(tasa)})`:''}`);
       L.push(`   ${estado}`); });
     const tot=a=>[r2(sum(a,x=>Math.max(0,num(x.l.totalUsd)))), r2(sum(a,x=>num(x.l.totalBs)))], fmt=([u,b])=>`${usd(u)}${b>0?' = '+bs(b):''}`;
     const pag=items.filter(x=>x.pagado), pen=items.filter(x=>!x.pagado);
@@ -4293,13 +4347,13 @@ Responde solo con un objeto JSON:
       <div class="sech">Cortes pagados</div>
       ${cortes.length?`<div class="hist">${cortes.slice().sort((a,b)=>String(b.hasta).localeCompare(String(a.hasta))).map((k,i)=>`<details${nDelArmed==='co:'+k.id?' open':''}><summary><span style="color:var(--ink);font-weight:600;font-size:14.5px">Corte del ${fdate(k.fecha)}${(k.lineas||[]).length===1?' · '+esc(k.lineas[0].nombre||''):''}</span><span class="num">${bs(num(k.totalBs))}</span></summary>
         <div class="d num" style="font-size:13px;color:var(--muted);margin-top:6px">Período ${fdate(k.desde)} al ${fdate(k.hasta)} · tasa ${nfT.format(num(k.tasa))} · ${usd(num(k.totalUsd))} · pagado desde ${esc(cuentaDe(k.cuenta||'binance').nombre)}</div>
-        <div class="lns">${(k.lineas||[]).map(l=>`<div class="ln"><div class="h"><b>${esc(l.nombre)}</b><span class="money num"><small>Bs.</small>${nf.format(num(l.totalBs))}</span></div><div class="d num">${esc(l.cargo||'')} · ${detalleLinea(l)} · ${usd(Math.max(0,num(l.totalUsd)))}</div>${detalleDias(l)?`<details class="ddet"><summary>Ver detalle por día</summary>${detalleDias(l)}</details>`:''}${l.ctaNumero?detTransfer({numero:l.ctaNumero, tipo:l.ctaTipo, titular:l.ctaTitular, cedula:l.ctaCedula, banco:String(l.ctaNumero).slice(0,4)}, num(l.totalBs), ''):''}<div class="acts">${l.telefono&&l.cedula&&l.banco?`<button type="button" class="btn sec" data-hbank="${esc(k.id)}|${esc(l.trabajadorId)}">Copiar pago móvil</button>`:''}<button type="button" class="btn sec" data-hrecibo="${esc(k.id)}|${esc(l.trabajadorId)}">Copiar recibo para él</button></div></div>`).join('')}</div>
+        <div class="lns">${(k.lineas||[]).map(l=>`<div class="ln"><div class="h"><b>${esc(l.nombre)}</b><span class="money num"><small>Bs.</small>${nf.format(num(l.totalBs))}</span></div><div class="d num">${esc(l.cargo||'')} · ${detalleLinea(l)}${txtAjuste(l,k)} · ${usd(Math.max(0,num(l.totalUsd)))}${num(l.totalUsd)<-0.004?` <span class="warn">(el adelanto superó lo ganado por ${usd(-num(l.totalUsd))})</span>`:''}</div>${detalleDias(l)?`<details class="ddet"><summary>Ver detalle por día</summary>${detalleDias(l)}</details>`:''}${l.ctaNumero?detTransfer({numero:l.ctaNumero, tipo:l.ctaTipo, titular:l.ctaTitular, cedula:l.ctaCedula, banco:String(l.ctaNumero).slice(0,4)}, num(l.totalBs), ''):''}<div class="acts">${l.telefono&&l.cedula&&l.banco?`<button type="button" class="btn sec" data-hbank="${esc(k.id)}|${esc(l.trabajadorId)}">Copiar pago móvil</button>`:''}<button type="button" class="btn sec" data-hrecibo="${esc(k.id)}|${esc(l.trabajadorId)}">Copiar recibo para él</button></div></div>`).join('')}</div>
         <div class="row-btns"><button type="button" class="btn sec" data-hres="${esc(k.id)}">Copiar resumen</button>${anulable(k)?`<button type="button" class="btn del" data-anular="${esc(k.id)}">${nDelArmed==='co:'+k.id?'Toca otra vez para anular'+(efectosAnular(k).texto?' ('+efectosAnular(k).texto+')':''):'Anular corte'}</button>`:''}</div></details>`).join('')}</div>`:'<div class="tip">Todavía no hay cortes pagados.</div>'}`;
   }
   /* soloId: pagar solo a un trabajador; se guarda como un corte con su sola línea y los demás siguen pendientes */
   let corteAviso='', anulando=false;
   /* Aviso del corte que no desaparece solo, y botón para completar un guardado que quedó sin respuesta */
-  const avisoCorteHtml = () => (corteAviso?`<div class="avfijo" id="cAviso" style="margin-top:12px">${esc(corteAviso)}</div>`:'') + (Object.keys(dudosos).some(k=>k.startsWith('corte|'))?`<div class="row-btns"><button type="button" class="btn pri" id="cCompletar">Completar el guardado del corte</button></div>`:'');
+  const avisoCorteHtml = () => avisoRestosHtml() + (corteAviso?`<div class="avfijo" id="cAviso" style="margin-top:12px">${esc(corteAviso)}</div>`:'') + (Object.keys(dudosos).some(k=>k.startsWith('corte|'))?`<div class="row-btns"><button type="button" class="btn pri" id="cCompletar">Completar el guardado del corte</button></div>`:'');
   function falloCorte(msg, corto){ corteAviso=msg; renderNom(); const a=$('#cAviso'); if(a&&a.scrollIntoView) a.scrollIntoView({block:'center'}); toast(corto||'No se guardó el corte: mira el aviso'); }
   async function completarCorte(btn){ const k=Object.keys(dudosos).find(x=>x.startsWith('corte|')); if(!k) return; const d=dudosos[k];
     await conBoton(btn, 'Completar el guardado del corte', async()=>{ try{ await guardarOps(k, d.firma, d.ops, 'el corte de nómina', d.fin); d.fin(); }catch(err){ falloCorte('No se guardó el corte. '+errMsg(err)); } }); }
@@ -4312,7 +4366,7 @@ Responde solo con un objeto JSON:
     if(du) return conBoton(btn, btn.dataset.lbl||btn.textContent, async()=>{ try{ await guardarOps(clave, firma, du.ops, 'el corte de nómina', du.fin); du.fin(); }catch(err){ falloCorte('No se guardó el corte. '+errMsg(err)); } });
     const c=calcCorte(corteHasta), ls=conBs(c.lineas,tasa).filter(l=>!soloId||l.trabajadorId===soloId); if(!ls.length) return;
     if(!btn.dataset.armed){ const lbl0=btn.textContent; btn.dataset.lbl=lbl0; btn.dataset.armed='1'; btn.textContent=`Confirmar pago${soloId?' a '+nombreT(soloId):''} de ${corteCuenta==='efectivo'?usd(sum(ls,l=>Math.max(0,l.totalUsd))):bs(sum(ls,l=>l.totalBs))} a ${nfT.format(tasa)} desde ${cuentaDe(corteCuenta).nombre}`; setTimeout(()=>{ if(btn.isConnected && !btn.dataset.busy){ delete btn.dataset.armed; btn.textContent=lbl0; } },5000); return; }
-    const lineas=ls.map(l=>{ const t=trabs.find(x=>x.id===l.trabajadorId)||{}; const pm=pmDe(t), cta=ctaDe(t); return {trabajadorId:l.trabajadorId, nombre:t.nombre||'', cargo:t.cargo||'', cedula:String(pm.cedula||''), telefono:String(pm.telefono||''), banco:pm.banco||'', titular:pm.titular||'', ...(cta?{ctaNumero:cta.numero, ctaTipo:cta.tipo, ctaTitular:cta.titular, ctaCedula:cta.cedula}:{}), completos:l.completos, medios:l.medios, horasExtra:r2(l.horasExtra), especiales:l.especiales, montoDias:r2(l.montoDias), montoExtra:r2(l.montoExtra), montoBono:r2(num(l.montoBono)), sueldoFijo:r2(l.sueldoFijo), semanas:l.semanas||[], dias:l.dias||[], adelantos:r2(l.adelantos), bruto:l.bruto, totalUsd:l.totalUsd, totalBs:l.totalBs}; });
+    const lineas=ls.map(l=>{ const t=trabs.find(x=>x.id===l.trabajadorId)||{}; const pm=pmDe(t), cta=ctaDe(t); return {trabajadorId:l.trabajadorId, nombre:t.nombre||'', cargo:t.cargo||'', cedula:String(pm.cedula||''), telefono:String(pm.telefono||''), banco:pm.banco||'', titular:pm.titular||'', ...(cta?{ctaNumero:cta.numero, ctaTipo:cta.tipo, ctaTitular:cta.titular, ctaCedula:cta.cedula}:{}), completos:l.completos, medios:l.medios, horasExtra:r2(l.horasExtra), especiales:l.especiales, montoDias:r2(l.montoDias), montoExtra:r2(l.montoExtra), montoBono:r2(num(l.montoBono)), sueldoFijo:r2(l.sueldoFijo), semanas:l.semanas||[], dias:l.dias||[], adelantos:r2(l.adelantos), ajuste:r2(num(l.ajuste)), ajustes:(l.ajustes||[]).map(a=>({id:a.id||'', monto:r2(num(a.monto)), nota:a.nota||'', fecha:a.fecha||''})), atrasados:num(l.atrasados)||0, bruto:l.bruto, totalUsd:l.totalUsd, totalBs:l.totalBs}; });
     const adIds=ls.flatMap(l=>l.adelantoIds);
     const body={fecha:corteFechaPago||today(), cuenta:corteCuenta, desde:c.desde, hasta:c.hasta, tasa, lineas, adelantoIds:adIds, totalUsd:r2(sum(ls,l=>Math.max(0,l.totalUsd))), totalBs:r2(sum(ls,l=>l.totalBs)), creado:new Date().toISOString()};
     /* El corte, los adelantos que descuenta y los restos que pasan al próximo corte se guardan juntos: todo o nada.
@@ -4327,13 +4381,19 @@ Responde solo con un objeto JSON:
     delete btn.dataset.armed;
   }
   /* Qué deshace anular un corte: devuelve sus adelantos a pendientes y borra los restos que ese corte creó */
-  function efectosAnular(k){ const dev=(k.adelantoIds||[]).filter(aid=>adels.some(a=>a.id===aid)).length, restos=adels.filter(a=>a.origenCorteId===k.id && !a.corteId).length; return {dev, restos, texto:[dev?`${dev} ${dev===1?'adelanto vuelve':'adelantos vuelven'} a pendientes`:'', restos?`se ${restos===1?'borra el resto':'borran los restos'} de adelanto que creó`:''].filter(Boolean).join('; ')}; }
+  /* Correcciones pendientes (diferencias de días ya pagados) cuyos días pagó este corte: al anularlo, esos días vuelven a estar sin pagar y se calculan
+     ya corregidos, así que la diferencia sobra. Si la corrección tiene además días de otro corte, se le quitan solo los de este */
+  function correccionesDe(k){ const out=[]; adels.filter(a=>esAjuste(a) && !a.corteId && Array.isArray(a.dias) && a.dias.length).forEach(a=>{ const L=(k.lineas||[]).find(l=>l.trabajadorId===a.trabajadorId); if(!L) return;
+      const deK=x=>Array.isArray(L.dias) ? L.dias.some(y=>y.f===x.f) : (k.desde<=x.f && x.f<=k.hasta), fuera=a.dias.filter(deK); if(!fuera.length) return;
+      const quedan=a.dias.filter(x=>!deK(x)), resto=r2(sum(quedan,x=>num(x.m))); out.push({a, quita:r2(sum(fuera,x=>num(x.m))), quedan:Math.abs(resto)>=0.01?quedan:[], resto}); }); return out; }
+  function efectosAnular(k){ const cor=correccionesDe(k), corT=r2(sum(cor,x=>x.quita)); const dev=(k.adelantoIds||[]).filter(aid=>adels.some(a=>a.id===aid)).length, restos=adels.filter(a=>a.origenCorteId===k.id && !a.corteId).length; return {dev, restos, texto:[dev?`${dev} ${dev===1?'adelanto vuelve':'adelantos vuelven'} a pendientes`:'', restos?`se ${restos===1?'borra el resto':'borran los restos'} de adelanto que creó`:'', cor.length?`se ${cor.length===1?'quita la corrección pendiente':`quitan ${cor.length} correcciones pendientes`} de días de este corte (${corT<0?'− ':'+ '}${usd(Math.abs(corT))}): esos días se vuelven a calcular completos`:''].filter(Boolean).join('; ')}; }
   async function anularCorte(id){
     const k=cortes.find(x=>x.id===id); if(!k||anulando) return; anulando=true;
     try{
       /* Devolver los adelantos a pendientes, borrar los restos que creó y borrar el corte: todo junto o nada */
       await escribirJuntos([...(k.adelantoIds||[]).filter(aid=>adels.some(x=>x.id===aid)).map(aid=>opUpd('adelantos', aid, {corteId:''}, 'devolver un adelanto a pendientes')),
-        ...adels.filter(x=>x.origenCorteId===k.id && !x.corteId).map(a=>opDel('adelantos', a.id, 'el resto de adelanto que creó el corte')), opDel('cortes', id)], 'la anulación del corte');
+        ...adels.filter(x=>x.origenCorteId===k.id && !x.corteId).map(a=>opDel('adelantos', a.id, 'el resto de adelanto que creó el corte')),
+        ...correccionesDe(k).map(x=>x.quedan.length ? opUpd('adelantos', x.a.id, {dias:x.quedan, monto:x.resto}, 'quitar de una corrección los días de este corte') : opDel('adelantos', x.a.id, 'la corrección pendiente de un día de este corte')), opDel('cortes', id)], 'la anulación del corte');
       corteAnulado={hasta:k.hasta, dias:new Set((k.lineas||[]).flatMap(L=>(L.dias||[]).map(x=>L.trabajadorId+'|'+x.f)))}; corteTasa=num(k.tasa)>0?nfT.format(num(k.tasa)):corteTasa; corteTasaDe=null; corteHasta=k.hasta||corteHasta; corteFechaPago=k.fecha||corteFechaPago; corteFechasAuto=false;
       registrarCambio('cortes', id, `Corte anulado (pagado el ${fdate(k.fecha)}, ${fdate(k.desde)} al ${fdate(k.hasta)})`, `${nf.format(num(k.totalUsd))} USD · ${(k.lineas||[]).length} personas`, ''); nDelArmed=''; corteAviso=''; toast('Corte anulado'); renderNom();
     }catch(err){ nDelArmed=''; falloCorte('No se anuló el corte. '+errMsg(err), 'No se anuló el corte: mira el aviso'); }
@@ -4371,8 +4431,8 @@ Responde solo con un objeto JSON:
     const mismo=$('#wMismo').checked, pmTel=normTel($('#wPmTel').value)||(mismo?normTel($('#wTel').value):''), pmCed=mismo?ced:soloDig($('#wPmCed').value), pmTit=mismo?nombre:$('#wPmTit').value.trim().replace(/\s+/g,' '), pmBanco=$('#wBanco').dataset.code||'';
     const ctaNum=soloDig($('#wCtaNum').value), ctaMismo=$('#wCtaMismo').checked, ctaTit=ctaMismo?nombre:$('#wCtaTit').value.trim().replace(/\s+/g,' '), ctaCed=ctaMismo?ced:soloDig($('#wCtaCed').value);
     const cargo=$('#wCargo').value, tar=parseNum($('#wTarifa').value), sue=parseNum($('#wSueldo').value), hx=parseNum($('#wHx').value);
-    const body={nombre, cedula:ced, telefono:tel, cargo, tarifa: cargo!==SUP && tar>0 ? r2(tar) : 0, horaExtra: cargo!==SUP && hx>0 ? r2(hx) : 0,
-      ...Object.fromEntries([['factorSabado','#wFSab'],['factorDomingo','#wFDom'],['factorFeriado','#wFFer']].map(([k,sel])=>{ const v=parseNum($(sel).value); return [k, cargo!==SUP && v>0 ? r2(v) : 0]; })), sueldoSemanal: cargo===SUP && sue>0 && Math.abs(sue-num(cfgN.sueldoSupervisor))>0.004 ? r2(sue) : 0, activo:$('#wActivo').checked,
+    const body={nombre, cedula:ced, telefono:tel, cargo, tarifa: cargo!==SUP && tar>0 ? r2(tar) : 0, horaExtra: hx>0 ? r2(hx) : 0,
+      ...Object.fromEntries([['factorSabado','#wFSab'],['factorDomingo','#wFDom'],['factorFeriado','#wFFer']].map(([k,sel])=>{ const v=parseNum($(sel).value); return [k, v>0 ? r2(v) : 0]; })), sueldoSemanal: cargo===SUP && sue>0 && Math.abs(sue-num(cfgN.sueldoSupervisor))>0.004 ? r2(sue) : 0, activo:$('#wActivo').checked,
       pmMismo:mismo, pmTitular:pmTit, pmCedula:pmCed, pmTelefono:pmTel, pmBanco, ctaNumero:ctaNum, ctaTipo:$('#wCtaTipo').value, ctaMismo, ctaTitular:ctaNum&&!ctaMismo?ctaTit:'', ctaCedula:ctaNum&&!ctaMismo?ctaCed:'', fechaIngreso:$('#wIngreso').value||''};
     return {body, v:{nombre, ced, tel, mismo, pmTel, pmCed, pmTit, pmBanco, ctaNum, ctaMismo, ctaTit, ctaCed, cargo, tar, sue, hx}};
   }
@@ -4406,7 +4466,14 @@ Responde solo con un objeto JSON:
     if(old){ const desde=$('#wDesde').value||today(); body.tarifasAnt=Array.isArray(old.tarifasAnt)?old.tarifasAnt.slice():[];
       if(cambiaPago){
       const tarOld=esSup(old)?sueldoSup(old):tarifaDe(old), tarNew=cargo===SUP?(sue>0?r2(sue):num(cfgN.sueldoSupervisor)):(tar>0?r2(tar):num((cfgN.cargos.find(c=>c.nombre===cargo)||{}).tarifa));
-      if(Math.abs(tarOld-tarNew)>0.004 && desde>'2000-01-01'){ body.tarifasAnt.push({hasta:sumarDias(desde,-1), tarifa:tarOld, sup:esSup(old)}); anot.push(()=>registrarCambio('trabajadores', idW, `${old.nombre}: ${esSup(old)?'sueldo semanal':'tarifa por día'}`, nf.format(tarOld), `${nf.format(tarNew)} desde el ${fdate(desde)}`)); cambios.tarifasAnt=body.tarifasAnt; } }
+      /* Un cambio de cargo a Supervisor o desde Supervisor siempre deja su marca con fecha, aunque el monto coincida.
+         Los tramos no se cruzan: «vale desde» no puede ser anterior a un cambio ya hecho, ni dejar del otro lado días o semanas ya registrados con el cargo anterior */
+      const cambiaRol=esSup(old)!==(cargo===SUP), hastaN=sumarDias(desde,-1), ultC=body.tarifasAnt.map(x=>String(x.hasta||'')).sort().pop()||'';
+      if((Math.abs(tarOld-tarNew)>0.004 || cambiaRol) && desde>'2000-01-01'){
+        if(ultC && hastaN<ultC){ $('#wErr').textContent=`Ya hay un cambio de tarifa o de cargo que vale desde el ${fdate(sumarDias(ultC,1))}. En «Lo nuevo vale desde» pon esa fecha o una posterior.`; return; }
+        if(cambiaRol && cargo===SUP){ const ud=Object.values(asis).filter(a=>a.fecha>=desde && (a.registros||{})[idW]).map(a=>a.fecha).sort().pop(); if(ud){ $('#wErr').textContent=`Tiene días registrados como trabajador por día hasta el ${fdate(ud)}. El cambio a Supervisor debe valer desde una fecha posterior a ese día (ponla en «Lo nuevo vale desde»).`; return; } }
+        if(cambiaRol && cargo!==SUP){ const us=[...semanasPagadasSup(idW).keys()].filter(w=>finSemana(w)>=desde).sort().pop(); if(us){ $('#wErr').textContent=`Ya cobró el sueldo de supervisor de la semana que termina el ${fdate(finSemana(us))}. El cambio de cargo debe valer desde una fecha posterior a ese día (ponla en «Lo nuevo vale desde»).`; return; } }
+        if(hastaN!==ultC) body.tarifasAnt.push({hasta:hastaN, tarifa:tarOld, sup:esSup(old)}); anot.push(()=>registrarCambio('trabajadores', idW, `${old.nombre}: ${esSup(old)?'sueldo semanal':'tarifa por día'}`, nf.format(tarOld), `${nf.format(tarNew)} desde el ${fdate(desde)}`)); cambios.tarifasAnt=body.tarifasAnt; } }
       { const o0=JSON.parse(JSON.stringify(old)), b0={...old, ...cambios}; anot.push(()=>diffCampos('trabajadores', idW, o0.nombre, o0, b0, [['cargo','cargo'],['horaExtra','hora extra',v=>nf.format(num(v))],['activo','activo',v=>v===false?'no':'sí']])); } }
     /* La ficha y la diferencia de días ya pagados (si cambió la tarifa) se guardan juntas; el botón queda bloqueado mientras guarda */
     await conBoton($('#wSave'), 'Guardar', async()=>{
@@ -4421,6 +4488,7 @@ Responde solo con un objeto JSON:
     const b=$('#wDel'); if(!wEditId) return;
     const usado=Object.values(asis).some(a=>a.registros&&a.registros[wEditId]) || cortes.some(k=>(k.lineas||[]).some(l=>l.trabajadorId===wEditId));
     if(usado){ $('#wErr').textContent='Tiene días o pagos registrados. Desmarca “Activo” en vez de eliminarlo, así se conserva su historial.'; return; }
+    if(adels.some(a=>a.trabajadorId===wEditId)){ $('#wErr').textContent='Tiene un adelanto, un descuento o un pago extra registrado. Elimínalo primero (Corte › Adelantos pendientes) o desmarca “Activo” en vez de eliminar la ficha.'; return; }
     if(!b.dataset.armed){ b.dataset.armed='1'; b.textContent='Toca otra vez para eliminar'; return; }
     const idW=wEditId;
     await conBoton(b, 'Eliminar', async()=>{
@@ -4438,17 +4506,19 @@ Responde solo con un objeto JSON:
     const porNombre=(a,b)=>a.nombre.localeCompare(b.nombre,'es');
     const ls=[...trabs.filter(t=>t.activo!==false).sort(porNombre), ...trabs.filter(t=>t.activo===false).sort(porNombre)];
     if(!ls.length){ toast('Primero agrega trabajadores'); return; }
-    $('#adTrab').innerHTML=ls.map(t=>`<option value="${esc(t.id)}">${esc(t.nombre)}${t.activo===false?' (inactivo)':''}</option>`).join('');
+    $('#adTrab').innerHTML='<option value="">Elige el trabajador…</option>'+ls.map(t=>`<option value="${esc(t.id)}">${esc(t.nombre)}${t.activo===false?' (inactivo)':''}</option>`).join('');
     $('#adFecha').value=today(); $('#adMonto').value=''; $('#adNota').value=''; $('#adErr').textContent='';
-    if(tid && ls.some(t=>t.id===tid)) $('#adTrab').value=tid;
+    $('#adTrab').value = tid && ls.some(t=>t.id===tid) ? tid : '';
     $('#adCuenta').value='binance'; $('#adTasa').value=tasaSugerida()?nfT.format(tasaSugerida()):''; $('#adTasaL').hidden=$('#adCuenta').value!=='banco';
-    adTipo='adelanto'; syncAdTipo(); limpiarFiltros('#adSheet'); openSheet('#adSheet');
+    adTipo='adelanto'; syncAdTipo(); if($('#adCuenta').value!=='binance') $('#adTip').textContent+=` Viene marcada ${cuentaDe($('#adCuenta').value).nombre} porque fue la última que usaste: cámbiala si este adelanto sale de otra.`;
+    limpiarFiltros('#adSheet'); openSheet('#adSheet');
   }
   /* Un botón que guarda: se bloquea mientras escribe, y si la base no responde en 20 segundos avisa en vez de quedarse colgado */
   /* Bloquea el botón mientras guarda: un segundo toque no hace nada hasta que termine */
   async function conBoton(btn, lbl, fn, mientras){ if(!btn || btn.dataset.busy) return; btn.dataset.busy='1'; btn.disabled=true; btn.textContent=mientras||'Guardando…'; try{ await fn(); } finally{ delete btn.dataset.busy; btn.disabled=false; btn.textContent=lbl; } }
   async function guardarAdelanto(){
     const m=parseNum($('#adMonto').value);
+    if(!trabs.some(x=>x.id===$('#adTrab').value)){ $('#adErr').textContent='Elige el trabajador.'; return; }
     if(!(m>0)){ $('#adErr').textContent='Escribe el monto en dólares.'; return; }
     if(adTipo!=='adelanto'){ const t=trabs.find(x=>x.id===$('#adTrab').value); if(!t) return;
       await conBoton($('#adSave'), 'Guardar', async()=>{ try{ await escribirJuntos([opSet('adelantos', idEstable('#adSheet|adel','adelantos'), {tipo:'ajuste', trabajadorId:t.id, fecha:$('#adFecha').value||today(), monto:adTipo==='descuento'?-r2(m):r2(m), nota:$('#adNota').value.trim(), cuenta:'', tasa:0, corteId:'', creado:new Date().toISOString()})], adTipo==='descuento'?'el descuento para el próximo corte':'el pago extra para el próximo corte'); soltarIntento('#adSheet'); closeSheets(); toast(adTipo==='descuento'?'Descuento para el próximo corte':'Pago extra para el próximo corte'); }catch(err){ $('#adErr').textContent=errMsg(err); } });
@@ -4459,18 +4529,26 @@ Responde solo con un objeto JSON:
     if(!cta){ $('#adErr').textContent='Elige de qué cuenta sale el dinero.'; return; }
     if(cta==='banco' && !(tA>0) && !esRegistro()){ $('#adErr').textContent='Escribe la tasa para llevar el adelanto a bolívares.'; return; }
     if(cta==='banco' && !esRegistro() && !confirmarTasa(tA, f, x=>{ $('#adErr').textContent=x; })) return;
-    try{ localStorage.setItem('adCuenta',cta); }catch(_){}
+   
     { const h=pagadoHastaDe($('#adTrab').value); if(h && f<=h){ $('#adErr').textContent=`A esa persona ya se le pagó hasta el ${fdate(h)}. Usa una fecha posterior.`; return; } }
     await conBoton($('#adSave'), 'Guardar adelanto', async()=>{
       try{ await escribirJuntos([opSet('adelantos', idEstable('#adSheet|adel','adelantos'), {trabajadorId:$('#adTrab').value, fecha:f, monto:r2(m), cuenta:cta, tasa:cta==='banco'?tA:0, nota:$('#adNota').value.trim(), corteId:'', creado:new Date().toISOString()})], 'el adelanto de '+usd(r2(m))); soltarIntento('#adSheet'); closeSheets(); toast('Adelanto registrado'); }
       catch(err){ $('#adErr').textContent=errMsg(err); } });
   }
 
+  /* Borrador de la pantalla de Ajustes. Nada de lo que se escribe o se agrega aquí vale hasta tocar «Guardar ajustes»: la nómina sigue calculando con lo guardado.
+     Cada cargo recuerda su nombre original (orig) para saber cuál es cuál aunque se renombre, se quite otro o se deje uno en blanco */
+  let ajD=null, ajBase=null, ajSucio=false, ajSalida=0;
+  function ajAbrir(){ ajBase=JSON.parse(JSON.stringify(cfgN)); ajD={...JSON.parse(JSON.stringify(cfgN)), cargos:cfgN.cargos.map(g=>({nombre:g.nombre, tarifa:num(g.tarifa), orig:g.nombre})), feriados:(cfgN.feriados||[]).slice()}; ajSucio=false; }
+  function salirDeAjustes(){ if(!(nView==='ajustes' && ajSucio)){ ajD=null; ajSucio=false; return true; }
+    if(Date.now()-ajSalida>4000){ ajSalida=Date.now(); toast('Los ajustes tienen cambios sin guardar. Toca otra vez para salir sin guardarlos.'); return false; }
+    ajSalida=0; ajD=null; ajSucio=false; aDesde=''; return true; }
   function renderAjustes(el){
-    const c=cfgN;
+    if(!ajD) ajAbrir();
+    const c=ajD;
     el.innerHTML = `
       <div class="sech">Cargos y tarifa por día</div>
-      <div class="lns" id="cgList">${c.cargos.map((g,i)=>`<div class="cargo-row" data-cg="${i}"><input value="${esc(g.nombre)}" data-cgn aria-label="Nombre del cargo"><input value="${nf.format(num(g.tarifa))}" inputmode="decimal" data-cgt aria-label="Tarifa en dólares"><button type="button" data-cgdel="${i}">Quitar</button></div>`).join('')}</div>
+      <div class="lns" id="cgList">${c.cargos.map((g,i)=>`<div class="cargo-row" data-cg="${i}" data-cgo="${esc(g.orig||'')}"><input value="${esc(g.nombre)}" data-cgn aria-label="Nombre del cargo"><input value="${nf.format(num(g.tarifa))}" inputmode="decimal" data-cgt aria-label="Tarifa en dólares"><button type="button" data-cgdel="${i}">Quitar</button></div>`).join('')}</div>
       <div class="row-btns"><button type="button" class="btn sec" id="cgAdd">Agregar cargo</button></div>
       <div class="cfg"><label class="f">Las tarifas nuevas valen desde<input type="date" id="aDesde" value="${aDesde||today()}"></label></div>
       <div class="sech">Jornada y recargos</div>
@@ -4490,23 +4568,40 @@ Responde solo con un objeto JSON:
       <div class="nsum"><div class="row-btns" style="margin-top:0"><button type="button" class="btn pri" id="aSave">Guardar ajustes</button></div></div>`;
   }
   let aDesde='';
-  function leerAjustes(){ if($('#aDesde')) aDesde=$('#aDesde').value||''; const desdeT=aDesde||today();
-    const cargos=[...document.querySelectorAll('#cgList .cargo-row')].map((r,i)=>{ const g={nombre:r.querySelector('[data-cgn]').value.trim(), tarifa:r2(parseNum(r.querySelector('[data-cgt]').value)||0)}; const o=cfgN.cargos[i]; if(o){ g.ant=Array.isArray(o.ant)?o.ant.slice():[]; if(Math.abs(num(o.tarifa)-g.tarifa)>0.004 && num(o.tarifa)>0) g.ant.push({hasta:sumarDias(desdeT,-1), tarifa:num(o.tarifa)}); } return g; }).filter(g=>g.nombre);
+  const AJ_NUM=['horasJornada','factorHoraExtra','factorSabado','factorDomingo','factorFeriado','sueldoSupervisor'];
+  function leerAjustes(){ if($('#aDesde')) aDesde=$('#aDesde').value||'';
+    const cargos=[...document.querySelectorAll('#cgList .cargo-row')].map(r=>({nombre:r.querySelector('[data-cgn]').value.trim().replace(/\s+/g,' '), tarifa:r2(parseNum(r.querySelector('[data-cgt]').value)||0), orig:r.dataset.cgo||''}));
     const v=id=>parseNum($(id).value);
-    return {...cfgN, cargos, horasJornada:v('#aHoras'), factorHoraExtra:v('#aHx'), factorSabado:v('#aSab'), factorDomingo:v('#aDom'), factorFeriado:v('#aFer'), sueldoSupervisor:v('#aSup')};
+    return {...(ajD||{}), cargos, horasJornada:v('#aHoras'), factorHoraExtra:v('#aHx'), factorSabado:v('#aSab'), factorDomingo:v('#aDom'), factorFeriado:v('#aFer'), sueldoSupervisor:v('#aSup')};
   }
   async function guardarAjustes(){
-    const n=leerAjustes();
-    if(!n.cargos.length){ $('#aErr').textContent='Debe quedar al menos un cargo.'; return; }
-    if(n.cargos.some(g=>g.nombre===SUP)){ $('#aErr').textContent='“Supervisor” ya existe como cargo de sueldo semanal; usa otro nombre.'; return; }
-    for(const k of ['horasJornada','factorHoraExtra','factorSabado','factorDomingo','factorFeriado','sueldoSupervisor']) if(!(n[k]>0)){ $('#aErr').textContent='Revisa los valores: todos deben ser mayores que cero.'; return; }
-    const renombres = cfgN.cargos.map((g,i)=>[g.nombre, (n.cargos[i]||{}).nombre]).filter(([a,b])=>b&&a!==b);
+    if(!ajD) return; const s=leerAjustes(), desdeT=aDesde||today(), con=nom=>trabs.filter(x=>x.cargo===nom).length;
+    /* Cada fila se compara con el cargo GUARDADO del que salió (por su nombre original), no por su posición en la lista */
+    for(const g of s.cargos) if(!g.nombre && g.orig && con(g.orig)){ $('#aErr').textContent=`Hay ${con(g.orig)} ${con(g.orig)===1?'trabajador':'trabajadores'} con el cargo “${g.orig}”: no puede quedar sin nombre. Escríbele un nombre, o cámbiales el cargo antes de quitarlo.`; return; }
+    const filas=s.cargos.filter(g=>g.nombre);
+    if(!filas.length){ $('#aErr').textContent='Debe quedar al menos un cargo.'; return; }
+    if(filas.some(g=>g.nombre===SUP)){ $('#aErr').textContent='“Supervisor” ya existe como cargo de sueldo semanal; usa otro nombre.'; return; }
+    if(new Set(filas.map(g=>g.nombre.toLowerCase())).size!==filas.length){ $('#aErr').textContent='Hay dos cargos con el mismo nombre. Cada cargo debe tener un nombre distinto.'; return; }
+    { const q=cfgN.cargos.find(o=>!filas.some(g=>g.orig===o.nombre) && con(o.nombre)); if(q){ $('#aErr').textContent=`Hay trabajadores con el cargo “${q.nombre}”. Cámbiales el cargo antes de quitarlo.`; return; } }
+    for(const k of AJ_NUM) if(!(s[k]>0)){ $('#aErr').textContent='Revisa los valores: todos deben ser mayores que cero.'; return; }
+    let errF=''; const cargosN=filas.map(g=>{ const o=g.orig?cfgN.cargos.find(x=>x.nombre===g.orig):null, out={nombre:g.nombre, tarifa:g.tarifa}; if(!o) return out; if(Array.isArray(o.ant)) out.ant=o.ant.slice();
+      if(Math.abs(num(o.tarifa)-g.tarifa)>0.004 && num(o.tarifa)>0){ const hasta=sumarDias(desdeT,-1), ult=(o.ant||[]).map(x=>String(x.hasta||'')).sort().pop()||'';
+        if(ult && hasta<ult) errF=`La tarifa de “${o.nombre}” ya tiene un cambio que vale desde el ${fdate(sumarDias(ult,1))}. En «Las tarifas nuevas valen desde» pon esa fecha o una posterior.`;
+        else if(hasta!==ult) out.ant=[...(out.ant||[]), {hasta, tarifa:num(o.tarifa)}]; }
+      else out.tarifa = Math.abs(num(o.tarifa)-g.tarifa)>0.004 ? g.tarifa : o.tarifa; return out; });
+    if(errF){ $('#aErr').textContent=errF; return; }
+    /* Lo nuevo: la configuración guardada AHORA con lo que se cambió en esta pantalla (lo que no se tocó aquí queda como esté guardado) */
+    const n={...cfgN, cargos:igual(cargosN, cfgN.cargos)?cfgN.cargos:cargosN}; AJ_NUM.forEach(k=>{ if(Math.abs(parseNum(nf.format(num(ajBase[k])))-s[k])>1e-9) n[k]=s[k]; });
+    if(!igual((ajBase.feriados||[]).slice().sort(), (ajD.feriados||[]).slice().sort())) n.feriados=(ajD.feriados||[]).slice().sort();
+    const renombres = filas.filter(g=>g.orig && g.orig!==g.nombre && cfgN.cargos.some(o=>o.nombre===g.orig)).map(g=>[g.orig, g.nombre]);
+    const tarCamb = filas.filter(g=>{ const o=g.orig&&cfgN.cargos.find(x=>x.nombre===g.orig); return o && Math.abs(num(o.tarifa)-g.tarifa)>0.004; }).map(g=>({o:cfgN.cargos.find(x=>x.nombre===g.orig), b:g}));
     await conBoton($('#aSave'), 'Guardar ajustes', async()=>{ const cfg0=cfgN;
     try{
-      const desdeAj=aDesde||today(), cambiaron=cfgN.cargos.map((g,i)=>[g, n.cargos[i]]).filter(([g,b])=>b && Math.abs(num(g.tarifa)-num(b.tarifa))>0.004).map(([g,b])=>b.nombre);
+      const desdeAj=aDesde||today(), cambiaron=tarCamb.map(x=>x.b.nombre);
       /* El registro de cambios se anota después de guardar bien */
       const anot=[];
-      cfgN.cargos.forEach((g,i)=>{ const b=n.cargos[i]; if(b && Math.abs(num(g.tarifa)-num(b.tarifa))>0.004){ const a0=nf.format(num(g.tarifa)), b0=`${nf.format(num(b.tarifa))} desde el ${fdate(aDesde||today())}`; anot.push(()=>registrarCambio('config','nomina',`Tarifa del cargo ${g.nombre}`, a0, b0)); } });
+      tarCamb.forEach(({o:g, b})=>{ const a0=nf.format(num(g.tarifa)), b0=`${nf.format(num(b.tarifa))} desde el ${fdate(aDesde||today())}`; anot.push(()=>registrarCambio('config','nomina',`Tarifa del cargo ${g.nombre}`, a0, b0)); });
+      renombres.forEach(([a,b])=>anot.push(()=>registrarCambio('config','nomina','Nombre de un cargo', a, b)));
       [['sueldoSupervisor','sueldo de supervisor'],['factorHoraExtra','hora extra'],['factorSabado','sábado'],['factorDomingo','domingo'],['factorFeriado','feriado'],['horasJornada','horas de jornada']].forEach(([k,l])=>{ if(Math.abs(num(cfgN[k])-num(n[k]))>0.0001){ const a0=nf.format(num(cfgN[k])), b0=nf.format(num(n[k])); anot.push(()=>registrarCambio('config','nomina',`Ajuste de nómina: ${l}`, a0, b0)); } });
       /* Los ajustes, el cambio de nombre de los cargos en cada ficha y las diferencias de días ya pagados entran juntos: todo o nada.
          Las diferencias se calculan con los ajustes nuevos y los cargos ya renombrados, igual que antes */
@@ -4514,14 +4609,14 @@ Responde solo con un objeto JSON:
       let ajT=0, ajN=0; const opsAj=[];
       if(cambiaron.length && desdeAj<=today()){ cfgN=n; try{ for(const t0 of trabs){ const t=ren[t0.cargo]?{...t0, cargo:ren[t0.cargo]}:t0; if(esSup(t) || !cambiaron.includes(t.cargo) || num(t.tarifa)>0) continue; const a=opAjusteRetro(t, desdeAj, `Tarifa nueva desde el ${fdate(desdeAj)}`, idEstable('ajNom|aj|'+t.id,'adelantos')); if(a){ opsAj.push(a.op); ajT+=a.tot; ajN++; } } } finally{ cfgN=cfg0; } }
       await escribirJuntos([opCfg('nomina', cambiosCfg(cfg0, n), 'los ajustes de nómina', n), ...opsRen, ...opsAj], 'los ajustes de nómina'); if(cfgLeida.nomina) cfgLeida.nomina.existe=true;
-      if(cambiaron.length && desdeAj<=today()) cfgN=n;
+      cfgN=n; ajD=null; ajSucio=false;
       anot.forEach(f=>f()); soltarIntento('ajNom');
-      aDesde=''; toast(ajN?`Ajustes guardados · ${ajN} ${ajN===1?'persona':'personas'} con diferencia de días ya pagados (${ajT<0?'− ':''}${usd(Math.abs(r2(ajT)))}) en el próximo corte`:'Ajustes guardados');
+      aDesde=''; renderNom(); toast(ajN?`Ajustes guardados · ${ajN} ${ajN===1?'persona':'personas'} con diferencia de días ya pagados (${ajT<0?'− ':''}${usd(Math.abs(r2(ajT)))}) en el próximo corte`:'Ajustes guardados');
     }catch(err){ $('#aErr').textContent=errMsg(err); } });
   }
 
   /* ---------- eventos de nómina ---------- */
-  $('#nTabs').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; if(b.dataset.v!=='dia' && !salirDelDia()) return; if(b.dataset.v!=='dia'){ dayDraft=null; dayDirty=false; } nView=b.dataset.v; nDelArmed=''; renderNom(); });
+  $('#nTabs').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; if(b.dataset.v!=='dia' && !salirDelDia()) return; if(b.dataset.v!=='ajustes' && !salirDeAjustes()) return; if(b.dataset.v!=='dia'){ dayDraft=null; dayDirty=false; } if(b.dataset.v==='ajustes' && nView!=='ajustes'){ ajD=null; ajSucio=false; } nView=b.dataset.v; nDelArmed=''; renderNom(); });
   $('#nMain').addEventListener('click', e=>{
     const t=e.target;
     if(t.closest('#dPrev')) return cambiarDia(sumarDias(diaSel,-1));
@@ -4530,6 +4625,8 @@ Responde solo con un objeto JSON:
     if(t.closest('#dAI')) return abrirAI('asis');
     if(t.closest('#dNuevoT')) return openTrab(null);
     if(t.closest('#dIrAyer')) return cambiarDia(sumarDias(today(),-1));
+    if(t.closest('#dIrHoy')) return cambiarDia(today());
+    { const rp=t.closest('[data-restopend]'), rn=t.closest('[data-restono]'); if(rp) return resolverResto(rp.dataset.restopend, true, rp); if(rn) return resolverResto(rn.dataset.restono, false, rn); }
     if(t.closest('#dBorrRec')){ const b=borrValidos()[diaSel]; if(!b) return renderNom(); const d=JSON.parse(JSON.stringify(b.d)); Object.keys(d).forEach(id=>{ if(!trabs.some(x=>x.id===id)) delete d[id]; });
       dayDraft=d; dayDirty=true; todosTocado=true; Object.keys(d).forEach(id=>diaAgregados.add(id)); borrVivo=diaSel; renderNom(); toast('Recuperado. Revisa y toca «Guardar día».'); return; }
     if(t.closest('#dBorrDes')){ borrQuitar(diaSel); renderNom(); toast('Borrador descartado'); return; }
@@ -4582,19 +4679,20 @@ Responde solo con un objeto JSON:
     if(t.closest('#wNew')) return openTrab(null);
     if(t.closest('#wAI')) return abrirAI('trab');
     const wc=t.closest('[data-wid]'); if(wc) return openTrab(wc.dataset.wid);
-    if(t.closest('#cgAdd')){ cfgN={...leerAjustes(), cargos:[...leerAjustes().cargos, {nombre:'', tarifa:0}]}; renderNom(); const ins=document.querySelectorAll('#cgList [data-cgn]'); ins[ins.length-1].focus(); return; }
-    const cd=t.closest('[data-cgdel]'); if(cd){ const n=leerAjustes(), g=cfgN.cargos[+cd.dataset.cgdel]; if(g && trabs.some(x=>x.cargo===g.nombre)){ $('#aErr').textContent=`Hay trabajadores con el cargo “${g.nombre}”. Cámbiales el cargo antes de quitarlo.`; return; } n.cargos.splice(+cd.dataset.cgdel,1); cfgN=n; renderNom(); return; }
-    if(t.closest('#fAdd')){ const f=$('#fNew').value; if(!f) return; cfgN={...leerAjustes(), feriados:[...new Set([...(cfgN.feriados||[]), f])].sort()}; renderNom(); toast('Feriado agregado; toca “Guardar ajustes”'); return; }
-    const fd=t.closest('[data-fdel]'); if(fd){ cfgN={...leerAjustes(), feriados:(cfgN.feriados||[]).filter(x=>x!==fd.dataset.fdel)}; renderNom(); return; }
+    if(t.closest('#cgAdd')){ const b=leerAjustes(); ajD={...b, cargos:[...b.cargos, {nombre:'', tarifa:0, orig:''}]}; ajSucio=true; renderNom(); const ins=document.querySelectorAll('#cgList [data-cgn]'); ins[ins.length-1].focus(); return; }
+    const cd=t.closest('[data-cgdel]'); if(cd){ const n=leerAjustes(), g=n.cargos[+cd.dataset.cgdel]; if(g && g.orig && trabs.some(x=>x.cargo===g.orig)){ $('#aErr').textContent=`Hay trabajadores con el cargo “${g.orig}”. Cámbiales el cargo antes de quitarlo.`; return; } n.cargos.splice(+cd.dataset.cgdel,1); ajD=n; ajSucio=true; renderNom(); return; }
+    if(t.closest('#fAdd')){ const f=$('#fNew').value; if(!f) return; const b=leerAjustes(); ajD={...b, feriados:[...new Set([...(b.feriados||[]), f])].sort()}; ajSucio=true; renderNom(); toast('Feriado agregado; falta tocar “Guardar ajustes” para que valga'); return; }
+    const fd=t.closest('[data-fdel]'); if(fd){ const b=leerAjustes(); ajD={...b, feriados:(b.feriados||[]).filter(x=>x!==fd.dataset.fdel)}; ajSucio=true; renderNom(); toast('Feriado quitado; falta tocar “Guardar ajustes” para que valga'); return; }
     if(t.closest('#aSave')) return guardarAjustes();
   });
   $('#nMain').addEventListener('input', e=>{
     const t=e.target;
-    if(t.matches('[data-bono]')){ const id=t.closest('[data-w]').dataset.w; const v=parseNum(t.value); dayDraft[id]={...(dayDraft[id]||defReg(id)), bono:isNaN(v)?0:Math.max(0,v)}; dayDirty=true; renderDiaSum(); return; }
+    if(nView==='ajustes' && t.closest('#cgList, .cfg')) ajSucio=true;
+    if(t.matches('[data-bono]')){ const id=t.closest('[data-w]').dataset.w; const v=parseNum(t.value), mal=isNaN(v)||v<0; marcarInval(id, 'bono', mal?TXT_BONO:'', t); if(!mal) dayDraft[id]={...(dayDraft[id]||defReg(id)), bono:v}; dayDirty=true; renderDiaSum(); return; }
     if(t.matches('[data-bononota]')){ const id=t.closest('[data-w]').dataset.w; dayDraft[id]={...(dayDraft[id]||defReg(id)), bonoNota:t.value.trim()}; dayDirty=true; renderDiaSum(); return; }
-    if(t.matches('[data-hx]')){ const id=t.closest('[data-w]').dataset.w; const v=parseNum(t.value); dayDraft[id]={...(dayDraft[id]||defReg(id)), horasExtra:isNaN(v)?0:v}; dayDirty=true; renderDiaSum(); sincronizarTodos(); }
-    if(t.id==='dTodosHx'){ const v=parseNum(t.value), hx=isNaN(v)?0:Math.max(0,v); document.querySelectorAll('.wrow[data-w]:not([data-bloq])').forEach(w=>{ const id=w.dataset.w; const r=dayDraft[id]||defReg(id); if(r.tipo==='no') return;   // a quien no trabajó no se le ponen horas
-        dayDraft[id]={...r, horasExtra:hx}; const i=w.querySelector('[data-hx]'); if(i) i.value=hx?nf.format(hx).replace(/,00$/,''):''; }); dayDirty=true; renderDiaSum(); }
+    if(t.matches('[data-hx]')){ const id=t.closest('[data-w]').dataset.w; const v=parseNum(t.value), mal=isNaN(v)||v<0||v>24; marcarInval(id, 'hx', mal?TXT_HX:'', t); if(!mal) dayDraft[id]={...(dayDraft[id]||defReg(id)), horasExtra:v}; dayDirty=true; renderDiaSum(); sincronizarTodos(); }
+    if(t.id==='dTodosHx'){ const v=parseNum(t.value), hx=v; if(isNaN(v)||v<0||v>24){ marcarInval('todos', 'hx', TXT_HX, t); return; } marcarInval('todos', 'hx', '', t); document.querySelectorAll('.wrow[data-w]:not([data-bloq])').forEach(w=>{ const id=w.dataset.w; const r=dayDraft[id]||defReg(id); if(r.tipo==='no') return;   // a quien no trabajó no se le ponen horas
+        dayDraft[id]={...r, horasExtra:hx}; const i=w.querySelector('[data-hx]'); if(i){ i.value=hx?nf.format(hx).replace(/,00$/,''):''; marcarInval(id, 'hx', '', i); } }); dayDirty=true; renderDiaSum(); }
     if(t.id==='cFechaPago'){ corteFechaPago=t.value||today(); corteFechasAuto=false; return; }
     if(t.id==='cTasa'){ corteTasa=t.value; corteTasaToco=true;   /* si la borras para escribir otra, no se vuelve a poner sola */ clearTimeout(renderCorte._t); renderCorte._t=setTimeout(()=>{ const pos=t.selectionStart; renderNom(); const n=$('#cTasa'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(_){} } },600); }
     if(t.matches('[data-sup]')){ supMontos[t.dataset.sup]=parseNum(t.value)||0; clearTimeout(renderCorte._s); renderCorte._s=setTimeout(()=>{ renderNom(); },900); }
@@ -4603,7 +4701,7 @@ Responde solo con un objeto JSON:
     if(e.target.id==='semRes'){ semRes=e.target.value; return; }
     const t=e.target;
     if(t.id==='dFecha' && t.value) return cambiarDia(t.value);
-    if(t.id==='cCuenta'){ corteCuenta=t.value; try{ localStorage.setItem('corteCuenta',corteCuenta); }catch(_){} return renderNom(); }
+    if(t.id==='cCuenta'){ corteCuenta=t.value; return renderNom(); }
     if(t.id==='cFechaPago'){ corteFechaPago=t.value||today(); corteFechasAuto=false; return renderNom(); }
     if(t.dataset.ccargo!=null){ const cargos=[...new Set([...cfgN.cargos.map(g=>g.nombre), SUP])]; let sel=corteF.cargos?corteF.cargos.slice():cargos.slice(); sel = t.checked ? [...new Set([...sel,t.dataset.ccargo])] : sel.filter(x=>x!==t.dataset.ccargo); corteF.cargos = sel.length===cargos.length ? null : sel; supMontos={}; return renderNom(); }
     if(t.dataset.csem){ const c=calcCorte(corteHasta,{cargos:corteF.cargos, semanasSup:null}); const def=c.semanasSupPend.filter(w=>semanaCerrada(w,corteHasta)); let sel=corteF.semanasSup?corteF.semanasSup.slice():def.slice(); sel = t.checked ? [...new Set([...sel,t.dataset.csem])].sort() : sel.filter(x=>x!==t.dataset.csem); corteF.semanasSup = JSON.stringify(sel)===JSON.stringify(def) ? null : sel; supMontos={}; return renderNom(); }
@@ -4621,11 +4719,11 @@ Responde solo con un objeto JSON:
   $('#wAdel').addEventListener('click', ()=>{ if(!dejarHoja()) return; const id=wEditId; closeSheets(); openAdelanto(id); });
   $('#wDel').addEventListener('click', eliminarTrab);
   $('#adSave').addEventListener('click', guardarAdelanto);
-  $('#adCuenta').addEventListener('change', ()=>{ $('#adTasaL').hidden=$('#adCuenta').value!=='banco'; });
+  $('#adCuenta').addEventListener('change', ()=>{ syncAdTipo(); });
 
   function iniciarNomina(db){
     nDb=db; nCfgRef=db.doc('config/nomina');
-    nCfgRef.onSnapshot(s=>{ const d=s.exists?s.data():null; cfgOk('nomina', s.exists, d); cfgN = d ? {...CFG_DEF, ...d, cargos:Array.isArray(d.cargos)&&d.cargos.length?d.cargos:CFG_DEF.cargos, feriados:Array.isArray(d.feriados)?d.feriados:CFG_DEF.feriados} : JSON.parse(JSON.stringify(CFG_DEF)); if(nView!=='ajustes') renderNom(); }, ()=>{ cfgMal('nomina'); });
+    nCfgRef.onSnapshot(s=>{ const d=s.exists?s.data():null; cfgOk('nomina', s.exists, d); cfgN = d ? {...CFG_DEF, ...d, cargos:Array.isArray(d.cargos)&&d.cargos.length?d.cargos:CFG_DEF.cargos, feriados:Array.isArray(d.feriados)?d.feriados:CFG_DEF.feriados} : JSON.parse(JSON.stringify(CFG_DEF)); if(nView!=='ajustes') renderNom(); else if(!ajSucio){ ajD=null; renderNom(); } }, ()=>{ cfgMal('nomina'); });
     db.collection('trabajadores').onSnapshot(s=>{ trabs=s.docs.map(d=>Object.assign({id:d.id}, d.data())); nLoaded.t=true; if(!(nView==='dia'&&dayDirty)) renderNom(); }, ()=>{ nLoaded.t=true; renderNom(); });
     db.collection('asistencia').onSnapshot(s=>{ asis={}; s.docs.forEach(d=>{ const v=d.data(); asis[v.fecha||d.id]=v; }); nLoaded.a=true; if(!(nView==='dia'&&dayDirty)){ dayDraft=null; renderNom(); } if(modulo==='cob'){ renderStats(); renderList(); } }, ()=>{ nLoaded.a=true; renderNom(); });
     db.collection('adelantos').onSnapshot(s=>{ adels=s.docs.map(d=>Object.assign({id:d.id}, d.data())); nLoaded.d=true; if(!(nView==='dia'&&dayDirty)) renderNom(); }, ()=>{ nLoaded.d=true; renderNom(); });
@@ -5637,7 +5735,7 @@ Responde solo con un objeto JSON:
       const ks=cortes.filter(k=>String(k.fecha||k.hasta)>=desde&&String(k.fecha||k.hasta)<=hasta), por={};
       ks.forEach(k=>(k.lineas||[]).forEach(l=>{ const o=por[l.trabajadorId]||(por[l.trabajadorId]={nombre:l.nombre||nombreT(l.trabajadorId), cargo:(trabs.find(x=>x.id===l.trabajadorId)||{}).cargo||l.cargo||'', n:0, dias:0, medios:0, hx:0, bruto:0, adel:0, neto:0, bs:0}); o.n++; o.dias+=num(l.completos); o.medios+=num(l.medios); o.hx+=num(l.horasExtra); o.bruto+=num(l.bruto); o.adel+=num(l.adelantos)+Math.min(0,num(l.totalUsd)); o.neto+=Math.max(0,num(l.totalUsd)); o.bs+=num(l.totalBs); }));
       const ls=Object.values(por).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es')); if(!ls.length) L.push('Sin cortes pagados en el período.');
-      ls.forEach(o=>{ L.push(''); L.push(`*${o.nombre}*${o.cargo?' · '+o.cargo:''}`); L.push(`${o.n} ${o.n===1?'corte':'cortes'} · ${[o.dias?`${nf.format(o.dias).replace(/,00$/,'')} días`:'', o.medios?`${nf.format(o.medios).replace(/,00$/,'')} ${o.medios===1?'medio día':'medios días'}`:'', o.hx?`${nf.format(o.hx).replace(/,00$/,'')} ${o.hx===1?'hora extra':'horas extra'}`:''].filter(Boolean).join(', ')||'sueldo semanal'}`); L.push(`Devengado ${usd(r2(o.bruto))}${o.adel?` · Adelantos − ${usd(r2(o.adel))}`:''} · *Pagado ${usd(r2(o.neto))}* = ${bs(r2(o.bs))}`); });
+      ls.forEach(o=>{ L.push(''); L.push(`*${o.nombre}*${o.cargo?' · '+o.cargo:''}`); L.push(`${o.n} ${o.n===1?'corte':'cortes'} · ${[o.dias?`${nf.format(o.dias).replace(/,00$/,'')} ${o.dias===1?'día completo':'días completos'}`:'', o.medios?`${nf.format(o.medios).replace(/,00$/,'')} ${o.medios===1?'medio día':'medios días'}`:'', o.hx?`${nf.format(o.hx).replace(/,00$/,'')} ${o.hx===1?'hora extra':'horas extra'}`:''].filter(Boolean).join(', ')||'sueldo semanal'}${o.dias&&o.medios?` (${nf.format(o.dias+o.medios/2).replace(/,00$/,'').replace(/(,\d)0$/,'$1')} jornadas)`:''}`); L.push(`Devengado ${usd(r2(o.bruto))}${o.adel?` · Adelantos − ${usd(r2(o.adel))}`:''} · *Pagado ${usd(r2(o.neto))}* = ${bs(r2(o.bs))}`); });
       L.push(''); L.push(`*Total pagado: ${usd(r2(sum(ls,o=>o.neto)))} = ${bs(r2(sum(ls,o=>o.bs)))}* · Devengado ${usd(r2(sum(ls,o=>o.bruto)))} · Adelantos descontados ${usd(r2(sum(ls,o=>o.adel)))}`);
       { const deben={}; adels.filter(a=>!a.corteId&&!esAjuste(a)&&(trabs.find(t=>t.id===a.trabajadorId)||{}).activo===false).forEach(a=>{ deben[a.trabajadorId]=(deben[a.trabajadorId]||0)+num(a.monto); });
         const dl=Object.entries(deben).filter(([,v])=>v>0.004); if(dl.length){ L.push(''); L.push('*Adelantos pendientes de quienes ya no trabajan*'); dl.forEach(([id,v])=>L.push(`• ${nombreT(id)}: ${usd(r2(v))}`)); } }
