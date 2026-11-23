@@ -24,7 +24,7 @@
 #login button{border:0;background:#0D5C63;color:#fff;border-radius:12px;padding:13px 18px;font-weight:700;font-size:15px;width:100%}
 </style>
 </head>
-<body><div style="background:#B26A00;color:#fff;font:700 12px/1.3 system-ui,sans-serif;text-align:center;padding:4px 8px">VERSIÓN DE PRUEBA · versión 145, etapas 1 a 5 · trabaja con tus datos reales</div>
+<body><div style="background:#B26A00;color:#fff;font:700 12px/1.3 system-ui,sans-serif;text-align:center;padding:4px 8px">VERSIÓN DE PRUEBA · versión 146, etapas 1 a 6 · trabaja con tus datos reales</div>
 <div id="login" class="scrim-login">
   <div class="box">
     <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:#5A6A75">Workproca · Trabajos Profesionales C.A.</div>
@@ -244,7 +244,7 @@ html[data-rol="registro"] #modTabs,html[data-rol="registro"] #cobBtns,html[data-
 #list{padding-bottom:170px}
 .toast{pointer-events:none}.toast .tact{pointer-events:auto}
 .hero .lbl{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--muted)}
-.hero .big{font-family:var(--f-disp);font-weight:700;font-size:clamp(30px,9vw,40px);line-height:1.05;margin-top:2px;white-space:nowrap}
+.hero .big{font-family:var(--f-disp);font-weight:700;font-size:clamp(30px,9vw,40px);line-height:1.05;margin-top:2px;white-space:normal;overflow-wrap:anywhere}
 .hero .big small{font-family:var(--f-body);font-size:13px;font-weight:600;color:var(--muted);margin-right:6px}
 .split{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--sunk);margin:10px 0 8px}
 .split i{display:block;height:100%}
@@ -566,6 +566,11 @@ select.combo-oculto{display:none}
   .ctarow small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
   .ctarow .r{text-align:right;white-space:nowrap}
   [data-cta]{cursor:pointer}
+.num-malo{border-color:var(--danger)!important;box-shadow:0 0 0 2px color-mix(in srgb,var(--danger) 25%,transparent)}
+.num-msg{display:block;color:var(--danger);font-size:12.5px;line-height:1.3;margin-top:4px;font-weight:500}
+body{overflow-wrap:anywhere}
+main,section.sheet .wrap,label.f,.card,.ln,.panel,.mv,.row,.cobro{min-width:0;max-width:100%}
+input,select,textarea{min-width:0;max-width:100%}
 </style>
 
 <div class="topnav" id="topnav">
@@ -1194,8 +1199,12 @@ select.combo-oculto{display:none}
 
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const num = v => { const n=+v; return isFinite(n)?n:0; };
-  /* Números como se escriben aquí: coma decimal y punto de millar ("1.234,56"); sin coma, "56.900" o "1.234.567" son millares; "2.5" o "0.125" siguen siendo decimales */
-  const parseNum = s => { s=String(s||'').trim().replace(/\s/g,''); if(!s) return 0; if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.'); else if(/^-?(?!0\.)\d{1,3}(\.\d{3})+$/.test(s)) s=s.replace(/\./g,''); const n=parseFloat(s); return isFinite(n)?n:NaN; };
+  /* Números como se escriben aquí: coma decimal y punto de millar ("1.234,56"); sin coma, "56.900" o "1.234.567" son millares; "2.5" o "0.125" siguen siendo decimales. Solo se acepta además el formato de Estados Unidos con punto decimal ("1,234.56"); lo demás que no se entienda da NaN */
+  const parseNum = s => { s=String(s||'').trim().replace(/\s/g,''); if(!s) return 0;
+    const b=s.replace(/(%|\$|bs\.?|usd|us\$)$/i,'');
+    if(/^[+-]?[1-9]\d{0,2}(,\d{3})+\.\d+$/.test(b)) return parseFloat(b.replace(/,/g,''));   /* formato estadounidense inequívoco: coma de millar y punto decimal («1,234.56») */
+    if(!/\d/.test(b) || !/^[+-]?(\d+|\d*,\d*|\d*\.\d*|\d{1,3}(\.\d{3})+(,\d*)?|(\d+\.?\d*|\.\d+)e[+-]?\d+)$/i.test(b)) return NaN;   /* ambiguo o inválido («12abc», «1,5,5», «12.34.56»): no se adivina, el campo marca error */
+    if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.'); else if(/^-?(?!0\.)\d{1,3}(\.\d{3})+$/.test(s)) s=s.replace(/\./g,''); const n=parseFloat(s); return isFinite(n)?n:NaN; };
   const r2 = n => Math.round(n*100)/100;
   /* Montos con signo: una sola forma en toda la app, «− USD 1,00» (nunca «USD -1,00») */
   const conSigno = (pre, n) => (num(n)<=-0.005 ? '− ' : '') + pre + ' ' + nf.format(Math.abs(num(n)));
@@ -1261,7 +1270,7 @@ select.combo-oculto{display:none}
   const crucesComoDestino = d => cruces().filter(x=>x.targets.some(t=>t.id===d.id));
   function textoHost(x){
     const f=x.c.numFactura?`factura N° ${x.c.numFactura}`:'factura';
-    return `<b>${usd(num(x.c.monto))}</b> facturados en esta orden (${esc(f)}) compensan: ${esc(x.targets.map(nombre).join('; '))}. En esta orden quedan <b>${usd(saldo(x.host))}</b> por facturar.${x.host.ejecutado?'':` Al ejecutarse, los otros ${usd(num(x.c.monto))} se recuperan facturando completos esos trabajos.`}`;
+    return `<b>${usd(num(x.c.monto))}</b> facturados en esta orden (${esc(f)}) compensan: ${esc(x.targets.map(nombre).join('; '))}. En esta orden quedan <b>${usd(saldo(x.host))}</b> por facturar.${x.targets.length && x.targets.every(t=>etapa(t)==='cobrado') ? ' Esos trabajos ya se cobraron por su cuenta: esta compensación ya no aplica.' : x.host.ejecutado?'':` Al ejecutarse, los otros ${usd(num(x.c.monto))} se recuperan facturando completos esos trabajos.`}`;
   }
   /* Reparte el pago entre los trabajos compensados, empezando por el de mayor valor */
   function reparto(x){
@@ -1332,9 +1341,9 @@ select.combo-oculto{display:none}
     /* Una barra segmentada (una sola pieza, partida en sus partes) y debajo una fila por parte con su cifra. Colores validados para daltonismo en claro y oscuro. */
     const partes=[
       {f:'listo',      c:'var(--c-lf)', lbl:'Listos para facturar',            n:lf.length,      v:sLf},
-      {f:'porEjecutar',c:'var(--c-po)', lbl:'Con orden, por ejecutar',         n:peOrden.length, v:sPo, extra:(k=>k?`${k} en ejecución`:'')(peOrden.filter(enEjecucion).length)},
-      {f:'sinOrden',   c:'var(--c-so)', lbl:'Ejecutados sin orden',n:so.length,      v:sSo},
-      {f:'sinOrden',   c:'var(--c-ps)', lbl:'Sin orden, por ejecutar',         n:peSin.length,   v:sPs, extra:(k=>k?`${k} en ejecución`:'')(peSin.filter(enEjecucion).length)},
+      {f:'peConOrden',c:'var(--c-po)', lbl:'Con orden, por ejecutar',         n:peOrden.length, v:sPo, extra:(k=>k?`${k} en ejecución`:'')(peOrden.filter(enEjecucion).length)},
+      {f:'ejSinOrden', c:'var(--c-so)', lbl:'Ejecutados sin orden',n:so.length,      v:sSo},
+      {f:'peSinOrden', c:'var(--c-ps)', lbl:'Sin orden, por ejecutar',         n:peSin.length,   v:sPs, extra:(k=>k?`${k} en ejecución`:'')(peSin.filter(enEjecucion).length)},
       {f:'cobrado',    c:'var(--c-co)', lbl:'Cobrado',                         n:null,           v:cobUsd, extra:`${cobBs>0?bs(cobBs)+' · ':''}${co.length} ${co.length===1?'trabajo completo':'trabajos completos'}`}];
     const fila=x=>`<button type="button" class="row" data-f="${x.f}"><i class="sw" style="background:${x.c}"></i><span class="nm">${x.lbl}${x.n!=null?`<em>${x.n}</em>`:''}</span><b>${usd(x.v)}</b>${x.extra?`<small>${x.extra}</small>`:''}</button>`;
     let pleg=true; try{ pleg=localStorage.getItem('heroAbierto')!=='1'; }catch(_){}
@@ -1356,6 +1365,8 @@ select.combo-oculto{display:none}
   let clientesExtra=[], cfgRef=null, nuevoPendiente='';
   function listaClientes(){ return [...new Set([...docs.map(d=>String(d.cliente||'').trim()).filter(Boolean), ...clientesExtra])].sort((a,b)=>a.localeCompare(b,'es')); }
   function romano(n){ if(!(n>0&&n<4000)) return String(n); const t=[[1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],[100,'C'],[90,'XC'],[50,'L'],[40,'XL'],[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']]; let r=''; for(const [v,l] of t) while(n>=v){ r+=l; n-=v; } return r; }
+  /* Para buscar (no para comparar nombres): sin acentos ni mayúsculas, sin espacios ni guiones, y la letra O vale lo mismo que el cero (PO1138 = P01138). No convierte números en romanos. */
+  const normBus = s => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'').replace(/o/g,'0');
   const norm = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\b\d{1,3}\b/g,m=>romano(+m)).replace(/[^a-z0-9]/gi,'').toLowerCase();
   function lev(a,b){ const m=a.length,n=b.length; let p=[...Array(n+1).keys()]; for(let i=1;i<=m;i++){ const c=[i]; for(let j=1;j<=n;j++) c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1)); p=c; } return p[n]; }
   /* El nombre registrado más parecido (para avisar antes de crear uno nuevo); null si ninguno se parece */
@@ -1489,8 +1500,8 @@ select.combo-oculto{display:none}
     const n=avActivos(); $('#fAvzSum').textContent = n ? `Filtros avanzados (${n} ${n===1?'activo':'activos'})` : 'Filtros avanzados';
   }
   function visibles(){
-    const q=norm(query);
-    return byClient().filter(d => (!q || norm([d.descripcion,d.unidad,d.ods,d.nota,d.cliente,...(d.cobros||[]).map(c=>c.numFactura)].join(' ')).includes(q)) && pasaAv(d));
+    const q=normBus(query);
+    return byClient().filter(d => (!q || normBus([d.descripcion,d.unidad,d.ods,d.nota,d.cliente,...(d.cobros||[]).map(c=>c.numFactura)].join(' ')).includes(q)) && pasaAv(d));
   }
 
   function renderList(){
@@ -1501,11 +1512,11 @@ select.combo-oculto{display:none}
     const list=visibles();
     /* La pestaña "Sin orden" muestra todo lo que no tiene orden de servicio: ejecutado y por ejecutar, en dos bloques */
     const groups = filtro==='todas' ? ORDEN : filtro==='sinOrden' ? ['sinOrden','peSinOrden'] : [filtro];
-    const secDe = g => g==='peSinOrden' ? {sec:'Sin orden de servicio, por ejecutar', pred:d=>etapa(d)==='porEjecutar'&&!tieneOrden(d)} : g==='enEjec' ? {sec:'En ejecución', pred:d=>!d.cancelado&&enEjecucion(d)} : {sec:ETAPAS[g].sec, pred:d=>etapa(d)===g};
+    const secDe = g => g==='peConOrden' ? {sec:'Con orden de servicio, por ejecutar', pred:d=>etapa(d)==='porEjecutar'&&tieneOrden(d)} : g==='ejSinOrden' ? {sec:ETAPAS.sinOrden.sec, pred:d=>etapa(d)==='sinOrden'} : g==='peSinOrden' ? {sec:'Sin orden de servicio, por ejecutar', pred:d=>etapa(d)==='porEjecutar'&&!tieneOrden(d)} : g==='enEjec' ? {sec:'En ejecución', pred:d=>!d.cancelado&&enEjecucion(d)} : {sec:ETAPAS[g].sec, pred:d=>etapa(d)===g};
     const pagos = filtro==='cobrado' ? pagosRecibidos(list) : '';
     const html = resumenBusqueda(list) + pagos + groups.map(g=>{
       const {sec,pred}=secDe(g), items=list.filter(pred).sort((a,b)=>(enEjecucion(b)-enEjecucion(a)) || byOrden(a,b));
-      if(!items.length) return (filtro==='todas'||g==='peSinOrden') ? '' : `<div class="empty"><b>Nada en “${sec}”</b>${query||cliente||avActivos()?'Prueba quitando el filtro o la búsqueda.':'Cuando un trabajo llegue a esta etapa aparecerá aquí.'}</div>`;
+      if(!items.length) return (filtro==='todas'||g==='peSinOrden'&&filtro==='sinOrden') ? '' : `<div class="empty"><b>Nada en “${sec}”</b>${query||cliente||avActivos()?'Prueba quitando el filtro o la búsqueda.':'Cuando un trabajo llegue a esta etapa aparecerá aquí.'}</div>`;
       const sub = g==='cobrado' ? sum(items,pagado) : sum(items,saldo);
       return `<section class="sec"><h2>${sec} <span class="num">${items.length} · ${usd(sub)}</span></h2><div class="list">${items.map(card).join('')}</div></section>`;
     }).join('');
@@ -1516,7 +1527,7 @@ select.combo-oculto{display:none}
   function resumenBusqueda(list){
     if(!query && !cliente) return '';
     const enPend=d=>['listo','sinOrden'].includes(etapa(d)) || (etapa(d)==='porEjecutar'&&tieneOrden(d));
-    const pend=sum(list.filter(enPend),saldo), sinO=sum(list.filter(d=>etapa(d)==='porEjecutar'&&!tieneOrden(d)),saldo), cob=sum(list,pagado), tot=sum(list,d=>num(d.monto));
+    const pend=sum(list.filter(enPend),saldo), sinO=sum(list.filter(d=>etapa(d)==='porEjecutar'&&!tieneOrden(d)),saldo), cob=sum(list,pagado), tot=sum(list.filter(d=>!d.cancelado),d=>num(d.monto));   /* mismo total que la tarjeta de arriba: un cancelado no suma */
     const que=[query?`“${esc(query)}”`:'', cliente?esc(cliente):''].filter(Boolean).join(' · ');
     if(!list.length) return `<div class="panel num" style="margin-bottom:12px"><b>Nada coincide con ${que}</b></div>`;
     return `<div class="panel num" style="margin-bottom:12px"><div style="font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;color:var(--muted)">${que} · ${list.length} ${list.length===1?'trabajo':'trabajos'}</div>
@@ -1813,11 +1824,11 @@ select.combo-oculto{display:none}
   $('#avMain').addEventListener('change', e=>{ if(e.target.id==='avNueva' && e.target.value) openAvance(e.target.value); });
   $('#avBody').addEventListener('change', e=>{ const t=e.target, row=t.closest('[data-avrow]');
     if(t.id==='avIni'||t.id==='avFin'){ avF={...avF, ini:$('#avIni').value||'', fin:$('#avFin').value||''}; $('#avIni').closest('label').classList.toggle('fvacia',!avF.ini); $('#avFin').closest('label').classList.toggle('fvacia',!avF.fin); $('#avErr').textContent=''; pintarCurva(); guardarAvF('Fechas guardadas'); return; }
-    if(t.id==='avSab'||t.id==='avDom'||t.id==='avHorasDia'){ const h=parseNum($('#avHorasDia').value); avF={...avF, sab:$('#avSab').checked, dom:$('#avDom').checked, horas:h>0&&h<=24?Math.round(h*10)/10:avJornada(avF)}; avHorOpen=true; avRepintar(); guardarAvF('Horario guardado'); return; }
+    if(t.id==='avSab'||t.id==='avDom'||t.id==='avHorasDia'){ const h=parseNum($('#avHorasDia').value), hOk=h>0&&h<=24; if(t.id==='avHorasDia' && !hOk){ toast('Las horas de un día normal van de más de 0 hasta 24. No se cambió.'); avHorOpen=true; avRepintar(); return; } avF={...avF, sab:$('#avSab').checked, dom:$('#avDom').checked, horas:hOk?Math.round(h*10)/10:avJornada(avF)}; avHorOpen=true; avRepintar(); guardarAvF('Horario guardado'); return; }
     if(t.dataset.avq!==undefined){ const i=row&&row.querySelector('[data-avp]'); if(i) i.value=t.dataset.avq; row.querySelectorAll('.ecchips label').forEach(l=>l.classList.toggle('on', l.contains(t))); return; }
     if(t.hasAttribute('data-avdetc')){ row.querySelectorAll('[data-avdetf]').forEach(x=>x.hidden=!t.checked); return; }
     if(t.dataset.avnom){ const a=avActs.find(x=>x.id===t.dataset.avnom), n=t.value.trim().replace(/\s+/g,' ').slice(0,160); if(!a) return; if(!n){ t.value=a.nombre; return; } a.nombre=n; if(row) row.querySelector('[data-avnomtxt]').textContent=n; guardarAv('Nombre guardado', a.id); return; }
-    if(t.dataset.avpeso){ const a=avActs.find(x=>x.id===t.dataset.avpeso); if(!a) return; const v=parseNum(t.value); a.peso=v>0?Math.round(v*10)/10:1; avEdit=a.id; avRepintar(); guardarAv('Peso guardado', a.id); return; }
+    if(t.dataset.avpeso){ const a=avActs.find(x=>x.id===t.dataset.avpeso); if(!a) return; const v=parseNum(t.value); if(!(v>=0.1) || v>10000){ toast(isNaN(v)?'No se entiende el peso: escribe un número, por ejemplo 8 o 12,5.':'El peso va de 0,1 a 10.000 horas de cuadrilla. No se cambió.'); avEdit=a.id; avRepintar(); return; } a.peso=Math.round(v*10)/10; avEdit=a.id; avRepintar(); guardarAv('Peso guardado', a.id); return; }
     if(t.dataset.avadic){ const a=avActs.find(x=>x.id===t.dataset.avadic); if(!a) return; a.adicional=t.checked; avEdit=a.id; avRepintar(); guardarAv('Cambio guardado', a.id); return; }
   });
   $('#avBody').addEventListener('input', e=>{ if(e.target.closest('.avedit')) avEditSucio=true; });
@@ -1825,16 +1836,19 @@ select.combo-oculto{display:none}
   $('#avBody').addEventListener('toggle', e=>{ const d=e.target; if(d.dataset&&d.dataset.avdet){ if(d.open) avEdit=d.dataset.avdet; else if(avEdit===d.dataset.avdet) avEdit=''; } }, true);
   $('#avBody').addEventListener('click', e=>{ const t=e.target;
     { const rt=t.closest('[data-avreint]'); if(rt){ rt.disabled=true; rt.textContent='Guardando…'; if(rt.dataset.avreint==='recargar'){ openAvance(avId); return; } const fz=!!rt.dataset.forzar; if(rt.dataset.avreint==='fechas') guardarAvF('Fechas y horario guardados', fz); else guardarAv('Avance guardado', avFallaA?avFallaA.donde:'', fz); return; } }
+    if(t.dataset && t.dataset.avq!==undefined){ const rw=t.closest('[data-avrow]'), i=rw&&rw.querySelector('[data-avp]'); if(i){ i.value=t.dataset.avq; rw.querySelectorAll('.ecchips label').forEach(l=>l.classList.toggle('on', l.contains(t))); marcarNumero(i); avEditSucio=true; } return; }   /* se atiende el toque (no solo el cambio): tocar otra vez la casilla ya marcada vuelve a poner su valor */
     const cg=t.closest('[data-avcarga]'); if(cg){ avCarga=cg.dataset.avcarga; avEditSucio=false; renderAvSheet(); const i=document.querySelector(`[data-avp="${avCarga}"]`); if(i){ i.focus(); try{ i.select(); }catch(_){} } return; }
     if(t.closest('[data-avcancel]')){ avCarga=''; avEditSucio=false; renderAvSheet(); avLimpiarMarca(); return; }
     const ok=t.closest('[data-avok]'); if(ok){ const a=avActs.find(x=>x.id===ok.dataset.avok), row=ok.closest('[data-avrow]'); if(!a||!row) return;
-      const v=parseNum(row.querySelector('[data-avp]').value), p=Math.round(Math.max(0,Math.min(100,isNaN(v)?0:v))*10)/10, det=row.querySelector('[data-avdetc]').checked && p<100;
+      const raw=row.querySelector('[data-avp]').value.trim(), v=parseNum(raw);
+      if(!raw || isNaN(v) || v<0 || v>100){ row.querySelector('[data-averr]').textContent = !raw ? 'Escribe el porcentaje de avance, de 0 a 100.' : isNaN(v) ? 'No se entiende el porcentaje: escribe un número de 0 a 100.' : 'El porcentaje va de 0 a 100.'; try{ row.querySelector('[data-avp]').focus(); }catch(_){} return; }
+      const p=Math.round(v*10)/10, det=row.querySelector('[data-avdetc]').checked && p<100;
       const fr=row.querySelector('[data-avfreno]').value, pq=row.querySelector('[data-avporque]').value.trim().replace(/\s+/g,' ').slice(0,200);
       if(det && !fr && !pq){ row.querySelector('[data-averr]').textContent='Di qué la está frenando o escribe por qué está detenida.'; row.querySelector('[data-avfreno]').focus(); return; }
       if(pctAct(a)!==p) a.pct=p; if(det){ if(!a.detenida||!a.detenidaDesde) a.detenidaDesde=today(); a.detenida=true; a.freno=fr; a.porque=pq; } else if(a.detenida||a.freno||a.porque||a.detenidaDesde){ a.detenida=false; a.freno=''; a.porque=''; a.detenidaDesde=''; }   /* confirmar lo mismo no escribe campos que nadie tocó */
       avCarga=''; avEditSucio=false; marcarCambio('#avSheet'); renderAvSheet(); guardarAv(`Avance guardado: ${a.nombre.length>40?a.nombre.slice(0,39)+'…':a.nombre}, ${avPct(p)}`, a.id); return; }
     const del=t.closest('[data-avdel]'); if(del){ const id=del.dataset.avdel; if(avDelArmed!==id){ avDelArmed=id; avEdit=id; avRepintar(); return; } avActs=avActs.filter(x=>x.id!==id); avDelArmed=''; avEdit=''; if(avCarga===id){ avCarga=''; avEditSucio=false; } marcarCambio('#avSheet'); avRepintar(); guardarAv('Actividad eliminada'); return; }
-    if(t.closest('#avAdd')){ const ad=$('#avAdic').checked, ls=$('#avTxt').value.split(/\n+/).map(x=>x.replace(/^\s*(?:\d+\s*[.)\-:]|[•\-*·])\s*/,'').trim().replace(/\s+/g,' ').replace(/[.;,:]+$/,'').slice(0,160)).filter(Boolean);
+    if(t.closest('#avAdd')){ const ad=$('#avAdic').checked, ls=$('#avTxt').value.split(/\n+/).map(x=>x.replace(/^\s*(?:\d+\s*[.)\-:](?!\d)|[•\-*·])\s*/,'').trim().replace(/\s+/g,' ').replace(/[.;,:]+$/,'').slice(0,160)).filter(Boolean);
       if(!ls.length){ $('#avErr').textContent='Escribe al menos una actividad.'; return; }
       ls.forEach((n,i)=>avActs.push({id:'a'+Date.now().toString(36)+i.toString(36)+Math.random().toString(36).slice(2,5), nombre:n, pct:0, peso:1, adicional:ad}));
       $('#avTxt').value=''; marcarCambio('#avSheet'); avRepintar(); guardarAv(`${ls.length} ${ls.length===1?'actividad agregada':'actividades agregadas'}`); return; }
@@ -1858,14 +1872,29 @@ select.combo-oculto{display:none}
   const HOJAS_LECTURA=['shareSheet','ctaSheet','trSheet'];   /* solo se leen o se copian: no tienen nada que guardar */
   const TXT_SUCIA='Tienes datos sin guardar. Toca otra vez para descartarlos.';
   let cierreArmado=0, abriendoHoja=0;
+  /* Aviso que pide un segundo toque (fecha futura, monto muy alto, trabajo repetido…): la primera vez muestra el mensaje y no sigue; la segunda, con lo mismo, sigue. Al abrir una hoja se olvidan todos. */
+  let avisosArm={};
+  function dobleToque(k, msg, el){ if(avisosArm[k] && Date.now()-avisosArm[k]<120000){ delete avisosArm[k]; return true; } avisosArm[k]=Date.now(); el.textContent=msg; return false; }
+  const TOPE_SUAVE=1e7, TOPE_DURO=1e12;   /* sobre 10.000.000 pide confirmar; desde 1.000.000.000.000 no se acepta */
   function marcarCambio(h){ const sh=typeof h==='string'?$(h):h; if(sh && !abriendoHoja && !HOJAS_LECTURA.includes(sh.id)) sh.dataset.dirty='1'; }
   function hojaLimpia(h){ const sh=typeof h==='string'?$(h):h; if(sh) sh.dataset.dirty=''; cierreArmado=0; }
   const hojaSucia = () => [...document.querySelectorAll('section.sheet')].find(x=>!x.hidden && x.dataset.dirty==='1');
-  function openSheet(id){ soltarIntento(id); quitarChoque(id); if(id==='#shareSheet'){ const b=$('#btnCurva'); if(b) b.hidden=!avCurvaOn; avCurvaOn=false; } $('#scrim').hidden=false; $(id).hidden=false; $(id).dataset.dirty=''; cierreArmado=0; $('#toast').hidden=true; document.body.style.overflow='hidden';
+  function openSheet(id){ avisosArm={}; soltarIntento(id); quitarChoque(id); if(id==='#shareSheet'){ const b=$('#btnCurva'); if(b) b.hidden=!avCurvaOn; avCurvaOn=false; } $('#scrim').hidden=false; $(id).hidden=false; $(id).dataset.dirty=''; cierreArmado=0; $('#toast').hidden=true; document.body.style.overflow='hidden';
     abriendoHoja++; Promise.resolve().then(()=>{ abriendoHoja=Math.max(0,abriendoHoja-1); }); }
   /* Los buscadores (la casilla de un selector con buscador y los filtros marcados con data-sinmarca) no son cambios */
   const marcaDeEvento = e => { const t=e.target, sh=t&&t.closest&&t.closest('section.sheet'); if(sh && !(t.classList&&t.classList.contains('combo-in')) && !(t.hasAttribute&&t.hasAttribute('data-sinmarca'))) marcarCambio(sh); };
   document.addEventListener('input', marcaDeEvento, true); document.addEventListener('change', marcaDeEvento, true);
+  /* Campos de monto: lo que no se entiende (letras, comas y puntos mezclados) o es absurdamente grande se marca en rojo con su aviso y la hoja no guarda; antes se leía como cero o se adivinaba */
+  function malNumero(i){ const v=String(i.value||'').trim(); if(!v) return ''; const n=parseNum(v); if(isNaN(n)) return 'No se entiende este número. Escríbelo como 1.234,56 (punto para los miles y coma para los decimales).'; if(Math.abs(n)>=TOPE_DURO) return 'Este número es demasiado grande: revisa los ceros.'; return ''; }
+  function marcarNumero(i){ const m=malNumero(i); i.classList.toggle('num-malo', !!m); if(m) i.setAttribute('aria-invalid','true'); else i.removeAttribute('aria-invalid');
+    const lb=i.parentElement; if(lb && lb.tagName==='LABEL'){ let s=lb.querySelector(':scope>.num-msg'); if(m){ if(!s){ s=document.createElement('small'); s.className='num-msg'; s.setAttribute('role','alert'); lb.appendChild(s); } s.textContent=m; } else if(s) s.remove(); } else i.title=m;
+    return m; }
+  const esNumero = e => e.target && e.target.matches && e.target.matches('input[inputmode="decimal"]');
+  document.addEventListener('input', e=>{ if(esNumero(e)) marcarNumero(e.target); }, true); document.addEventListener('change', e=>{ if(esNumero(e)) marcarNumero(e.target); }, true);
+  function numeroMaloEn(sh){ return [...sh.querySelectorAll('input[inputmode="decimal"]')].find(i=>!i.disabled && !i.readOnly && i.getClientRects().length && malNumero(i)); }
+  function frenoNumero(e){ const b=e.target.closest && e.target.closest('button.pri, button[type=submit]'), f=e.type==='submit'?e.target:null, sh=(b||f||{}).closest && (b||f).closest('section.sheet'); if(!sh || sh.id==='aiSheet') return; const i=numeroMaloEn(sh); if(!i) return;
+    e.preventDefault(); e.stopImmediatePropagation(); const m=marcarNumero(i); try{ i.scrollIntoView({block:'center'}); i.focus(); }catch(_){} toast('Revisa el número marcado en rojo: '+m); }
+  document.addEventListener('click', frenoNumero, true); document.addEventListener('submit', frenoNumero, true);
   /* Lo escrito en una hoja no se pierde por un toque fuera: la primera vez avisa, la segunda descarta */
   function intentarCerrar(){
     /* Avance guarda solo: si todavía está guardando, se espera el resultado antes de decidir (ni aviso falso ni cierre sin saber) */
@@ -1878,7 +1907,7 @@ select.combo-oculto{display:none}
   /* =====================================================================
      GUARDADO SEGURO: todo o nada, identificadores estables por intento, cola del teléfono y causa real de cada error
      ===================================================================== */
-  const APP_VERSION='145';
+  const APP_VERSION='146';
   let dbRaiz=null;                                       /* la base de datos (se asigna al arrancar) */
   const cacheActiva = () => !!window.__persistencia;     /* versión independiente con la caché del teléfono activa: lo escrito queda en cola y sube solo */
   const sinRed = () => typeof navigator!=='undefined' && navigator.onLine===false;
@@ -2121,6 +2150,8 @@ select.combo-oculto{display:none}
     const md=$('#pModo').value;
     if(md==='banco' && (isNaN(t)||t<=0)){ $('#formErr').textContent='Escribe la tasa acordada en bolívares por dólar.'; return false; }
     if(md==='banco' && !confirmarTasa(t, $('#pFecha').value||today(), x=>{ $('#formErr').textContent=x; })) return false;
+    { const fp=$('#pFecha').value||today(); if(fp>today() && !dobleToque('fut|'+fp, `La fecha del pago (${fdate(fp)}) es posterior a hoy: el saldo del trabajo baja, pero ese dinero no entra a la caja hasta ese día. Si la fecha es correcta, toca otra vez.`, $('#formErr'))) return false; }
+    if(m>TOPE_SUAVE && !dobleToque('alto|'+m, `El monto del pago (${usd(m)}) es muy alto. Revisa los ceros; si es correcto, toca otra vez.`, $('#formErr'))) return false;
     const comp = $('#pComp').checked ? [...document.querySelectorAll('#pTgts input:checked')].map(x=>x.value) : [];
     if($('#pComp').checked && !comp.length){ $('#formErr').textContent='Marca los trabajos que compensa este pago.'; return false; }
     /* Sin sobrepagos: un pago normal no pasa del saldo; uno que compensa otros trabajos no pasa del saldo de este más el de esos */
@@ -2162,8 +2193,9 @@ select.combo-oculto{display:none}
   function renderTgts(marcados){
     const box=$('#pTgts'); box.hidden=!$('#pComp').checked;
     const cli=$('#iCliente').value.trim();
-    const otros=docs.filter(x=>x.id!==editingId && etapa(x)!=='cobrado' && (!cli || (x.cliente||'')===cli)).sort(byOrden);
-    box.innerHTML = otros.length ? otros.map(x=>`<label><input type="checkbox" value="${esc(x.id)}"${marcados.includes(x.id)?' checked':''}><span>${esc(nombre(x))} · ${usd(num(x.monto))}</span></label>`).join('') : '<div style="color:var(--muted);font-size:13.5px">No hay otros trabajos pendientes de este cliente.</div>';
+    const otros=docs.filter(x=>x.id!==editingId && (marcados.includes(x.id) || (etapa(x)!=='cobrado' && (!cli || (x.cliente||'')===cli)))).sort(byOrden);   /* los trabajos que el pago ya compensa siempre salen, aunque ya estén cobrados */
+    const ya=marcados.map(id=>docs.find(x=>x.id===id)).filter(Boolean), yaTodos=ya.length>0 && ya.every(x=>etapa(x)==='cobrado');
+    box.innerHTML = (yaTodos?'<div style="color:var(--so);font-size:13.5px;margin-bottom:6px">Los trabajos marcados ya se cobraron por su cuenta: esta compensación ya no aplica. Puedes dejarla como está o desmarcarlos para quitarla.</div>':'') + (otros.length ? otros.map(x=>`<label><input type="checkbox" value="${esc(x.id)}"${marcados.includes(x.id)?' checked':''}><span>${esc(nombre(x))} · ${usd(num(x.monto))}</span></label>`).join('') : '<div style="color:var(--muted);font-size:13.5px">No hay otros trabajos pendientes de este cliente.</div>');
   }
   function editPago(i){
     const c=draft.cobros[i]; if(!c) return; let j=i;
@@ -2188,8 +2220,12 @@ select.combo-oculto{display:none}
     if(!cliSel || cliSel==='__nuevo'){ $('#formErr').textContent = cliSel==='__nuevo' ? 'Termina de agregar el cliente nuevo o elige uno de la lista.' : 'Elige el cliente.'; return; }
     if($('#iUnidad').value==='__nuevo'){ $('#formErr').textContent='Termina de agregar la unidad nueva o elige una de la lista.'; return; }
     if(isNaN(monto)||monto<=0){ $('#formErr').textContent='Escribe un monto mayor que cero (por ejemplo 1.435,00).'; return; }
+    if(monto>=TOPE_DURO){ $('#formErr').textContent='El monto es demasiado grande: revisa los ceros.'; return; }
+    if(monto>TOPE_SUAVE && !dobleToque('altoT|'+monto, `El monto del trabajo (${usd(monto)}) es muy alto. Revisa los ceros; si es correcto, toca Guardar otra vez.`, $('#formErr'))) return;
+    { const pv=$('#pMonto').value.trim(); if(pv && !pagoPendiente()){ $('#formErr').textContent='El monto del pago no es válido: escribe un número mayor que cero (por ejemplo 1.250,00) o borra el campo para guardar sin ese pago.'; try{ $('#pMonto').focus(); }catch(_){} return; } }
+    { const cobH=r2(sum(draft.cobros||[],c=>num(c.monto))); if(!$('#iCancelado').checked && monto<cobH-0.005 && !dobleToque('menor|'+monto+'|'+cobH, `El monto (${usd(monto)}) es menor que lo ya cobrado (${usd(cobH)}): el trabajo quedaría cobrado y sobrarían ${usd(r2(cobH-monto))} que ninguna cifra muestra. Si es lo que quieres (por ejemplo, al dividir el trabajo), toca Guardar otra vez.`, $('#formErr'))) return; }
     if(!editingId){ const dupT=docs.find(d=>d.id!==idsIntento['#sheet|trabajo'] && !d.cancelado && norm(d.descripcion||'')===norm(desc) && (d.cliente||'')===$('#iCliente').value.trim() && (d.unidad||'')===$('#iUnidad').value.trim() && Math.abs(num(d.monto)-monto)<0.005); const kD=desc+'|'+monto;
-      if(dupT && $('#formErr').dataset.dup!==kD){ $('#formErr').dataset.dup=kD; $('#formErr').textContent=`Ya existe un trabajo igual para esta unidad${dupT.ods?' ('+dupT.ods+')':''}. Si es otro, toca Guardar otra vez.`; return; } }
+      if(dupT && !dobleToque('dup|'+kD, `Ya existe un trabajo igual para esta unidad${dupT.ods?' ('+dupT.ods+')':''}. Si es otro, toca Guardar otra vez.`, $('#formErr'))) return; }
     if(pagoPendiente() && !addPago()) return;   // el pago escrito y no agregado se agrega solo; si tiene un error, no se guarda nada
     const C=cuerpoTrabajo(), ah=new Date().toISOString(); let body, op, anotar=null;
     if(editingId){
@@ -2300,16 +2336,23 @@ select.combo-oculto{display:none}
       const t=parseNum($('#bTasa').value);
       const md=$('#bModo').value;
       if(md==='banco' && (isNaN(t)||t<=0)){ $('#bErr').textContent='Escribe la tasa acordada en bolívares por dólar.'; return; }
+      { const neg=items.filter(d=>{ const i=document.querySelector(`#bList [data-bm="${d.id}"]`); return i && parseNum(i.value)<0; }); if(neg.length){ $('#bErr').textContent=`El monto a cobrar no puede ser negativo: ${neg.map(d=>d.descripcion).join('; ')}.`; return; } }
       const exceso=items.filter(d=>montoBulk(d)>saldo(d)+0.004);
       if(exceso.length){ $('#bErr').textContent=`El monto a cobrar supera el saldo en: ${exceso.map(d=>`${d.descripcion} (saldo ${usd(saldo(d))})`).join('; ')}.`; return; }
       const conSaldo=items.filter(d=>saldo(d)>0 && montoBulk(d)>0);
       if(!conSaldo.length){ $('#bErr').textContent='Escribe el monto a cobrar de al menos un trabajo.'; return; }
+      { const fB=$('#bFecha').value||today(), totB=sum(items,montoBulk), e=$('#bErr');
+        if(md==='banco' && !confirmarTasa(t, fB, x=>{ e.textContent=x; })) return;   /* igual que en la hoja de un trabajo: una tasa que se aleja mucho de la del día pide un segundo toque */
+        if(fB>today() && !dobleToque('fut|'+fB, `La fecha del cobro (${fdate(fB)}) es posterior a hoy: el saldo de los trabajos baja, pero ese dinero no entra a la caja hasta ese día. Si la fecha es correcta, toca Confirmar otra vez.`, e)) return;
+        if(totB>TOPE_SUAVE && !dobleToque('alto|'+totB, `El total de la factura (${usd(totB)}) es muy alto. Revisa los ceros; si es correcto, toca Confirmar otra vez.`, e)) return; }
       const pago={tasa:md==='banco'?t:0, cuenta:md, numFactura:$('#bNum').value.trim(), fecha:$('#bFecha').value||today(), ref:''};
       const montos=conSaldo.map(d=>[d,r2(montoBulk(d))]);
       const parciales=montos.filter(([d,m])=>m<saldo(d)-0.004).length, ah=new Date().toISOString();
       /* Todos los abonos de la factura entran juntos o no entra ninguno */
-      const ops=montos.map(([d,m])=>opUpd('facturas', d.id, {cobros:[...(d.cobros||[]), {...pago, monto:m}], actualizado:ah}, `el abono a «${String(d.descripcion||'').slice(0,40)}»`));
-      const fin=()=>{ sel.clear(); selMode=false; closeSheets(); render(); toast(parciales ? `Cobro registrado · ${parciales} ${parciales===1?'abono parcial':'abonos parciales'}` : `${conSaldo.length} ${conSaldo.length===1?'trabajo cobrado':'trabajos cobrados'}`); };
+      /* Los bolívares se reparten desde el total de la factura (el resto va al último abono): la suma de los abonos es exactamente el total mostrado */
+      let bsResto=md==='banco'?r2(sum(montos,([,m])=>m)*t):0;
+      const ops=montos.map(([d,m],i)=>{ let bsI=0; if(md==='banco'){ bsI=i===montos.length-1?bsResto:r2(m*t); bsResto=r2(bsResto-bsI); } return opUpd('facturas', d.id, {cobros:[...(d.cobros||[]), {...pago, monto:m, ...(md==='banco'?{montoBs:bsI}:{})}], actualizado:ah}, `el abono a «${String(d.descripcion||'').slice(0,40)}»`); });
+      const fin=()=>{ if(md==='banco' && t>0 && pago.fecha<=today()) aprenderTasa(pago.fecha, t, 'cobro'); sel.clear(); selMode=false; closeSheets(); render(); toast(parciales ? `Cobro registrado · ${parciales} ${parciales===1?'abono parcial':'abonos parciales'}` : `${conSaldo.length} ${conSaldo.length===1?'trabajo cobrado':'trabajos cobrados'}`); };
       await conBoton(btn, 'Confirmar', async()=>{ try{ await guardarOps('#bulkSheet', firmaB, ops, 'el cobro de varios trabajos', fin); fin(); }catch(err){ $('#bErr').textContent=errMsg(err); } });
     } else {
       const f=$('#bFechaEj').value||today(), ah=new Date().toISOString();
@@ -2342,14 +2385,14 @@ select.combo-oculto{display:none}
   const ecPasa = d => EC_DIMS.every(([k,,,f])=>(ecF.dim[k]||[]).includes(f(d)));
   const filaVacia = dim => (EC_DIMS.find(([k])=>!(dim[k]||[]).length)||[])[1]||'';
   /* Filtros específicos del estado de cuenta: una orden, una requisición o una búsqueda. Con uno de ellos el trabajo sale esté en la etapa que esté. */
-  const ecEspecifico = () => !!(ecF.ods || ecF.req || String(ecF.buscar||'').trim());
+  const ecEspecifico = () => !!(ecF.ods || ecF.req || normBus(ecF.buscar));
   const ecSel = k => true;   /* las secciones del reporte salen según lo que pase el filtro */
   function ecBase(){
-    const q=String(ecF.buscar||'').trim().toLowerCase();
+    const q=normBus(ecF.buscar);
     return docs.filter(d=>(!ecF.cliente||(d.cliente||'')===ecF.cliente) && (!ecF.unidad||(d.unidad||'')===ecF.unidad)
       && (!ecF.ods||String(d.ods||'').trim()===ecF.ods) && (!ecF.req||String(d.nota||'').trim()===ecF.req)
       && (ecEspecifico() || ecPasa(d))
-      && (!q||[d.descripcion,d.ods,d.nota,d.unidad,d.cliente,d.numFactura].some(x=>String(x||'').toLowerCase().includes(q)))).sort(byOrden);
+      && (!q||[d.descripcion,d.ods,d.nota,d.unidad,d.cliente,d.numFactura,...(d.cobros||[]).map(c=>c.numFactura)].some(x=>normBus(x).includes(q)))).sort(byOrden);
   }
   const ecTitulo = () => `${ecF.cliente?' · '+ecF.cliente:''}${ecF.unidad?' · '+ecF.unidad:''}${ecF.ods?' · Orden '+ecF.ods:''}${ecF.req?' · Req. '+ecF.req:''}`;
   const listaOrdenes = (cli,uni) => [...new Set(docs.filter(d=>(!cli||(d.cliente||'')===cli)&&(!uni||(d.unidad||'')===uni)&&tieneOrden(d)).map(d=>String(d.ods).trim()))].sort((x,y)=>x.localeCompare(y,'es',{numeric:true}));
@@ -2388,7 +2431,8 @@ select.combo-oculto{display:none}
     if('sinOrden' in totGrupo) lineas.push(`*Total ejecutado pendiente de orden de servicio: ${usd(totGrupo.sinOrden)}*`);
     if('sinOrdenSinEj' in totGrupo) lineas.push(`*Total sin orden de servicio, por ejecutar: ${usd(totGrupo.sinOrdenSinEj)}*`);
     const grupos=[hayF,'sinOrden' in totGrupo,'sinOrdenSinEj' in totGrupo].filter(Boolean).length;
-    if(lineas.length){ L.push(''); L.push(...lineas); if(grupos>1) L.push(`*Total general pendiente: ${usd(Object.values(totGrupo).reduce((a,b)=>a+b,0))}*`); }
+    /* Total general pendiente = lo mismo que «Pendiente por cobrar» de Cobranzas y del Resumen: lo sin orden de servicio y por ejecutar no entra */
+    if(lineas.length){ L.push(''); L.push(...lineas); if(grupos>1){ L.push(`*Total general pendiente: ${usd(Object.entries(totGrupo).filter(([k])=>k!=='sinOrdenSinEj').reduce((a,[,v])=>a+v,0))}*`); if('sinOrdenSinEj' in totGrupo) L.push('_No incluye los trabajos sin orden de servicio, por ejecutar._'); } }
     return L.join('\n');
   }
   /* Versión corta: número de orden y monto pendiente */
@@ -2416,11 +2460,12 @@ select.combo-oculto{display:none}
       ['Ejecutados, pendientes de orden de servicio', sel('sinOrden')?base.filter(pred('sinOrden')):[]],
       ['Sin orden de servicio, por ejecutar', sel('sinOrdenSinEj')?base.filter(pred('sinOrdenSinEj')):[]],
     ].filter(g=>g[1].length);
-    const pend=grupos.flatMap(g=>g[1]), general=sum(pend,saldo);
-    if(pend.length){
+    const g3=grupos.find(g=>g[0]==='Sin orden de servicio, por ejecutar'), pendG=grupos.filter(g=>g!==g3).flatMap(g=>g[1]), general=sum(pendG,saldo);   /* el total general es el pendiente por cobrar: lo sin orden y por ejecutar no entra */
+    if(grupos.length){
       if(C.subt) grupos.forEach(([t,it])=>{ L.push(''); L.push(`*${t}*`); it.forEach(d=>L.push(lineaPend(d))); L.push(`*Subtotal: ${usd(sum(it,saldo))}*`); });
       else grupos.forEach(([t,it])=>{ L.push(''); L.push(`*${t}*`); it.forEach(d=>L.push(lineaPend(d))); });   /* cada grupo con su título aunque no se pidan subtotales: el cliente debe ver cuáles tienen orden y cuáles no */
-      L.push(''); L.push(`*Total general pendiente: ${usd(general)}*`);
+      if(pendG.length){ L.push(''); L.push(`*Total general pendiente: ${usd(general)}*`); if(g3) L.push(`_No incluye los trabajos sin orden de servicio, por ejecutar (${usd(sum(g3[1],saldo))})._`); }
+      else if(g3){ L.push(''); L.push(`*Total sin orden de servicio, por ejecutar: ${usd(sum(g3[1],saldo))}*`); }
     }
     if(sel('cobrado')){ const it=base.filter(pred('cobrado')); if(it.length){ L.push(''); L.push('*Cobrados*'); it.forEach(d=>{ const f=[...new Set((d.cobros||[]).map(c=>String(c.numFactura||'').trim()).filter(Boolean))]; L.push(linea(d, pagado(d), f.length?' · Factura N° '+f.join(', '):'')); }); L.push(`*Total de los trabajos cobrados: ${usd(sum(it,pagado))}*`); } }
     if(L.length===2){ L.push(''); L.push('No hay trabajos con estos filtros.'); }
@@ -2553,7 +2598,7 @@ select.combo-oculto{display:none}
     const det=costF.formato==='detallado';
     base.forEach(({d,c})=>{
       const enEj=!d.ejecutado&&!d.cancelado;
-      L.push(''); L.push(`*${d.descripcion}${d.unidad?' · '+d.unidad:''}${tieneOrden(d)?' · '+d.ods:d.nota?' · '+d.nota:''}*${enEj?' _(en ejecución)_':d.cancelado?' _(cancelado)_':!c.cerrada?' _(ejecutado, por cobrar)_':''}`);
+      L.push(''); L.push(`*${d.descripcion}${d.unidad?' · '+d.unidad:''}${tieneOrden(d)?' · '+d.ods:d.nota?' · '+d.nota:''}*${enEjecucion(d)?' _(en ejecución)_':d.cancelado?' _(cancelado)_':!d.ejecutado?' _(por ejecutar)_':!c.cerrada?' _(ejecutado, por cobrar)_':''}`);
       L.push(d.cancelado ? `Cancelado · Monto original: ${usd(c.monto)} · Cobrado (lo que cuenta): ${usd(c.cobrado)}` : `Monto: ${usd(c.monto)} · Cobrado: ${usd(c.cobrado)} · Por cobrar: ${usd(r2(Math.max(0,c.monto-c.cobrado)))}`);
       /* Mano de obra: cuánto y quién; cada persona con sus jornadas y horas extra */
       const nT=Object.keys(c.porT).length;
@@ -2598,6 +2643,7 @@ select.combo-oculto{display:none}
     return L.join('\n');
   }
   function renderCostFiltros(){
+    if(costF.trabajo){ const tz=docs.find(x=>x.id===costF.trabajo); if(!tz || (costF.cliente && (tz.cliente||'')!==costF.cliente)) costF.trabajo=''; }
     const cls=listaClientes();
     const chip=(k,l,on)=>`<label class="${on?'on':''}"><input type="checkbox" data-cf="${k}"${on?' checked':''}> ${l}</label>`;
     $('#ecFiltros').innerHTML = `
@@ -2610,6 +2656,7 @@ select.combo-oculto{display:none}
   }
   function abrirCostos(){
     shareMode='cost'; costF.cliente=cliente||costF.cliente;
+    if(costF.trabajo){ const tz=docs.find(x=>x.id===costF.trabajo); if(!tz || (costF.cliente && (tz.cliente||'')!==costF.cliente)) costF.trabajo=''; }   /* un trabajo elegido antes que ya no es de este cliente no debe dejar el reporte vacío */
     $('#shareTitle').textContent='Costo por orden de trabajo';
     $('#shareDesc').textContent='Lo que se le ha cargado a cada orden (mano de obra, materiales y gastos directos) contra el monto y lo cobrado. Formato de WhatsApp.';
     $('#ecFiltros').hidden=false; renderCostFiltros();
