@@ -1732,10 +1732,17 @@ input,select,textarea{min-width:0;max-width:100%}
         e=>{ avEnVuelo--; if(avId!==id || $('#avSheet').hidden){ toast('No se guardó el avance: '+errMsg(e)); return; }
           avFallaA={donde:(e&&e.choque&&e.choque[0])||donde||'', msg:errMsg(e), choque:!!(e&&e.choque)}; marcarCambio('#avSheet'); avRepintar(); const x=document.querySelector('#avSheet .avfalla'); if(x&&x.scrollIntoView) x.scrollIntoView({block:'center'}); toast(e&&e.choque?'Este registro cambió desde otro teléfono: mira el aviso en rojo':'No se guardó el avance: mira el aviso en rojo'); }); }
   /* Qué incluye el reporte de avance: 'todo', 'sin0' (sin las que están en 0 %) u 'hoy' (lo que avanzó hoy más lo ya terminado). Se recuerda en este teléfono. */
-  let avRepModo=(()=>{ try{ const v=localStorage.getItem('avRepModo'); return ['todo','sin0','hoy'].includes(v)?v:'todo'; }catch(_){ return 'todo'; } })();
-  function renderAvRepFiltros(){ const ops=[['todo','Todas'],['sin0','Sin las de 0 %'],['hoy','Hoy y terminadas']];
-    $('#ecFiltros').innerHTML=`<div class="seg" role="group" aria-label="Qué actividades salen en el reporte">${ops.map(([k,t])=>`<button type="button" data-avrm="${k}" aria-pressed="${k===avRepModo}"${k===avRepModo?' class="on"':''}>${t}</button>`).join('')}</div>
-      <div class="tip" style="border:0;margin:6px 0 8px">${avRepModo==='todo'?'Salen todas las actividades, también las que no han empezado.':avRepModo==='sin0'?'Las que están en 0 % no se listan: sale solo cuántas son.':'Sale lo que avanzó hoy y lo ya terminado; del resto, solo cuántas son.'} El avance total siempre cuenta todas.</div>`;
+  let avRepModo=(()=>{ try{ const v=localStorage.getItem('avRepModo'); return ['todo','sin0','hoy','det'].includes(v)?v:'todo'; }catch(_){ return 'todo'; } })(), avRepFreno='', avRepParte='';
+  const frenoDe = a => FRENOS.includes(a.freno) && a.freno!=='Otro' ? a.freno : 'Otro';   // sin motivo elegido cuenta como «Otro motivo»
+  const avRepVe = a => avRepParte==='ods' ? !a.adicional : avRepParte==='adic' ? !!a.adicional : true;
+  function renderAvRepFiltros(){ const ch='padding:7px 10px;font-size:13px', hayDos=avActs.some(a=>a.adicional) && avActs.some(a=>!a.adicional), dets=avActs.filter(a=>avRepVe(a) && estAct(a)==='det');
+    if(!hayDos) avRepParte=''; if(avRepFreno && !dets.some(a=>frenoDe(a)===avRepFreno)) avRepFreno='';
+    const ops=[['todo','Todas'],['sin0','Sin las de 0 %'],['hoy','Hoy y terminadas'],['det',`Detenidas${dets.length?' · '+dets.length:''}`]];
+    const tip={todo:'Salen todas las actividades, también las que no han empezado.', sin0:'Las que están en 0 % no se listan: sale solo cuántas son.', hoy:'Sale lo que avanzó hoy y lo ya terminado; del resto, solo cuántas son.', det:'Salen solo las detenidas, agrupadas por lo que las frena y con la fecha desde que están paradas.'}[avRepModo];
+    $('#ecFiltros').innerHTML=`<div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))" role="group" aria-label="Qué actividades salen en el reporte">${ops.map(([k,t])=>`<button type="button" data-avrm="${k}" aria-pressed="${k===avRepModo}"${k===avRepModo?' class="on"':''}>${t}</button>`).join('')}</div>
+      ${avRepModo==='det' && dets.length?`<div class="chips" role="group" aria-label="Detenidas por qué motivo"><button type="button" class="ghost${!avRepFreno?' on':''}" style="${ch}" data-avrf="" aria-pressed="${!avRepFreno}">Todos los motivos</button>${FRENOS.filter(f=>dets.some(a=>frenoDe(a)===f)).map(f=>`<button type="button" class="ghost${avRepFreno===f?' on':''}" style="${ch}" data-avrf="${esc(f)}" aria-pressed="${avRepFreno===f}">${f==='Otro'?'Otro motivo':f} · ${dets.filter(a=>frenoDe(a)===f).length}</button>`).join('')}</div>`:''}
+      ${hayDos?`<div class="chips" role="group" aria-label="Qué parte de la orden sale">${[['','ODS y adicionales'],['ods','Solo la ODS'],['adic','Solo adicionales']].map(([k,t])=>`<button type="button" class="ghost${avRepParte===k?' on':''}" style="${ch}" data-avrp="${k}" aria-pressed="${avRepParte===k}">${t}</button>`).join('')}</div>`:''}
+      <div class="tip" style="border:0;margin:6px 0 8px">${tip} El avance total siempre cuenta todas.</div>`;
     $('#ecFiltros').hidden=false; }
   function buildAvance(d, acts, modo){ modo=modo||avRepModo;
     const base=acts.filter(a=>!a.adicional), adic=acts.filter(a=>a.adicional), L=['*WORKPROCA, Trabajos Profesionales C.A.*', `*Reporte de avance · ${d.descripcion||''}*`];
@@ -1756,9 +1763,18 @@ input,select,textarea{min-width:0;max-width:100%}
       [['fin','Terminadas'],['eje','En ejecución'],['det','Detenidas'],['ini','Por iniciar']].forEach(([k,t])=>{ const g=de(k); if(!g.length) return;
         if(k==='ini' && modo==='sin0'){ L.push(`_Por iniciar: ${cuantas(g.length,'actividad','actividades')}_`); return; }
         L.push(`_${t}_`); g.forEach(a=>L.push(linea(a,n0[a.id]))); }); };
-    if(base.length){ L.push('', '*Actividades de la ODS*'); bloque(base); }
-    if(adic.length){ L.push('', '*Trabajos adicionales (no incluidos en la ODS)*'); bloque(adic); }
-    if(modo==='hoy' && acts.length && !acts.some(movioHoy)) L.push('', '_Hoy no se registró avance._');
+    const verB=avRepParte!=='adic', verA=avRepParte!=='ods';
+    if(modo==='det'){ const mot=avRepFreno, es=a=>estAct(a)==='det' && (!mot || frenoDe(a)===mot); let nDet=0;
+      const bloqueDet=(xs,tit)=>{ const n0={}; xs.forEach((a,i)=>n0[a.id]=i+1); const g=xs.filter(es); if(!g.length) return; nDet+=g.length; L.push('', tit);
+        FRENOS.filter(f=>g.some(a=>frenoDe(a)===f)).forEach(f=>{ L.push(`_${f==='Otro'?'Otro motivo':f}_`); porAvance(g.filter(a=>frenoDe(a)===f)).forEach(a=>{ const pq=String(a.porque||'').trim(), ds=/^\d{4}-\d{2}-\d{2}$/.test(a.detenidaDesde||'')?a.detenidaDesde:'', nd=ds?avDif(ds,hoyR):0;
+          L.push(`${n0[a.id]}. ${a.nombre}: ${avPct(pctAct(a))}${pq?' · '+pq:''}${ds?` · desde el ${fdate(ds)}${nd>0?` (${cuantas(nd,'día','días')})`:''}`:''}`); }); }); };
+      if(verB) bloqueDet(base,'*Actividades de la ODS*'); if(verA) bloqueDet(adic,'*Trabajos adicionales (no incluidos en la ODS)*');
+      L.push('', nDet ? `*Detenidas${mot?' por «'+(mot==='Otro'?'otro motivo':mot.toLowerCase())+'»':''}: ${cuantas(nDet,'actividad','actividades')}*` : `_No hay actividades detenidas${mot?' por ese motivo':''}._`);
+    } else {
+      if(base.length && verB){ L.push('', '*Actividades de la ODS*'); bloque(base); }
+      if(adic.length && verA){ L.push('', '*Trabajos adicionales (no incluidos en la ODS)*'); bloque(adic); }
+    }
+    if(modo==='hoy' && acts.length && !acts.filter(avRepVe).some(movioHoy)) L.push('', '_Hoy no se registró avance._');
     if(acts.length) L.push('', `*Avance total${base.length&&adic.length?' (ODS más adicionales)':''}: ${avPct(avanceActs(acts))}*`);
     if(acts.length && d.id===avId){ const c=avCurva(d, acts); if(c.fin && c.pHoy!==null) L.push(`Planificado a la fecha: ${avPct(c.pHoy)}`, `Fecha de compromiso: ${fdate(c.fin)}`); }
     return L.join('\n');
@@ -1895,8 +1911,8 @@ input,select,textarea{min-width:0;max-width:100%}
       if(!f){ toast('Elige la fecha del día con horario distinto'); return; } if(isNaN(h)||h<0||h>24){ toast('Pon las horas que se trabajan ese día, entre 0 y 24'); return; }
       avF={...avF, dias:{...(avF.dias||{}), [f]:Math.round(h*10)/10}}; marcarCambio('#avSheet'); avRepintar(); { const dh=$('#avDiaH'), df=$('#avDiaF'); if(dh) dh.value=''; if(df) df.value=''; } guardarAvF('Día con horario distinto guardado'); return; }
     { const q=t.closest('[data-avdiadel]'); if(q){ const ds={...(avF.dias||{})}; delete ds[q.dataset.avdiadel]; avF={...avF, dias:ds}; avHorOpen=true; marcarCambio('#avSheet'); avRepintar(); guardarAvF('Horario guardado'); return; } }
-    if(t.closest('#avRep')){ const d=docs.find(x=>x.id===avId); if(!d || !dejarHoja()) return; const txt=buildAvance(d, avActs);
-      shareMode='av'; avCurvaOn=true; renderAvRepFiltros(); $('#shareTitle').textContent='Reporte de avance'; $('#shareDesc').textContent='Porcentaje de cada actividad y avance total de la orden, con formato de WhatsApp.';
+    if(t.closest('#avRep')){ const d=docs.find(x=>x.id===avId); if(!d || !dejarHoja()) return; avRepFreno=''; avRepParte=''; const txt=buildAvance(d, avActs);
+      shareMode='av'; avCurvaOn=true; avRepFreno=''; avRepParte=''; renderAvRepFiltros(); $('#shareTitle').textContent='Reporte de avance'; $('#shareDesc').textContent='Porcentaje de cada actividad y avance total de la orden, con formato de WhatsApp.';
       $('#shareText').value=txt; $('#avSheet').hidden=true; openSheet('#shareSheet'); return; }
   });
 
@@ -1946,7 +1962,7 @@ input,select,textarea{min-width:0;max-width:100%}
   /* =====================================================================
      GUARDADO SEGURO: todo o nada, identificadores estables por intento, cola del teléfono y causa real de cada error
      ===================================================================== */
-  const APP_VERSION='149';
+  const APP_VERSION='150';
   let dbRaiz=null;                                       /* la base de datos (se asigna al arrancar) */
   const cacheActiva = () => !!window.__persistencia;     /* versión independiente con la caché del teléfono activa: lo escrito queda en cola y sube solo */
   const sinRed = () => typeof navigator!=='undefined' && navigator.onLine===false;
@@ -2537,6 +2553,7 @@ input,select,textarea{min-width:0;max-width:100%}
     $('#shareText').value=buildShare(); openSheet('#shareSheet');
   }
   $('#ecFiltros').addEventListener('click', e=>{
+    { const f=e.target.closest('[data-avrf]'), q=e.target.closest('[data-avrp]'); if(f||q){ if(f) avRepFreno=f.dataset.avrf; else avRepParte=q.dataset.avrp; renderAvRepFiltros(); const d=docs.find(x=>x.id===avId); if(d) $('#shareText').value=buildAvance(d, avActs); return; } }
     const am=e.target.closest('[data-avrm]'); if(am){ avRepModo=am.dataset.avrm; try{ localStorage.setItem('avRepModo', avRepModo); }catch(_){} renderAvRepFiltros(); const d=docs.find(x=>x.id===avId); if(d) $('#shareText').value=buildAvance(d, avActs); return; }
     const ir=e.target.closest('[data-ir]'); if(ir){ invRep.tipo=ir.dataset.ir; renderInvFiltros(); $('#shareText').value=buildInv(); return; }
     const ip=e.target.closest('[data-iper]'); if(ip){ invRep.periodo=ip.dataset.iper; renderInvFiltros(); $('#shareText').value=buildInv(); return; }
