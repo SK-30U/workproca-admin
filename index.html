@@ -1606,7 +1606,7 @@ input,select,textarea{min-width:0;max-width:100%}
         :`<div class="empty"><b>Todavía no hay órdenes con avance</b>${canWrite?'Elige un trabajo arriba y cárgale sus actividades.':''}</div>`}
       <div style="height:20px"></div>`;
   }
-  function openAvance(id){ const d=docs.find(x=>x.id===id); if(!d) return; avId=id; avActs=JSON.parse(JSON.stringify(actsDe(d))); avBase=JSON.parse(JSON.stringify(avActs)); avDelArmed=''; avEdit=''; avCarga=''; avAdicOpen=false; avFallaA=null; avFallaF=null; avEditSucio=false; avF={ini:d.avInicio||'', fin:d.avCompromiso||'', sab:!!d.avSabado, dom:!!d.avDomingo, horas:num(d.avHorasDia)>0?num(d.avHorasDia):8, dias:{...(d.avDiasEsp||{})}}; avFBase=avFDoc(avF); avFOrig=avFDe(d); avHorOpen=false; renderAvSheet(); openSheet('#avSheet'); }
+  function openAvance(id){ const d=docs.find(x=>x.id===id); if(!d) return; avId=id; avActs=JSON.parse(JSON.stringify(actsDe(d))); avBase=JSON.parse(JSON.stringify(avActs)); avDelArmed=''; avEdit=''; avCarga=''; avAdicOpen=false; avBus=''; avFallaA=null; avFallaF=null; avEditSucio=false; avF={ini:d.avInicio||'', fin:d.avCompromiso||'', sab:!!d.avSabado, dom:!!d.avDomingo, horas:num(d.avHorasDia)>0?num(d.avHorasDia):8, dias:{...(d.avDiasEsp||{})}}; avFBase=avFDoc(avF); avFOrig=avFDe(d); avHorOpen=false; renderAvSheet(); openSheet('#avSheet'); }
   /* Lo que esta hoja sabe que está guardado: las actividades (avBase) y las fechas y el horario (avFBase, como los escribiría la hoja; avFOrig, como están en el documento).
      Cada guardado se aplica sobre lo que haya AHORA en la orden: lo que esta hoja no tocó queda como esté en la base, aunque otro teléfono lo haya cambiado */
   let avBase=[], avFBase={}, avFOrig={};
@@ -1648,9 +1648,15 @@ input,select,textarea{min-width:0;max-width:100%}
     const v=q('[data-avp]') ? {p:q('[data-avp]').value, d:q('[data-avdetc]').checked, f:q('[data-avfreno]').value, w:q('[data-avporque]').value, e:q('[data-averr]').textContent} : null;
     renderAvSheet(); if(!v||!q('[data-avp]')) return; q('[data-avp]').value=v.p; q('[data-avdetc]').checked=v.d; q('[data-avfreno]').value=v.f; q('[data-avporque]').value=v.w; q('[data-averr]').textContent=v.e;
     document.querySelectorAll(`[data-avrow="${avCarga}"] [data-avdetf]`).forEach(x=>x.hidden=!v.d); }
+  function avFiltrar(){ const body=$('#avBody'); if(!body) return; const ps=normTxt(avBus).split(' ').filter(Boolean); let vis=0, tot=0;
+    body.querySelectorAll('[data-avrow]').forEach(r=>{ tot++; const id=r.dataset.avrow, a=avActs.find(x=>x.id===id), t=a?normTxt([a.nombre, a.detenida?a.freno:'', a.detenida?a.porque:''].filter(Boolean).join(' ')):'';
+      const ok=!ps.length || ps.every(w=>t.includes(w)) || id===avCarga || id===avEdit; r.hidden=!ok; if(ok) vis++; });   // la que se está cargando o editando no se esconde
+    body.querySelectorAll('.avgrp').forEach(g=>{ const l=g.nextElementSibling, hay=!!(l && l.querySelector('[data-avrow]:not([hidden])')); g.hidden=!hay; if(l && l.classList.contains('lns')) l.hidden=!hay; });
+    body.querySelectorAll('[data-avparte]').forEach(x=>{ x.hidden=!x.querySelector('[data-avrow]:not([hidden])'); });
+    const m=$('#avBusMsg'); if(m) m.textContent = !ps.length ? '' : vis ? `${vis} de ${tot} ${tot===1?'actividad':'actividades'}` : 'Ninguna actividad coincide con lo escrito.'; }
   function renderAvSheet(){
     const d=docs.find(x=>x.id===avId); if(!d) return;
-    const txt=($('#avTxt')||{}).value||'', adicChk=!!($('#avAdic')||{}).checked, adN=($('#avAdN')||{}).value||'', adH=($('#avAdH')||{}).value||'';
+    const busFoco=!!document.activeElement && document.activeElement.id==='avBus', txt=($('#avTxt')||{}).value||'', adicChk=!!($('#avAdic')||{}).checked, adN=($('#avAdN')||{}).value||'', adH=($('#avAdH')||{}).value||'';
     const base=avActs.filter(a=>!a.adicional), adic=avActs.filter(a=>a.adicional);
     const num0={}; base.forEach((a,i)=>num0[a.id]=i+1); adic.forEach((a,i)=>num0[a.id]=i+1);
     const wTot=sum(avActs,pesoAct), conPesos=avActs.some(a=>Math.abs(pesoAct(a)-1)>0.001);
@@ -1698,8 +1704,9 @@ input,select,textarea{min-width:0;max-width:100%}
           <div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" id="avDiaAdd">Agregar día</button></div>`:''}</details>`; })()}
         <div id="avCurvaBox"></div>
         <div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" id="avCurvaBtn">Compartir curva (imagen)</button></div>`:''}
-      ${base.length?`<div class="sech" style="font-size:16px">Actividades de la ODS · ${base.length}</div>${grupos(base)}`:''}
-      ${adic.length?`<div class="sech" style="font-size:16px">Trabajos adicionales · ${adic.length}</div><div class="tip" style="border:0;margin:0">Se listan aparte y también suman al avance total.</div>${grupos(adic)}`:''}
+      ${avActs.length?`<label class="f full" style="margin-top:14px">Buscar actividad<input id="avBus" data-sinmarca type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Ej.: boca de visita" value="${esc(avBus)}"></label><div class="tip" id="avBusMsg" style="border:0;margin:4px 0 0" aria-live="polite"></div>`:''}
+      ${base.length?`<div data-avparte><div class="sech" style="font-size:16px">Actividades de la ODS · ${base.length}</div>${grupos(base)}</div>`:''}
+      ${adic.length?`<div data-avparte><div class="sech" style="font-size:16px">Trabajos adicionales · ${adic.length}</div><div class="tip" style="border:0;margin:0">Se listan aparte y también suman al avance total.</div>${grupos(adic)}</div>`:''}
       ${canWrite?`<div class="row-btns" style="margin-top:12px"><button type="button" class="btn sec" id="avAdicBtn" aria-expanded="${avAdicOpen}">+ Trabajo adicional</button></div>${avAdicOpen?`<div class="grid" style="margin-top:8px"><label class="f full">Trabajo adicional (fuera de la ODS original)<input id="avAdN" maxlength="160" placeholder="Ej.: Fabricar e instalar orejas de seguro" value="${esc(adN)}"></label><label class="f">Horas de cuadrilla<input id="avAdH" inputmode="decimal" placeholder="Ej.: 6" value="${esc(adH)}"></label></div>
         <div class="tip" style="border:0;margin:6px 0 0">Las horas de cuadrilla son su peso en el avance total. Entra en 0 % y suma a la misma ODS.</div>
         <div class="row-btns" style="margin-top:8px"><button type="button" class="btn pri" id="avAdicOk">Agregar adicional</button><button type="button" class="btn sec" id="avAdicNo">Cancelar</button></div><div class="err" id="avAdErr"></div>`:''}`:''}
@@ -1710,7 +1717,8 @@ input,select,textarea{min-width:0;max-width:100%}
         <div class="row-btns" style="margin-top:8px"><button type="button" class="btn sec" id="avAdd">Agregar</button></div>
         <div class="tip" style="border:0;margin:8px 0 0">${conPesos?`Las actividades${adic.length?', con los adicionales,':''} suman ${nf1.format(wTot)} horas de cuadrilla. El peso de cada una se cambia en «Editar» o con el asistente.`:'Todas las actividades pesan igual en el total, salvo que les cambies el peso (horas de cuadrilla) en «Editar» o con el asistente.'}</div>`:''}
       <div class="err" id="avErr"></div>`;
-    pintarCurva();
+    pintarCurva(); avFiltrar();
+    if(busFoco){ const i=$('#avBus'); if(i){ try{ i.focus({preventScroll:true}); i.setSelectionRange(i.value.length, i.value.length); }catch(_){} } }   // un repintado mientras se busca no saca el cursor de la casilla
   }
   /* Guarda las actividades en el trabajo, una escritura a la vez, y anota el avance total del día (sirve después para ver el ritmo) */
   /* ok: aviso breve cuando se confirma el guardado. donde: la actividad que se estaba guardando (el aviso de falla va en su renglón; vacío = arriba, junto al total).
@@ -1803,7 +1811,7 @@ input,select,textarea{min-width:0;max-width:100%}
     return L.join('\n');
   }
   /* ---------- curva de avance: planificado (recta por días hábiles entre inicio y compromiso) contra real (lo guardado cada día) ---------- */
-  let avF={ini:'',fin:'',sab:false,dom:false,horas:8,dias:{}}, avHorOpen=false, avAdicOpen=false, avCurvaOn=false, avCurvaFile=null, avCurvaKey='';
+  let avF={ini:'',fin:'',sab:false,dom:false,horas:8,dias:{}}, avHorOpen=false, avAdicOpen=false, avBus='', avCurvaOn=false, avCurvaFile=null, avCurvaKey='';
   const avD = s => { const [y,m,d]=String(s).split('-').map(Number); return new Date(y,(m||1)-1,d||1); };
   const avIso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const avMas = (s,n) => { const d=avD(s); d.setDate(d.getDate()+n); return avIso(d); };
@@ -1900,7 +1908,7 @@ input,select,textarea{min-width:0;max-width:100%}
     if(t.dataset.avpeso){ const a=avActs.find(x=>x.id===t.dataset.avpeso); if(!a) return; const v=parseNum(t.value); if(!(v>=0.1) || v>10000){ toast(isNaN(v)?'No se entiende el peso: escribe un número, por ejemplo 8 o 12,5.':'El peso va de 0,1 a 10.000 horas de cuadrilla. No se cambió.'); avEdit=a.id; avRepintar(); return; } a.peso=Math.round(v*10)/10; avEdit=a.id; avRepintar(); guardarAv('Peso guardado', a.id); return; }
     if(t.dataset.avadic){ const a=avActs.find(x=>x.id===t.dataset.avadic); if(!a) return; a.adicional=t.checked; avEdit=a.id; avRepintar(); guardarAv('Cambio guardado', a.id); return; }
   });
-  $('#avBody').addEventListener('input', e=>{ if(e.target.closest('.avedit')) avEditSucio=true; });
+  $('#avBody').addEventListener('input', e=>{ if(e.target.id==='avBus'){ avBus=e.target.value; avFiltrar(); return; } if(e.target.closest('.avedit')) avEditSucio=true; });
   $('#avBody').addEventListener('change', e=>{ if(e.target.closest('.avedit')) avEditSucio=true; }, true);
   $('#avBody').addEventListener('toggle', e=>{ const d=e.target; if(d.dataset&&d.dataset.avdet){ if(d.open) avEdit=d.dataset.avdet; else if(avEdit===d.dataset.avdet) avEdit=''; } }, true);
   $('#avBody').addEventListener('click', e=>{ const t=e.target;
@@ -1985,7 +1993,7 @@ input,select,textarea{min-width:0;max-width:100%}
   /* =====================================================================
      GUARDADO SEGURO: todo o nada, identificadores estables por intento, cola del teléfono y causa real de cada error
      ===================================================================== */
-  const APP_VERSION='151';
+  const APP_VERSION='152';
   let dbRaiz=null;                                       /* la base de datos (se asigna al arrancar) */
   const cacheActiva = () => !!window.__persistencia;     /* versión independiente con la caché del teléfono activa: lo escrito queda en cola y sube solo */
   const sinRed = () => typeof navigator!=='undefined' && navigator.onLine===false;
