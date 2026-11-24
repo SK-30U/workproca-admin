@@ -1731,51 +1731,74 @@ input,select,textarea{min-width:0;max-width:100%}
           const repintar=!igual(acts, mias) || (avFallaA && !avEnVuelo); if(avFallaA && !avEnVuelo) avFallaA=null; if(repintar && !$('#avSheet').hidden) avRepintar(); avLimpiarMarca(); if(ok) toast(ok); },
         e=>{ avEnVuelo--; if(avId!==id || $('#avSheet').hidden){ toast('No se guardó el avance: '+errMsg(e)); return; }
           avFallaA={donde:(e&&e.choque&&e.choque[0])||donde||'', msg:errMsg(e), choque:!!(e&&e.choque)}; marcarCambio('#avSheet'); avRepintar(); const x=document.querySelector('#avSheet .avfalla'); if(x&&x.scrollIntoView) x.scrollIntoView({block:'center'}); toast(e&&e.choque?'Este registro cambió desde otro teléfono: mira el aviso en rojo':'No se guardó el avance: mira el aviso en rojo'); }); }
-  /* Qué incluye el reporte de avance: 'todo', 'sin0' (sin las que están en 0 %) u 'hoy' (lo que avanzó hoy más lo ya terminado). Se recuerda en este teléfono. */
-  let avRepModo=(()=>{ try{ const v=localStorage.getItem('avRepModo'); return ['todo','sin0','hoy','det'].includes(v)?v:'todo'; }catch(_){ return 'todo'; } })(), avRepFreno='', avRepParte='';
+  /* Reporte de avance con filtros acumulables: cada ficha marcada suma su grupo al reporte. Lo marcado se recuerda en este teléfono. */
+  const AV_REP_OPS=[['hoy','Avance de hoy'],['fin','Terminadas'],['eje','En ejecución'],['det','Detenidas'],['ini','Por iniciar']], AV_REP_EST=['fin','eje','det','ini'];
+  let avRepSel=(()=>{ try{ const j=JSON.parse(localStorage.getItem('avRepSel')||'null'); if(Array.isArray(j)) return new Set(j.filter(k=>AV_REP_OPS.some(o=>o[0]===k)));
+      const m=localStorage.getItem('avRepModo'); return new Set(m==='sin0'?['fin','eje','det']:m==='hoy'?['hoy','fin']:m==='det'?['det']:AV_REP_EST); }catch(_){ return new Set(AV_REP_EST); } })(), avRepFrenos=new Set(), avRepParte='', avRepFin=false, avRepFmt=(()=>{ try{ return localStorage.getItem('avRepFmt')==='frente'?'frente':'lista'; }catch(_){ return 'lista'; } })();
   const frenoDe = a => FRENOS.includes(a.freno) && a.freno!=='Otro' ? a.freno : 'Otro';   // sin motivo elegido cuenta como «Otro motivo»
   const avRepVe = a => avRepParte==='ods' ? !a.adicional : avRepParte==='adic' ? !!a.adicional : true;
-  function renderAvRepFiltros(){ const ch='padding:7px 10px;font-size:13px', hayDos=avActs.some(a=>a.adicional) && avActs.some(a=>!a.adicional), dets=avActs.filter(a=>avRepVe(a) && estAct(a)==='det');
-    if(!hayDos) avRepParte=''; if(avRepFreno && !dets.some(a=>frenoDe(a)===avRepFreno)) avRepFreno='';
-    const ops=[['todo','Todas'],['sin0','Sin las de 0 %'],['hoy','Hoy y terminadas'],['det',`Detenidas${dets.length?' · '+dets.length:''}`]];
-    const tip={todo:'Salen todas las actividades, también las que no han empezado.', sin0:'Las que están en 0 % no se listan: sale solo cuántas son.', hoy:'Sale lo que avanzó hoy y lo ya terminado; del resto, solo cuántas son.', det:'Salen solo las detenidas, agrupadas por lo que las frena y con la fecha desde que están paradas.'}[avRepModo];
-    $('#ecFiltros').innerHTML=`<div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))" role="group" aria-label="Qué actividades salen en el reporte">${ops.map(([k,t])=>`<button type="button" data-avrm="${k}" aria-pressed="${k===avRepModo}"${k===avRepModo?' class="on"':''}>${t}</button>`).join('')}</div>
-      ${avRepModo==='det' && dets.length?`<div class="chips" role="group" aria-label="Detenidas por qué motivo"><button type="button" class="ghost${!avRepFreno?' on':''}" style="${ch}" data-avrf="" aria-pressed="${!avRepFreno}">Todos los motivos</button>${FRENOS.filter(f=>dets.some(a=>frenoDe(a)===f)).map(f=>`<button type="button" class="ghost${avRepFreno===f?' on':''}" style="${ch}" data-avrf="${esc(f)}" aria-pressed="${avRepFreno===f}">${f==='Otro'?'Otro motivo':f} · ${dets.filter(a=>frenoDe(a)===f).length}</button>`).join('')}</div>`:''}
-      ${hayDos?`<div class="chips" role="group" aria-label="Qué parte de la orden sale">${[['','ODS y adicionales'],['ods','Solo la ODS'],['adic','Solo adicionales']].map(([k,t])=>`<button type="button" class="ghost${avRepParte===k?' on':''}" style="${ch}" data-avrp="${k}" aria-pressed="${avRepParte===k}">${t}</button>`).join('')}</div>`:''}
-      <div class="tip" style="border:0;margin:6px 0 8px">${tip} El avance total siempre cuenta todas.</div>`;
+  /* Lo que avanzó hoy se mide contra la última foto de un día anterior */
+  const avFotoAnt = d => { const h=today(), sn=(d&&d.avanceSnap)||{}, k=Object.keys(sn).filter(x=>x<h).sort().pop(); return (k&&sn[k])||{}; };
+  const avAntes = (f,a) => { const v=f[a.id]; return v===undefined||v===null ? 0 : Math.max(0,Math.min(100,num(v))); };
+  const avMovio = (f,a) => Math.abs(pctAct(a)-avAntes(f,a))>=0.05;
+  function renderAvRepFiltros(){ const d=docs.find(x=>x.id===avId), f=avFotoAnt(d), ch='padding:7px 10px;font-size:13px', hayDos=avActs.some(a=>a.adicional) && avActs.some(a=>!a.adicional);
+    if(!hayDos) avRepParte=''; const xs=avActs.filter(avRepVe), dets=xs.filter(a=>estAct(a)==='det'); [...avRepFrenos].forEach(m=>{ if(!dets.some(a=>frenoDe(a)===m)) avRepFrenos.delete(m); });
+    const cta=k=>k==='hoy' ? xs.filter(a=>avMovio(f,a)).length : xs.filter(a=>estAct(a)===k).length, todas=AV_REP_EST.every(k=>avRepSel.has(k));
+    const ficha=(attr,val,on,txt)=>`<button type="button" class="ghost${on?' on':''}" style="${ch}${on?'':';background:var(--sunk)'}" ${attr}="${esc(val)}" aria-pressed="${on}">${txt}</button>`, rot=t=>`<div class="tip" style="border:0;margin:8px 0 0">${t}</div>`;
+    const fmt=`<div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))" role="group" aria-label="Formato del reporte">${[['lista','Por estado'],['frente','Frente de trabajo']].map(([k,t])=>`<button type="button" data-avfm="${k}" aria-pressed="${k===avRepFmt}"${k===avRepFmt?' class="on"':''}>${t}</button>`).join('')}</div>`;
+    const partes=hayDos?`${rot('Parte de la orden:')}<div class="chips" style="margin-top:6px" role="group" aria-label="Qué parte de la orden sale">${ficha('data-avrp','ods',avRepParte!=='adic','ODS')}${ficha('data-avrp','adic',avRepParte!=='ods','Adicionales')}</div>`:'';
+    if(avRepFmt==='frente'){ $('#ecFiltros').innerHTML=`${fmt}${partes}<div class="chips" style="margin-top:8px">${ficha('data-avfin','1',avRepFin,`Listar las culminadas · ${cta('fin')}`)}</div>
+      <div class="tip" style="border:0;margin:8px 0 8px">Resume qué se culminó, qué queda por ejecutar con frente de trabajo disponible y qué espera por el cliente. El avance total siempre cuenta todas.</div>`; $('#ecFiltros').hidden=false; return; }
+    $('#ecFiltros').innerHTML=`${fmt}${rot('Marca lo que quieres que salga. Se pueden combinar.')}
+      <div class="chips" style="margin-top:6px" role="group" aria-label="Qué actividades salen en el reporte">${ficha('data-avrs','*',todas,'Todas')}${AV_REP_OPS.map(([k,t])=>ficha('data-avrs',k,avRepSel.has(k),`${t} · ${cta(k)}`)).join('')}</div>
+      ${avRepSel.has('det') && dets.length?`${rot('Detenidas por (sin marcar ninguno, salen todos los motivos):')}<div class="chips" style="margin-top:6px" role="group" aria-label="Detenidas por qué motivo">${FRENOS.filter(m=>dets.some(a=>frenoDe(a)===m)).map(m=>ficha('data-avrf',m,avRepFrenos.has(m),`${m==='Otro'?'Otro motivo':m} · ${dets.filter(a=>frenoDe(a)===m).length}`)).join('')}</div>`:''}
+      ${partes}
+      <div class="tip" style="border:0;margin:8px 0 8px">De lo que no marques sale solo la cantidad. El avance total siempre cuenta todas.</div>`;
     $('#ecFiltros').hidden=false; }
-  function buildAvance(d, acts, modo){ modo=modo||avRepModo;
+  function buildAvance(d, acts){
     const base=acts.filter(a=>!a.adicional), adic=acts.filter(a=>a.adicional), L=['*WORKPROCA, Trabajos Profesionales C.A.*', `*Reporte de avance · ${d.descripcion||''}*`];
     const m=[d.cliente, d.unidad].filter(Boolean).join(' · '); if(m) L.push(m);
     if(tieneOrden(d)) L.push(`Orden de servicio: ${d.ods}`);
     if(String(d.nota||'').trim()) L.push(`Requisición: ${String(d.nota).trim()}`);
     L.push(`Fecha: ${fdate(today())}`);
-    const linea=(a,n)=>`${n}. ${a.nombre}: ${avPct(pctAct(a))}${estAct(a)==='det'?` · Detenida${txtFreno(a)?': '+txtFreno(a):''}`:''}`;
-    const hoyR=today(), snapR=d.avanceSnap||{}, kAnt=Object.keys(snapR).filter(k=>k<hoyR).sort().pop(), fotoAnt=(kAnt&&snapR[kAnt])||{};
-    const antes=a=>{ const v=fotoAnt[a.id]; return v===undefined||v===null ? 0 : Math.max(0,Math.min(100,num(v))); }, movioHoy=a=>Math.abs(pctAct(a)-antes(a))>=0.05;
+    const hoyR=today(), fotoAnt=avFotoAnt(d), movioHoy=a=>avMovio(fotoAnt,a), Sel=avRepSel, verB=avRepParte!=='adic', verA=avRepParte!=='ods';
     const cuantas=(n,uno,varias)=>`${n} ${n===1?uno:varias}`;
-    const bloque=xs=>{ const n0={}; xs.forEach((a,i)=>n0[a.id]=i+1); const de=k=>porAvance(xs.filter(a=>estAct(a)===k));
-      if(modo==='hoy'){ const hoyX=porAvance(xs.filter(movioHoy)), fin=de('fin').filter(a=>!movioHoy(a)), resto=xs.filter(a=>!movioHoy(a) && estAct(a)!=='fin');
-        if(hoyX.length){ L.push('_Avance de hoy_'); hoyX.forEach(a=>L.push(`${linea(a,n0[a.id])} (antes ${avPct(antes(a))})`)); }
-        if(fin.length){ L.push('_Terminadas_'); fin.forEach(a=>L.push(linea(a,n0[a.id]))); }
-        const r=[['eje','en ejecución','en ejecución'],['det','detenida','detenidas'],['ini','por iniciar','por iniciar']].map(([k,u,v])=>{ const n=resto.filter(a=>estAct(a)===k).length; return n?cuantas(n,u,v):''; }).filter(Boolean);
-        if(r.length) L.push(`_Sin cambios hoy: ${r.join(' · ')}_`); return; }
-      [['fin','Terminadas'],['eje','En ejecución'],['det','Detenidas'],['ini','Por iniciar']].forEach(([k,t])=>{ const g=de(k); if(!g.length) return;
-        if(k==='ini' && modo==='sin0'){ L.push(`_Por iniciar: ${cuantas(g.length,'actividad','actividades')}_`); return; }
-        L.push(`_${t}_`); g.forEach(a=>L.push(linea(a,n0[a.id]))); }); };
-    const verB=avRepParte!=='adic', verA=avRepParte!=='ods';
-    if(modo==='det'){ const mot=avRepFreno, es=a=>estAct(a)==='det' && (!mot || frenoDe(a)===mot); let nDet=0;
-      const bloqueDet=(xs,tit)=>{ const n0={}; xs.forEach((a,i)=>n0[a.id]=i+1); const g=xs.filter(es); if(!g.length) return; nDet+=g.length; L.push('', tit);
-        FRENOS.filter(f=>g.some(a=>frenoDe(a)===f)).forEach(f=>{ L.push(`_${f==='Otro'?'Otro motivo':f}_`); porAvance(g.filter(a=>frenoDe(a)===f)).forEach(a=>{ const pq=String(a.porque||'').trim(), ds=/^\d{4}-\d{2}-\d{2}$/.test(a.detenidaDesde||'')?a.detenidaDesde:'', nd=ds?avDif(ds,hoyR):0;
-          L.push(`${n0[a.id]}. ${a.nombre}: ${avPct(pctAct(a))}${pq?' · '+pq:''}${ds?` · desde el ${fdate(ds)}${nd>0?` (${cuantas(nd,'día','días')})`:''}`:''}`); }); }); };
-      if(verB) bloqueDet(base,'*Actividades de la ODS*'); if(verA) bloqueDet(adic,'*Trabajos adicionales (no incluidos en la ODS)*');
-      L.push('', nDet ? `*Detenidas${mot?' por «'+(mot==='Otro'?'otro motivo':mot.toLowerCase())+'»':''}: ${cuantas(nDet,'actividad','actividades')}*` : `_No hay actividades detenidas${mot?' por ese motivo':''}._`);
+    const linea=(a,n)=>`${n}. ${a.nombre}: ${avPct(pctAct(a))}${estAct(a)==='det'?` · Detenida${txtFreno(a)?': '+txtFreno(a):''}`:''}`;
+    const lineaDet=(a,n)=>{ const pq=String(a.porque||'').trim(), ds=/^\d{4}-\d{2}-\d{2}$/.test(a.detenidaDesde||'')?a.detenidaDesde:'', nd=ds?avDif(ds,hoyR):0;
+      return `${n}. ${a.nombre}: ${avPct(pctAct(a))}${pq?' · '+pq:''}${ds?` · desde el ${fdate(ds)}${nd>0?` (${cuantas(nd,'día','días')})`:''}`:''}`; };
+    const bloque=(xs,tit)=>{ if(!xs.length) return; const n0={}; xs.forEach((a,i)=>n0[a.id]=i+1); const sal=new Set(), B=[];
+      const pon=(t,g,fn)=>{ if(!g.length) return; B.push(`_${t}_`); g.forEach(a=>{ sal.add(a.id); B.push(fn(a)); }); }, de=k=>porAvance(xs.filter(a=>!sal.has(a.id) && estAct(a)===k)), simple=a=>linea(a,n0[a.id]);
+      if(Sel.has('hoy')) pon('Avance de hoy', porAvance(xs.filter(movioHoy)), a=>`${simple(a)} (antes ${avPct(avAntes(fotoAnt,a))})`);   // lo que sale aquí no se repite abajo
+      if(Sel.has('fin')) pon('Terminadas', de('fin'), simple);
+      if(Sel.has('eje')) pon('En ejecución', de('eje'), simple);
+      if(Sel.has('det')){ const g=de('det').filter(a=>!avRepFrenos.size || avRepFrenos.has(frenoDe(a))); FRENOS.filter(f=>g.some(a=>frenoDe(a)===f)).forEach(f=>pon(`Detenidas · ${f==='Otro'?'Otro motivo':f}`, g.filter(a=>frenoDe(a)===f), a=>lineaDet(a,n0[a.id]))); }
+      if(Sel.has('ini')) pon('Por iniciar', de('ini'), simple);
+      const resto=xs.filter(a=>!sal.has(a.id)), r=[['fin','terminada','terminadas'],['eje','en ejecución','en ejecución'],['det','detenida','detenidas'],['ini','por iniciar','por iniciar']].map(([k,u,v])=>{ const n=resto.filter(a=>estAct(a)===k).length; return n?cuantas(n,u,v):''; }).filter(Boolean);
+      if(r.length) B.push(`_${sal.size?'Otras actividades':'Actividades'}: ${r.join(' · ')}_`);
+      L.push('', tit, ...B); };
+    if(avRepFmt==='frente'){   /* qué se culminó, qué queda por ejecutar con frente disponible y qué depende del cliente o de otra causa */
+      const nB={}, nA={}; base.forEach((a,i)=>nB[a.id]=i+1); adic.forEach((a,i)=>nA[a.id]=i+1);
+      const xs=acts.filter(avRepVe), nro=a=>a.adicional?`Adicional ${nA[a.id]}`:String(nB[a.id]), ord=g=>[...porAvance(g.filter(a=>!a.adicional)), ...porAvance(g.filter(a=>a.adicional))], es=k=>xs.filter(a=>estAct(a)===k);
+      const fin=es('fin'), eje=es('eje'), ini=es('ini'), det=es('det'), CLI='Espera por el cliente', cli=det.filter(a=>frenoDe(a)===CLI), otr=det.filter(a=>frenoDe(a)!==CLI), pen=eje.length+ini.length, frente=fin.length+pen, acs=n=>cuantas(n,'actividad','actividades');
+      L.push('', '*Estado del frente de trabajo*', `- Actividades${avRepParte==='ods'?' de la ODS':avRepParte==='adic'?' adicionales':' de la orden'}: ${xs.length}`, `- Culminadas: ${fin.length} de ${xs.length}`, `- Ejecutables pendientes: ${pen} de ${xs.length}`, `- Detenidas: ${det.length} de ${xs.length}${cli.length&&otr.length?` (${cli.length} en espera por el cliente y ${otr.length} por otras causas)`:cli.length?' (en espera por el cliente)':otr.length?' (por otras causas)':''}`);
+      if(xs.length){ let c = fin.length===xs.length ? 'Todas las actividades están culminadas.'
+          : !pen ? (frente ? `Se ejecutó la totalidad de las actividades con frente de trabajo disponible (${fin.length}).` : 'No hay actividades con frente de trabajo disponible.')
+          : `Del frente de trabajo disponible (${acs(frente)}) ${fin.length===1?'se ha culminado 1':'se han culminado '+fin.length}; ${pen===1?'resta por ejecutar la actividad indicada':'restan por ejecutar las '+pen+' actividades indicadas'} a continuación.`;
+        if(cli.length) c+=` La continuidad de ${acs(cli.length)} depende de la liberación por parte del cliente.`;
+        if(otr.length) c+=` ${otr.length===1?'1 actividad está detenida':otr.length+' actividades están detenidas'} por otras causas, detalladas más abajo.`;
+        L.push('', c); }
+      const lin=a=>`${nro(a)}. ${a.nombre}: ${avPct(pctAct(a))}`;
+      if(pen){ L.push('', `*Actividades ejecutables pendientes (${pen})*`); if(eje.length){ L.push('_En ejecución_'); ord(eje).forEach(a=>L.push(lin(a))); } if(ini.length){ L.push('_Por iniciar_'); ord(ini).forEach(a=>L.push(lin(a))); } }
+      if(cli.length){ L.push('', `*Actividades en espera por el cliente (${cli.length})*`); ord(cli).forEach(a=>L.push(lineaDet(a,nro(a)))); }
+      if(otr.length){ L.push('', `*Actividades detenidas por otras causas (${otr.length})*`); FRENOS.filter(f=>otr.some(a=>frenoDe(a)===f)).forEach(f=>{ L.push(`_${f==='Otro'?'Otro motivo':f}_`); ord(otr.filter(a=>frenoDe(a)===f)).forEach(a=>L.push(lineaDet(a,nro(a)))); }); }
+      if(avRepFin && fin.length){ L.push('', `*Actividades culminadas (${fin.length})*`); ord(fin).forEach(a=>L.push(`${nro(a)}. ${a.nombre}`)); }
     } else {
-      if(base.length && verB){ L.push('', '*Actividades de la ODS*'); bloque(base); }
-      if(adic.length && verA){ L.push('', '*Trabajos adicionales (no incluidos en la ODS)*'); bloque(adic); }
+      if(verB) bloque(base,'*Actividades de la ODS*'); if(verA) bloque(adic,'*Trabajos adicionales (no incluidos en la ODS)*');
+      if(Sel.has('hoy') && acts.length && !acts.filter(avRepVe).some(movioHoy)) L.push('', '_Hoy no se registró avance._');
     }
-    if(modo==='hoy' && acts.length && !acts.filter(avRepVe).some(movioHoy)) L.push('', '_Hoy no se registró avance._');
-    if(acts.length) L.push('', `*Avance total${base.length&&adic.length?' (ODS más adicionales)':''}: ${avPct(avanceActs(acts))}*`);
+    { const xsR=acts.filter(avRepVe), esDet=a=>estAct(a)==='det', nDet=xsR.filter(esDet).length, dB=base.filter(esDet).length, dA=adic.filter(esDet).length;
+      const detLin = !nDet || avRepFmt==='frente' ? '' : `*${avRepParte==='adic'?'Trabajos adicionales detenidos':avRepParte==='ods'?'Actividades detenidas de la ODS':'Actividades detenidas'}: ${nDet} de ${xsR.length}${!avRepParte&&dB&&dA?` (ODS: ${dB} de ${base.length} · adicionales: ${dA} de ${adic.length})`:''}*`;
+      if(acts.length){ L.push(''); if(detLin) L.push(detLin); L.push(`*Avance total${base.length&&adic.length?' (ODS más adicionales)':''}: ${avPct(avanceActs(acts))}*`); } }
     if(acts.length && d.id===avId){ const c=avCurva(d, acts); if(c.fin && c.pHoy!==null) L.push(`Planificado a la fecha: ${avPct(c.pHoy)}`, `Fecha de compromiso: ${fdate(c.fin)}`); }
     return L.join('\n');
   }
@@ -1911,8 +1934,8 @@ input,select,textarea{min-width:0;max-width:100%}
       if(!f){ toast('Elige la fecha del día con horario distinto'); return; } if(isNaN(h)||h<0||h>24){ toast('Pon las horas que se trabajan ese día, entre 0 y 24'); return; }
       avF={...avF, dias:{...(avF.dias||{}), [f]:Math.round(h*10)/10}}; marcarCambio('#avSheet'); avRepintar(); { const dh=$('#avDiaH'), df=$('#avDiaF'); if(dh) dh.value=''; if(df) df.value=''; } guardarAvF('Día con horario distinto guardado'); return; }
     { const q=t.closest('[data-avdiadel]'); if(q){ const ds={...(avF.dias||{})}; delete ds[q.dataset.avdiadel]; avF={...avF, dias:ds}; avHorOpen=true; marcarCambio('#avSheet'); avRepintar(); guardarAvF('Horario guardado'); return; } }
-    if(t.closest('#avRep')){ const d=docs.find(x=>x.id===avId); if(!d || !dejarHoja()) return; avRepFreno=''; avRepParte=''; const txt=buildAvance(d, avActs);
-      shareMode='av'; avCurvaOn=true; avRepFreno=''; avRepParte=''; renderAvRepFiltros(); $('#shareTitle').textContent='Reporte de avance'; $('#shareDesc').textContent='Porcentaje de cada actividad y avance total de la orden, con formato de WhatsApp.';
+    if(t.closest('#avRep')){ const d=docs.find(x=>x.id===avId); if(!d || !dejarHoja()) return; avRepFrenos.clear(); avRepParte=''; avRepFin=false; const txt=buildAvance(d, avActs);
+      shareMode='av'; avCurvaOn=true; renderAvRepFiltros(); $('#shareTitle').textContent='Reporte de avance'; $('#shareDesc').textContent='Porcentaje de cada actividad y avance total de la orden, con formato de WhatsApp.';
       $('#shareText').value=txt; $('#avSheet').hidden=true; openSheet('#shareSheet'); return; }
   });
 
@@ -1962,7 +1985,7 @@ input,select,textarea{min-width:0;max-width:100%}
   /* =====================================================================
      GUARDADO SEGURO: todo o nada, identificadores estables por intento, cola del teléfono y causa real de cada error
      ===================================================================== */
-  const APP_VERSION='150';
+  const APP_VERSION='151';
   let dbRaiz=null;                                       /* la base de datos (se asigna al arrancar) */
   const cacheActiva = () => !!window.__persistencia;     /* versión independiente con la caché del teléfono activa: lo escrito queda en cola y sube solo */
   const sinRed = () => typeof navigator!=='undefined' && navigator.onLine===false;
@@ -2553,8 +2576,13 @@ input,select,textarea{min-width:0;max-width:100%}
     $('#shareText').value=buildShare(); openSheet('#shareSheet');
   }
   $('#ecFiltros').addEventListener('click', e=>{
-    { const f=e.target.closest('[data-avrf]'), q=e.target.closest('[data-avrp]'); if(f||q){ if(f) avRepFreno=f.dataset.avrf; else avRepParte=q.dataset.avrp; renderAvRepFiltros(); const d=docs.find(x=>x.id===avId); if(d) $('#shareText').value=buildAvance(d, avActs); return; } }
-    const am=e.target.closest('[data-avrm]'); if(am){ avRepModo=am.dataset.avrm; try{ localStorage.setItem('avRepModo', avRepModo); }catch(_){} renderAvRepFiltros(); const d=docs.find(x=>x.id===avId); if(d) $('#shareText').value=buildAvance(d, avActs); return; }
+    { const fm=e.target.closest('[data-avfm]'), fi=e.target.closest('[data-avfin]'); if(fm||fi){ if(fm){ avRepFmt=fm.dataset.avfm==='frente'?'frente':'lista'; try{ localStorage.setItem('avRepFmt', avRepFmt); }catch(_){} } else avRepFin=!avRepFin;
+        renderAvRepFiltros(); const d=docs.find(x=>x.id===avId); if(d) $('#shareText').value=buildAvance(d, avActs); return; } }
+    { const a=e.target.closest('[data-avrs]'), f=e.target.closest('[data-avrf]'), q=e.target.closest('[data-avrp]'); if(a||f||q){ const tog=(S,k)=>{ if(S.has(k)) S.delete(k); else S.add(k); };
+        if(a){ const k=a.dataset.avrs; if(k==='*'){ const todas=AV_REP_EST.every(x=>avRepSel.has(x)); AV_REP_EST.forEach(x=>{ if(todas) avRepSel.delete(x); else avRepSel.add(x); }); } else tog(avRepSel,k); try{ localStorage.setItem('avRepSel', JSON.stringify([...avRepSel])); }catch(_){} }
+        else if(f) tog(avRepFrenos, f.dataset.avrf);
+        else { const k=q.dataset.avrp, otro=k==='ods'?'adic':'ods', veK=avRepParte!==otro, veO=avRepParte!==k; avRepParte = veK&&veO ? otro : ''; }   /* nunca quedan las dos partes apagadas */
+        renderAvRepFiltros(); const d=docs.find(x=>x.id===avId); if(d) $('#shareText').value=buildAvance(d, avActs); return; } }
     const ir=e.target.closest('[data-ir]'); if(ir){ invRep.tipo=ir.dataset.ir; renderInvFiltros(); $('#shareText').value=buildInv(); return; }
     const ip=e.target.closest('[data-iper]'); if(ip){ invRep.periodo=ip.dataset.iper; renderInvFiltros(); $('#shareText').value=buildInv(); return; }
     const im=e.target.closest('[data-imonr]'); if(im){ iMon=im.dataset.imonr; renderInvFiltros(); $('#shareText').value=buildInv(); return; }
