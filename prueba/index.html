@@ -24,7 +24,7 @@
 #login button{border:0;background:#0D5C63;color:#fff;border-radius:12px;padding:13px 18px;font-weight:700;font-size:15px;width:100%}
 </style>
 </head>
-<body><div style="background:#B26A00;color:#fff;font:700 12px/1.3 system-ui,sans-serif;text-align:center;padding:4px 8px">VERSIÓN DE PRUEBA · v155 estado de cuenta con cobros parciales · trabaja con tus datos reales</div>
+<body><div style="background:#B26A00;color:#fff;font:700 12px/1.3 system-ui,sans-serif;text-align:center;padding:4px 8px">VERSIÓN DE PRUEBA · v156 miniaturas de adjuntos · trabaja con tus datos reales</div>
 <div id="login" class="scrim-login">
   <div class="box">
     <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:#5A6A75">Workproca · Trabajos Profesionales C.A.</div>
@@ -420,6 +420,15 @@ textarea.ai{width:100%;min-height:120px;border:1px solid var(--line);background:
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .chips span{display:inline-flex;align-items:center;gap:6px;background:var(--sunk);border:1px solid var(--line);border-radius:999px;padding:4px 6px 4px 10px;font-size:13px;max-width:100%}
 .chips span em{font-style:normal;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+#aiChips{gap:8px}#aiChips .adj{display:inline-flex;flex-direction:column;align-items:stretch;gap:4px;width:84px;padding:4px;border-radius:12px;position:relative}
+#aiChips .adj .ver{display:block;width:100%;height:76px;border:0;padding:0;border-radius:8px;background:var(--card);overflow:hidden;cursor:pointer;color:var(--muted);font-size:12px;font-weight:700}
+#aiChips .adj .ver img{width:100%;height:100%;object-fit:cover;display:block}
+#aiChips .adj em{font-size:11px;text-align:center}
+#aiChips .adj [data-rmf]{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:12px;line-height:1;padding:0}
+#visorAdj{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.92);display:flex;flex-direction:column;padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom))}
+#visorAdj[hidden]{display:none}#visorAdj .vbar{display:flex;align-items:center;gap:10px;color:#fff;font-size:14px;margin-bottom:8px}#visorAdj .vbar b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#visorAdj .vbar button{background:#ffffff22;color:#fff;border:0;border-radius:999px;min-width:44px;height:44px;font-size:18px}
+#visorAdj .vimg{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;display:flex;align-items:flex-start;justify-content:center}#visorAdj .vimg img{max-width:100%;height:auto}
 .chips button{border:0;background:transparent;color:var(--muted);font-size:15px;line-height:1;padding:2px 4px}
 .tip{font-size:12.5px;color:var(--muted);margin-top:8px;line-height:1.45}
 .aistat{font-size:14px;color:var(--muted);margin-top:12px;min-height:1.2em}
@@ -1993,7 +2002,7 @@ input,select,textarea{min-width:0;max-width:100%}
   /* =====================================================================
      GUARDADO SEGURO: todo o nada, identificadores estables por intento, cola del teléfono y causa real de cada error
      ===================================================================== */
-  const APP_VERSION='155';
+  const APP_VERSION='156';
   let dbRaiz=null;                                       /* la base de datos (se asigna al arrancar) */
   const cacheActiva = () => !!window.__persistencia;     /* versión independiente con la caché del teléfono activa: lo escrito queda en cola y sube solo */
   const sinRed = () => typeof navigator!=='undefined' && navigator.onLine===false;
@@ -2936,9 +2945,22 @@ input,select,textarea{min-width:0;max-width:100%}
     }
     return {imgs, textos, avisos};
   }
+  /* Lo adjuntado se ve en miniatura y se abre en grande con un toque, antes de mandarlo al asistente */
+  const urlAdj=new Map();
+  const esImg = f => /^image\//.test(f.type||'') || /\.(jpe?g|png|heic|heif|webp|gif)$/i.test(f.name||'');
+  const tipoAdj = f => (String(f.name||'').match(/\.([a-z0-9]{2,5})$/i)||[,'archivo'])[1].toUpperCase();
+  function urlDe(f){ if(!urlAdj.has(f)){ try{ urlAdj.set(f, URL.createObjectURL(f)); }catch(_){ urlAdj.set(f,''); } } return urlAdj.get(f); }
   function renderChips(){
-    $('#aiChips').innerHTML=aiFiles.map((f,i)=>`<span><em>${esc(f.name)}</em><button type="button" data-rmf="${i}" aria-label="Quitar ${esc(f.name)}">✕</button></span>`).join('');
+    urlAdj.forEach((u,f)=>{ if(!aiFiles.includes(f)){ try{ if(u) URL.revokeObjectURL(u); }catch(_){} urlAdj.delete(f); } });
+    $('#aiChips').innerHTML=aiFiles.map((f,i)=>`<span class="adj"><button type="button" class="ver" data-veradj="${i}" aria-label="Ver ${esc(f.name)}">${esImg(f)&&urlDe(f)?`<img src="${urlDe(f)}" alt="">`:esc(tipoAdj(f))}</button><em>${esc(f.name)}</em><button type="button" data-rmf="${i}" aria-label="Quitar ${esc(f.name)}">✕</button></span>`).join('');
   }
+  function verAdjunto(i){ const f=aiFiles[i]; if(!f) return; let v=$('#visorAdj');
+    if(!v){ v=document.createElement('div'); v.id='visorAdj'; v.setAttribute('role','dialog'); v.setAttribute('aria-modal','true'); document.body.appendChild(v);
+      v.addEventListener('click', e=>{ const b=e.target.closest('[data-vadj]'); if(!b) return; const k=b.dataset.vadj; if(k==='x'){ v.hidden=true; v.innerHTML=''; return; } verAdjunto(+k); }); }
+    const n=aiFiles.length, u=urlDe(f);
+    v.innerHTML=`<div class="vbar">${n>1?`<button type="button" data-vadj="${(i-1+n)%n}" aria-label="Anterior">‹</button>`:''}<b>${esc(f.name)}${n>1?` · ${i+1} de ${n}`:''}</b>${n>1?`<button type="button" data-vadj="${(i+1)%n}" aria-label="Siguiente">›</button>`:''}<button type="button" data-vadj="x" aria-label="Cerrar">✕</button></div>
+      <div class="vimg">${esImg(f)&&u?`<img src="${u}" alt="${esc(f.name)}">`:u&&/pdf$/i.test(tipoAdj(f))?`<iframe src="${u}" title="${esc(f.name)}" style="width:100%;height:100%;border:0;background:#fff;border-radius:8px"></iframe>`:`<div style="color:#fff;margin:auto;text-align:center">${esc(tipoAdj(f))}<br>Este tipo de archivo no se puede mostrar aquí, pero el asistente sí lo lee.</div>`}</div>`;
+    v.hidden=false; }
   function resumenTrabajos(){
     return docs.slice().sort(byOrden).map(d=>({id:d.id, cliente:d.cliente||'', unidad:d.unidad||'', descripcion:d.descripcion||'', orden_servicio:d.ods||'', referencia:d.nota||'', monto_usd:num(d.monto), ejecutado:!!d.ejecutado, fecha_ejecucion:d.fechaEjecucion||'', pagado_usd:r2(pagado(d)), saldo_usd:saldo(d), etapa:ETAPAS[etapa(d)].lbl, facturas:(d.cobros||[]).map(c=>c.numFactura).filter(Boolean),
       abonos_sin_factura:(d.cobros||[]).map((c,i)=>({indice:i, fecha:c.fecha||'', monto_usd:num(c.monto), cuenta:c.cuenta||'banco', numFactura:c.numFactura||''})).filter(c=>!c.numFactura).map(({numFactura,...c})=>c)}));
@@ -3721,7 +3743,7 @@ Responde solo con un objeto JSON:
   $('#aiRes').addEventListener('change', e=>{ const d=e.target.dataset||{}; if(d.gcred!=null&&e.target.checked){ const g=document.querySelector(`[data-gchkc="${d.gcred}"]`); if(g) g.checked=false; } if(d.gchkc!=null&&e.target.checked){ const c=document.querySelector(`[data-gcred="${d.gchkc}"]`); if(c) c.checked=false; } });
   $('#aiRes').addEventListener('input', e=>{ const i=e.target.dataset&&e.target.dataset.ad; if(i==null||aiMode!=='asis') return; const c=document.querySelector(`[data-dcost="${i}"]`); if(c) c.textContent=`Costo del día: ${usd(r2(costoAiDia(+i)))}`; });
   $('#aiRes').addEventListener('change', e=>{ const i=e.target.dataset&&e.target.dataset.ad; if(i==null||aiMode!=='asis') return; const c=document.querySelector(`[data-dcost="${i}"]`); if(c) c.textContent=`Costo del día: ${usd(r2(costoAiDia(+i)))}`; });
-  $('#aiChips').addEventListener('click', e=>{ const b=e.target.closest('[data-rmf]'); if(!b) return; aiFiles.splice(+b.dataset.rmf,1); renderChips(); });
+  $('#aiChips').addEventListener('click', e=>{ const vb=e.target.closest('[data-veradj]'); if(vb){ verAdjunto(+vb.dataset.veradj); return; } const b=e.target.closest('[data-rmf]'); if(!b) return; aiFiles.splice(+b.dataset.rmf,1); renderChips(); });
   $('#aiGo').addEventListener('click', ()=>leerAI());
   $('#aiReplyGo').addEventListener('click', ()=>leerAI($('#aiReply').value));
   $('#aiStop').addEventListener('click', ()=>aiCtl&&aiCtl.abort());
