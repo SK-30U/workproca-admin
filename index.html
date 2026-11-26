@@ -1993,7 +1993,7 @@ input,select,textarea{min-width:0;max-width:100%}
   /* =====================================================================
      GUARDADO SEGURO: todo o nada, identificadores estables por intento, cola del teléfono y causa real de cada error
      ===================================================================== */
-  const APP_VERSION='153';
+  const APP_VERSION='154';
   let dbRaiz=null;                                       /* la base de datos (se asigna al arrancar) */
   const cacheActiva = () => !!window.__persistencia;     /* versión independiente con la caché del teléfono activa: lo escrito queda en cola y sube solo */
   const sinRed = () => typeof navigator!=='undefined' && navigator.onLine===false;
@@ -3008,7 +3008,7 @@ Reglas del negocio:
 - Si un cliente aparece con su nombre largo y está registrado con siglas (o al revés), úsalo tal como está registrado, sin convertirlo en duda.
 - Si un documento solo trae el monto en bolívares y la tasa, el monto en dólares es bolívares ÷ tasa, redondeado a 2 decimales.
 - UNA FACTURA NO SIEMPRE ES DINERO NUEVO. Antes de proponer "registrar_pago" por una factura, revisa si ese dinero ya entró: (a) abonos del trabajo que no tienen número de factura ("abonos_sin_factura") → usa "facturar_abonos" para ponerles el número; (b) pagos de clientes por repartir (lista de abajo) → usa "repartir_pago" para asignarlos a los trabajos con el número de factura. Solo si no hay dinero ya recibido que corresponda, la factura es un pago nuevo ("registrar_pago"). Si Fran dice que la factura concilia, cubre o justifica pagos ya hechos, NUNCA uses "registrar_pago" por ese dinero.
-- El IVA no es ingreso de los trabajos: el monto en dólares de una factura es la BASE IMPONIBLE (sin IVA) ÷ tasa. Nunca sumes el IVA al monto pagado ni al monto del trabajo. Si parece que el cliente pagó el IVA aparte, dilo en "dudas".
+- El IVA no es ingreso de los trabajos y además el cliente lo retiene completo (no entra al banco): el monto en dólares de una factura es la BASE IMPONIBLE (sin IVA) ÷ tasa. Nunca sumes el IVA al monto pagado ni al monto del trabajo.
 - Un abono nunca puede pasar de lo que debe el trabajo ("saldo_usd"). Si Fran dice que un pago entero es de un trabajo y el saldo no alcanza, el monto del trabajo está mal registrado: propón también "actualizar" con el monto correcto (el que diga Fran o la base de la factura) y reparte el pago completo.
 - Una factura con varios ítems puede cubrir uno o varios trabajos: reparte según los ítems que correspondan a cada trabajo. Si la base de la factura no coincide con lo que ya se recibió (por céntimos de redondeo o por más), dilo en "dudas" con la diferencia en dólares.
 - Asocia cada cosa al trabajo existente que corresponda (por descripción, unidad o embarcación, orden de servicio o referencia). Crea un trabajo nuevo solo si claramente no existe.
@@ -6341,7 +6341,7 @@ Cada movimiento:
 Reglas:
 - No inventes montos. Resuelve tú lo menor (formato de números, tildes, nombres). En "dudas" pon solo lo que puede hacer que el registro quede mal (un monto ilegible, una moneda que no se puede saber), con tu propuesta.
 - No registres pagos de nómina: entran solos desde Nómina.
-- Los cobros a clientes (facturas que emite WORKPROCA o pagos de un cliente por un trabajo) NUNCA son un "ingreso" aquí: van en "para_cobranzas" (se explica al final) y su dinero entra solo a la cuenta cuando se registran en Cobranzas, por el monto sin IVA. Única excepción: si el material dice que el cliente pagó el total de la factura con IVA, o que pagó el IVA, registra SOLO el IVA como "ingreso" en "banco", moneda "VES", con concepto "IVA cobrado de la factura N (cliente)", el monto del IVA en bolívares y la tasa del cobro. El cambio de esos bolívares a dólares, si aparece, sí es un "cambio" normal.
+- Los cobros a clientes (facturas que emite WORKPROCA o pagos de un cliente por un trabajo) NUNCA son un "ingreso" aquí: van en "para_cobranzas" (se explica al final) y su dinero entra solo a la cuenta cuando se registran en Cobranzas, por el monto sin IVA. El IVA de esas facturas lo retiene el cliente completo: no entra al banco y NUNCA se registra como ingreso, aunque la factura muestre el total con IVA. Lo que entra al banco por una factura es su base imponible. El cambio de esos bolívares a dólares, si aparece, sí es un "cambio" normal: si dice que cambió «todo» lo cobrado sin dar el monto, los bolívares que salen son la suma de las bases, no de los totales.
 ${REGLAS_COMUNES}
 
 Material a leer:
