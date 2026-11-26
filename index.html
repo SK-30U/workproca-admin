@@ -432,6 +432,8 @@ textarea.ai{width:100%;min-height:120px;border:1px solid var(--line);background:
 #docGrid button{display:flex;flex-direction:column;gap:4px;border:1px solid var(--line);background:var(--sunk);border-radius:12px;padding:4px;text-align:left;color:var(--ink);min-width:0;cursor:pointer}
 #docGrid img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:8px;display:block;background:var(--card)}
 #docGrid small{font-size:11px;line-height:1.25;color:var(--muted);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
+#visorAdj .vnav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;color:#ccc;font-size:13px;font-weight:600}
+#visorAdj .vnav button{background:#ffffff2b;color:#fff;border:0;border-radius:999px;padding:10px 18px;font-size:14px;font-weight:600;min-height:42px}
 #visorAdj .vpie{color:#ddd;font-size:13px;margin-top:8px;display:flex;gap:10px;align-items:center}#visorAdj .vpie span{flex:1;min-width:0}
 #visorAdj .vpie button{background:#ffffff22;color:#fff;border:0;border-radius:999px;padding:10px 14px;font-size:14px}
 #visorAdj{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.92);display:flex;flex-direction:column;padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom))}
@@ -2038,7 +2040,7 @@ input,select,textarea{min-width:0;max-width:100%}
   /* =====================================================================
      GUARDADO SEGURO: todo o nada, identificadores estables por intento, cola del teléfono y causa real de cada error
      ===================================================================== */
-  const APP_VERSION='161';
+  const APP_VERSION='162';
   let dbRaiz=null;                                       /* la base de datos (se asigna al arrancar) */
   const cacheActiva = () => !!window.__persistencia;     /* versión independiente con la caché del teléfono activa: lo escrito queda en cola y sube solo */
   const sinRed = () => typeof navigator!=='undefined' && navigator.onLine===false;
@@ -2911,7 +2913,7 @@ input,select,textarea{min-width:0;max-width:100%}
   $('#btnAddPago').addEventListener('click', addPago);
   $('#btnSaldo').addEventListener('click', ()=>{ const s=Math.max(0,r2(currentMonto()-(draft.cobros||[]).reduce((a,c)=>a+num(c.monto),0))); if(s<=0){ $('#formErr').textContent='No queda saldo por cobrar.'; return; } $('#pMonto').value=nf.format(s); marcarCambio('#sheet'); renderConv(); });
   $('#cobrosList').addEventListener('click', e=>{
-    const vf=e.target.closest('[data-verfac]'); if(vf){ const d=docsArch.find(x=>x.id===vf.dataset.verfac); if(d) verDoc(d.id, [d]); return; }
+    const vf=e.target.closest('[data-verfac]'); if(vf){ const d=docsArch.find(x=>x.id===vf.dataset.verfac); if(d){ const ls=ligados('#trDocs', editingId); verDoc(d.id, ls.some(x=>x.id===d.id)?ls:[d,...ls]); } return; }
     const pm=e.target.closest('[data-pmenu]'); if(pm){ const k=+pm.dataset.pmenu; pagoMenu = pagoMenu===k ? -1 : k; pagoQuitarArm=-1; renderPagos(); return; }
     const ed=e.target.closest('[data-ed]'); if(ed){ pagoMenu=-1; editPago(+ed.dataset.ed); return; }
     const b=e.target.closest('[data-rm]'); if(!b) return; const k=+b.dataset.rm;
@@ -3008,15 +3010,26 @@ input,select,textarea{min-width:0;max-width:100%}
         if(k==='x'){ v.hidden=true; v.innerHTML=''; return; }
         if(k==='dl'){ const it=visorLista[visorI]; if(it&&it._u) descargarDoc(it._u, it.nombre); return; }
         if(k==='del'){ const it=visorLista[visorI]; if(!it||!it.borrar) return; if(Date.now()-visorBorrarArm>4000){ visorBorrarArm=Date.now(); b.textContent='Toca otra vez para borrar'; return; }
-          b.disabled=true; b.textContent='Borrando…'; try{ await it.borrar(); v.hidden=true; v.innerHTML=''; toast('Documento borrado'); }catch(er){ b.disabled=false; b.textContent='Borrar'; toast(errMsg(er)); } return; }
-        abrirVisor(visorLista, +k); }); }
+          b.disabled=true; b.textContent='Borrando…'; try{ await it.borrar(); visorLista.splice(visorI,1); if(visorLista.length) abrirVisor(visorLista, visorI%visorLista.length); else { v.hidden=true; v.innerHTML=''; } toast('Documento borrado'); }catch(er){ b.disabled=false; b.textContent='Borrar'; toast(errMsg(er)); } return; }
+        abrirVisor(visorLista, +k); });
+      let tx=0, ty=0, tt=0, multi=false;
+      v.addEventListener('touchstart', e=>{ if(e.touches.length!==1){ multi=true; return; } multi=false; tx=e.touches[0].clientX; ty=e.touches[0].clientY; tt=Date.now(); }, {passive:true});
+      v.addEventListener('touchmove', e=>{ if(e.touches.length>1) multi=true; }, {passive:true});
+      v.addEventListener('touchend', e=>{ if(multi || visorLista.length<2 || Date.now()-tt>600 || (window.visualViewport&&window.visualViewport.scale>1.05)) return;
+        const c=$('#visorCont'); if(c && c.scrollWidth>c.clientWidth+4) return;
+        const ch=e.changedTouches&&e.changedTouches[0]; if(!ch) return; const dx=ch.clientX-tx, dy=ch.clientY-ty;
+        if(Math.abs(dx)>60 && Math.abs(dx)>Math.abs(dy)*1.8) abrirVisor(visorLista, (visorI+(dx<0?1:-1)+visorLista.length)%visorLista.length); }, {passive:true});
+      document.addEventListener('keydown', e=>{ if(v.hidden) return;
+        if(e.key==='Escape'){ e.preventDefault(); e.stopImmediatePropagation(); v.hidden=true; v.innerHTML=''; return; }
+        if(visorLista.length>1 && (e.key==='ArrowRight'||e.key==='ArrowLeft')){ e.preventDefault(); abrirVisor(visorLista, (visorI+(e.key==='ArrowRight'?1:-1)+visorLista.length)%visorLista.length); } }, true); }
     const n=lista.length, it=lista[i]; if(!it) return;
-    const pdf=/\.pdf$/i.test(it.nombre||'');
-    v.innerHTML=`<div class="vbar">${n>1?`<button type="button" data-vadj="${(i-1+n)%n}" aria-label="Anterior">‹</button>`:''}<b>${esc(it.nombre||'')}${n>1?` · ${i+1} de ${n}`:''}</b>${n>1?`<button type="button" data-vadj="${(i+1)%n}" aria-label="Siguiente">›</button>`:''}<button type="button" data-vadj="x" aria-label="Cerrar">✕</button></div>
-      <div class="vimg" id="visorCont"><div style="color:#fff;margin:auto">Cargando…</div></div><div class="vpie"><span>${it.pie?esc(it.pie):''}</span><button type="button" data-vadj="dl" disabled>Descargar</button>${it.borrar?'<button type="button" data-vadj="del">Borrar</button>':''}</div>`;
+    const pdf=/\.pdf$/i.test(it.nombre||''), ant=(i-1+n)%n, sig=(i+1)%n;
+    v.innerHTML=`<div class="vbar">${n>1?`<button type="button" data-vadj="${ant}" aria-label="Anterior">‹</button>`:''}<b>${esc(it.nombre||'')}${n>1?` · ${i+1} de ${n}`:''}</b>${n>1?`<button type="button" data-vadj="${sig}" aria-label="Siguiente">›</button>`:''}<button type="button" data-vadj="x" aria-label="Cerrar">✕</button></div>
+      <div class="vimg" id="visorCont"><div style="color:#fff;margin:auto">Cargando…</div></div>${n>1?`<div class="vnav"><button type="button" data-vadj="${ant}">‹ Anterior</button><span>${i+1} de ${n}</span><button type="button" data-vadj="${sig}">Siguiente ›</button></div>`:''}<div class="vpie"><span>${it.pie?esc(it.pie):''}</span><button type="button" data-vadj="dl" disabled>Descargar</button>${it.borrar?'<button type="button" data-vadj="del">Borrar</button>':''}</div>`;
     v.hidden=false;
-    const pinta=u=>{ const c=$('#visorCont'); if(!c || visorLista[visorI]!==it) return; it._u=u; const dl=v.querySelector('[data-vadj=dl]'); if(dl) dl.disabled=!u;
-      c.innerHTML = !u ? `<div style="color:#fff;margin:auto;text-align:center">${esc(it.tipo||'')}<br>${it.sinVista||'No se pudo mostrar.'}</div>` : pdf&&!it.esImg ? `<iframe src="${u}" title="${esc(it.nombre)}" style="width:100%;height:100%;border:0;background:#fff;border-radius:8px"></iframe>` : `<img src="${u}" alt="${esc(it.nombre||'')}">`; };
+    const pinta=u=>{ const c=$('#visorCont'); if(!c || visorLista[visorI]!==it) return; it._u=u; if(u) it.url=u; const dl=v.querySelector('[data-vadj=dl]'); if(dl) dl.disabled=!u;
+      c.innerHTML = !u ? `<div style="color:#fff;margin:auto;text-align:center">${esc(it.tipo||'')}<br>${it.sinVista||'No se pudo mostrar.'}</div>` : pdf&&!it.esImg ? `<iframe src="${u}" title="${esc(it.nombre)}" style="width:100%;height:100%;border:0;background:#fff;border-radius:8px"></iframe>` : `<img src="${u}" alt="${esc(it.nombre||'')}">`;
+      if(n>1){ const nx=visorLista[sig]; if(nx && nx.url===undefined && nx.cargar && !nx._p) nx._p=nx.cargar().then(x=>{ if(x) nx.url=x; }, ()=>{}); } };
     if(it.url!==undefined) pinta(it.url); else if(it.cargar) it.cargar().then(pinta, ()=>pinta(''));
   }
   async function descargarDoc(url, nombre){ const base=String(nombre||'documento').replace(/[\\/:*?"<>|·]+/g,' ').replace(/\s+/g,' ').trim().slice(0,80)||'documento';
@@ -3102,7 +3115,9 @@ Deja "" o 0 lo que no aparezca. "trabajo_id" solo si el documento corresponde co
 
   /* Caja de documentos dentro del trabajo y del movimiento: muestra los ya guardados y los que se agregan, que se guardan al guardar la hoja */
   const docPend={'#trDocs':[], '#mvDocs':[]}, docBoxId={'#trDocs':null, '#mvDocs':null}, urlPend=new Map();
-  const ligados = (box, id) => !id ? [] : docsArch.filter(d=>(box==='#trDocs'?(d.trabajos||[]):(d.movs||[])).includes(id));
+  const ligados = (box, id) => { if(!id) return []; if(box!=='#trDocs') return docsArch.filter(d=>(d.movs||[]).includes(id));
+    const t = id===editingId&&draft ? draft : docs.find(x=>x.id===id), o = normOds(t&&t.ods), fs = new Set((t&&t.cobros||[]).map(c=>digitos(c&&c.numFactura)).filter(Boolean));
+    return docsArch.filter(d => (d.trabajos||[]).includes(id) || (!(d.trabajos&&d.trabajos.length) && o && (d.refs||[]).some(r=>normOds(r)===o)) || (fs.size && (d.refs||[]).some(r=>fs.has(digitos(r))) && (!d.tipo||d.tipo==='factura'))); };
   function renderDocBox(box){ const el=$(box); if(!el) return; const id=docBoxId[box], ya=ligados(box,id), pend=docPend[box];
     el.innerHTML=`<div class="dbtip">${box==='#trDocs'?'Orden de servicio, pedido de presupuesto, facturas y fotos de este trabajo.':'Factura digital, nota de entrega o captura del pago.'}${!docsSub&&id?' Cargando…':''}</div>
       ${ya.length||pend.length?`<div class="dbgrid">${ya.map(d=>`<button type="button" data-dbver="${esc(d.id)}" aria-label="Ver documento"><img src="${esc(d.thumb||'')}" alt=""><small>${esc(TIPO_DOC[tipoDe(d)]||fdate(d.fecha||''))}</small></button>`).join('')}${pend.map((f,i)=>{ if(!urlPend.has(f)){ try{ urlPend.set(f, esImg(f)?URL.createObjectURL(f):''); }catch(_){ urlPend.set(f,''); } } const u=urlPend.get(f); return `<button type="button" class="pend" data-dbquita="${i}" aria-label="Quitar ${esc(f.name)}">${u?`<img src="${u}" alt="">`:`<span style="height:84px;display:flex;align-items:center;justify-content:center;font-weight:700">${esc(tipoAdj(f))}</span>`}<small>Se guarda al guardar · ✕</small></button>`; }).join('')}</div>`:''}
