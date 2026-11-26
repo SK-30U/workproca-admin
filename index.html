@@ -425,6 +425,12 @@ textarea.ai{width:100%;min-height:120px;border:1px solid var(--line);background:
 #aiChips .adj .ver img{width:100%;height:100%;object-fit:cover;display:block}
 #aiChips .adj em{font-size:11px;text-align:center}
 #aiChips .adj [data-rmf]{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:12px;line-height:1;padding:0}
+#docGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+#docGrid button{display:flex;flex-direction:column;gap:4px;border:1px solid var(--line);background:var(--sunk);border-radius:12px;padding:4px;text-align:left;color:var(--ink);min-width:0;cursor:pointer}
+#docGrid img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:8px;display:block;background:var(--card)}
+#docGrid small{font-size:11px;line-height:1.25;color:var(--muted);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
+#visorAdj .vpie{color:#ddd;font-size:13px;margin-top:8px;display:flex;gap:10px;align-items:center}#visorAdj .vpie span{flex:1;min-width:0}
+#visorAdj .vpie button{background:#ffffff22;color:#fff;border:0;border-radius:999px;padding:10px 14px;font-size:14px}
 #visorAdj{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.92);display:flex;flex-direction:column;padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom))}
 #visorAdj[hidden]{display:none}#visorAdj .vbar{display:flex;align-items:center;gap:10px;color:#fff;font-size:14px;margin-bottom:8px}#visorAdj .vbar b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #visorAdj .vbar button{background:#ffffff22;color:#fff;border:0;border-radius:999px;min-width:44px;height:44px;font-size:18px}
@@ -619,6 +625,10 @@ input,select,textarea{min-width:0;max-width:100%}
         <button class="ghost" id="btnShare" type="button">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
           Estado de cuenta
+        </button>
+        <button class="ghost" id="btnDocs" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+          Documentos
         </button>
       </div>
     </div>
@@ -877,6 +887,25 @@ input,select,textarea{min-width:0;max-width:100%}
       <div class="tip">También puedes corregir cualquier dato directamente en las tarjetas de arriba.</div>
     </div>
     <div class="row-btns" id="aiApplyRow" hidden><button type="button" class="btn pri" id="aiApply">Guardar los cambios marcados</button></div>
+  </div>
+</section>
+
+<!-- Documentos: facturas, órdenes de servicio y capturas guardadas -->
+<section class="sheet" id="docSheet" hidden aria-modal="true" role="dialog" aria-labelledby="docTitle">
+  <div class="wrap">
+    <div class="grab"></div>
+    <div class="sh-head"><h3 id="docTitle">Documentos</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
+    <p style="margin:2px 0 10px;color:var(--muted);font-size:13.5px">Facturas, órdenes de servicio y capturas que pasaron por los asistentes, y las que agregues aquí. Busca por número de factura, orden, requisición, embarcación o lo que diga la nota.</p>
+    <label class="f full">Buscar<input id="docQ" data-sinmarca type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Ej.: 000420, PO1227, Lupara III"></label>
+    <div class="chips" id="docMods" style="margin-top:8px"></div>
+    <div class="tip" id="docMsg" style="border:0;margin:6px 0 0" aria-live="polite"></div>
+    <div id="docGrid" class="docgrid"></div>
+    <div class="sech" style="font-size:16px">Agregar documentos</div>
+    <label class="f full">Nota (qué es: factura, orden de servicio, captura de pago…)<input id="docNota" data-sinmarca maxlength="200" placeholder="Ej.: Factura 000422 INMARVENCO, orden PO1227"></label>
+    <label class="filepick" style="margin-top:8px"><input type="file" id="docFiles" multiple accept="image/*,.pdf">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+      Agregar fotos o PDF</label>
+    <div class="aistat num" id="docStat"></div>
   </div>
 </section>
 
@@ -2002,7 +2031,7 @@ input,select,textarea{min-width:0;max-width:100%}
   /* =====================================================================
      GUARDADO SEGURO: todo o nada, identificadores estables por intento, cola del teléfono y causa real de cada error
      ===================================================================== */
-  const APP_VERSION='156';
+  const APP_VERSION='157';
   let dbRaiz=null;                                       /* la base de datos (se asigna al arrancar) */
   const cacheActiva = () => !!window.__persistencia;     /* versión independiente con la caché del teléfono activa: lo escrito queda en cola y sube solo */
   const sinRed = () => typeof navigator!=='undefined' && navigator.onLine===false;
@@ -2954,13 +2983,65 @@ input,select,textarea{min-width:0;max-width:100%}
     urlAdj.forEach((u,f)=>{ if(!aiFiles.includes(f)){ try{ if(u) URL.revokeObjectURL(u); }catch(_){} urlAdj.delete(f); } });
     $('#aiChips').innerHTML=aiFiles.map((f,i)=>`<span class="adj"><button type="button" class="ver" data-veradj="${i}" aria-label="Ver ${esc(f.name)}">${esImg(f)&&urlDe(f)?`<img src="${urlDe(f)}" alt="">`:esc(tipoAdj(f))}</button><em>${esc(f.name)}</em><button type="button" data-rmf="${i}" aria-label="Quitar ${esc(f.name)}">✕</button></span>`).join('');
   }
-  function verAdjunto(i){ const f=aiFiles[i]; if(!f) return; let v=$('#visorAdj');
+  /* Visor a pantalla completa. Cada elemento: {nombre, url} o {nombre, cargar:async()=>url}; con pie y borrar opcionales */
+  let visorLista=[], visorI=0, visorBorrarArm=0;
+  function abrirVisor(lista, i){ visorLista=lista; visorI=i; visorBorrarArm=0; let v=$('#visorAdj');
     if(!v){ v=document.createElement('div'); v.id='visorAdj'; v.setAttribute('role','dialog'); v.setAttribute('aria-modal','true'); document.body.appendChild(v);
-      v.addEventListener('click', e=>{ const b=e.target.closest('[data-vadj]'); if(!b) return; const k=b.dataset.vadj; if(k==='x'){ v.hidden=true; v.innerHTML=''; return; } verAdjunto(+k); }); }
-    const n=aiFiles.length, u=urlDe(f);
-    v.innerHTML=`<div class="vbar">${n>1?`<button type="button" data-vadj="${(i-1+n)%n}" aria-label="Anterior">‹</button>`:''}<b>${esc(f.name)}${n>1?` · ${i+1} de ${n}`:''}</b>${n>1?`<button type="button" data-vadj="${(i+1)%n}" aria-label="Siguiente">›</button>`:''}<button type="button" data-vadj="x" aria-label="Cerrar">✕</button></div>
-      <div class="vimg">${esImg(f)&&u?`<img src="${u}" alt="${esc(f.name)}">`:u&&/pdf$/i.test(tipoAdj(f))?`<iframe src="${u}" title="${esc(f.name)}" style="width:100%;height:100%;border:0;background:#fff;border-radius:8px"></iframe>`:`<div style="color:#fff;margin:auto;text-align:center">${esc(tipoAdj(f))}<br>Este tipo de archivo no se puede mostrar aquí, pero el asistente sí lo lee.</div>`}</div>`;
-    v.hidden=false; }
+      v.addEventListener('click', async e=>{ const b=e.target.closest('[data-vadj]'); if(!b) return; const k=b.dataset.vadj;
+        if(k==='x'){ v.hidden=true; v.innerHTML=''; return; }
+        if(k==='del'){ const it=visorLista[visorI]; if(!it||!it.borrar) return; if(Date.now()-visorBorrarArm>4000){ visorBorrarArm=Date.now(); b.textContent='Toca otra vez para borrar'; return; }
+          b.disabled=true; b.textContent='Borrando…'; try{ await it.borrar(); v.hidden=true; v.innerHTML=''; toast('Documento borrado'); }catch(er){ b.disabled=false; b.textContent='Borrar'; toast(errMsg(er)); } return; }
+        abrirVisor(visorLista, +k); }); }
+    const n=lista.length, it=lista[i]; if(!it) return;
+    const pdf=/\.pdf$/i.test(it.nombre||'');
+    v.innerHTML=`<div class="vbar">${n>1?`<button type="button" data-vadj="${(i-1+n)%n}" aria-label="Anterior">‹</button>`:''}<b>${esc(it.nombre||'')}${n>1?` · ${i+1} de ${n}`:''}</b>${n>1?`<button type="button" data-vadj="${(i+1)%n}" aria-label="Siguiente">›</button>`:''}<button type="button" data-vadj="x" aria-label="Cerrar">✕</button></div>
+      <div class="vimg" id="visorCont"><div style="color:#fff;margin:auto">Cargando…</div></div>${it.pie||it.borrar?`<div class="vpie"><span>${it.pie?esc(it.pie):''}</span>${it.borrar?'<button type="button" data-vadj="del">Borrar</button>':''}</div>`:''}`;
+    v.hidden=false;
+    const pinta=u=>{ const c=$('#visorCont'); if(!c || visorLista[visorI]!==it) return;
+      c.innerHTML = !u ? `<div style="color:#fff;margin:auto;text-align:center">${esc(it.tipo||'')}<br>${it.sinVista||'No se pudo mostrar.'}</div>` : pdf&&!it.esImg ? `<iframe src="${u}" title="${esc(it.nombre)}" style="width:100%;height:100%;border:0;background:#fff;border-radius:8px"></iframe>` : `<img src="${u}" alt="${esc(it.nombre||'')}">`; };
+    if(it.url!==undefined) pinta(it.url); else if(it.cargar) it.cargar().then(pinta, ()=>pinta(''));
+  }
+  function verAdjunto(i){ abrirVisor(aiFiles.map(f=>({nombre:f.name, url:(esImg(f)||/pdf$/i.test(tipoAdj(f)))?urlDe(f):'', esImg:esImg(f), tipo:tipoAdj(f), sinVista:'Este tipo de archivo no se puede mostrar aquí, pero el asistente sí lo lee.'})), i); }
+
+  /* ---------- Documentos: las imágenes que pasan por los asistentes y las que se agregan a mano ----------
+     Dos colecciones: «adjuntos» (datos y miniatura, liviano) y «adjuntosImg» (la imagen completa, se baja solo al abrirla).
+     Ninguna de las dos se lee al abrir la app ni va en el respaldo. */
+  const MOD_DOC={cob:'Cobranzas', gas:'Gastos', inv:'Inventario', asis:'Nómina', trab:'Nómina', av:'Avance', manual:'Agregado a mano'};
+  let docsArch=[], docsSub=null, docF={mod:'', q:''};
+  const blobAImg = b => new Promise((res,rej)=>{ const u=URL.createObjectURL(b), im=new Image(); im.onload=()=>{ res({im, u}); }; im.onerror=()=>{ URL.revokeObjectURL(u); rej(new Error('No se pudo leer la imagen.')); }; im.src=u; });
+  function aJpeg(im, lado, q){ const k=Math.min(1, lado/Math.max(im.naturalWidth, im.naturalHeight)), cv=document.createElement('canvas'); cv.width=Math.max(1,Math.round(im.naturalWidth*k)); cv.height=Math.max(1,Math.round(im.naturalHeight*k));
+    const cx=cv.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,cv.width,cv.height); cx.drawImage(im,0,0,cv.width,cv.height); return {url:cv.toDataURL('image/jpeg',q), w:cv.width, h:cv.height}; }
+  /* Imagen completa por debajo de ~700 mil caracteres (un documento de la base admite 1 MB) y miniatura de ~15 mil */
+  async function prepararDoc(blob){ const {im,u}=await blobAImg(blob);
+    try{ let full=null; for(const [lado,q] of [[1800,.75],[1600,.68],[1400,.6],[1200,.55],[1000,.5],[800,.5]]){ full=aJpeg(im,lado,q); if(full.url.length<=700000) break; }
+      if(full.url.length>900000) throw new Error('La imagen es demasiado grande para guardarla.');
+      return {full, thumb:aJpeg(im,320,.6)}; } finally{ URL.revokeObjectURL(u); } }
+  const refsDe = t => { const x=String(t||''), r=new Set();
+    (x.match(/\b0{2,}\d{3,6}\b/g)||[]).forEach(v=>r.add(v));                                /* números de factura 000420 */
+    (x.match(/\bP[O0]\s?-?\d{3,6}\b/gi)||[]).forEach(v=>r.add(v.toUpperCase().replace(/[\s-]/g,'').replace(/^P0/,'PO')));   /* órdenes PO1227 */
+    (x.match(/\bEPR\s?-?\d{3,6}\b/gi)||[]).forEach(v=>r.add(v.toUpperCase().replace(/[\s-]/g,'')));
+    return [...r].slice(0,30); };
+  async function guardarDocs(blobs, meta){ if(!blobs||!blobs.length||!dbRaiz) return 0; let ok=0;
+    const trab=(meta.trabajos||[]).map(id=>docs.find(d=>d.id===id)).filter(Boolean), refs=[...new Set([...refsDe([meta.resumen,meta.texto,meta.extra].join(' ')), ...trab.map(d=>String(d.ods||'').trim()).filter(Boolean)])];
+    const busca=normTxt([meta.resumen, meta.texto, meta.nota, refs.join(' '), ...trab.map(d=>[d.cliente,d.unidad,d.descripcion,d.ods,d.nota].join(' '))].join(' ')).slice(0,3000);
+    for(let i=0;i<blobs.length;i++){ try{ const {full,thumb}=await prepararDoc(blobs[i]), id='adj'+Date.now().toString(36)+Math.random().toString(36).slice(2,7), ah=new Date().toISOString();
+        await escribirJuntos([{op:'set', col:'adjuntosImg', id, datos:{img:full.url, creado:ah}, que:'la imagen del documento', nuevo:true},
+          {op:'set', col:'adjuntos', id, datos:{modulo:meta.modulo||'manual', nombre:(meta.nombres&&meta.nombres[i])||`Documento ${i+1}`, nota:String(meta.nota||meta.resumen||'').slice(0,400), refs, trabajos:trab.map(d=>d.id), busca, thumb:thumb.url, w:full.w, h:full.h, fecha:today(), creado:ah, actualizado:ah}, que:'el documento', nuevo:true}], 'el documento');
+        ok++; }catch(e){ try{ console.error(e); }catch(_){} } }
+    return ok; }
+  function docsSuscribir(){ if(docsSub||!dbRaiz) return; try{ docsSub=dbRaiz.collection('adjuntos').onSnapshot(sn=>{ docsArch=(sn.docs||[]).map(d=>({id:d.id, ...d.data()})).sort((a,b)=>String(b.creado||'').localeCompare(String(a.creado||''))); if(!$('#docSheet').hidden) renderDocs(); }, e=>{ $('#docMsg').textContent=errMsg(e); }); }catch(e){ $('#docMsg').textContent=errMsg(e); } }
+  const docsFiltrados = () => { const ps=normTxt(docF.q).split(' ').filter(Boolean); return docsArch.filter(d=>(!docF.mod || (docF.mod==='asis'?['asis','trab'].includes(d.modulo):d.modulo===docF.mod)) && ps.every(w=>String(d.busca||'').includes(w) || normTxt(d.nombre).includes(w))); };
+  function renderDocs(){ const mods=['', ...Object.keys(MOD_DOC).filter(k=>k!=='trab' && docsArch.some(d=>d.modulo===k || (k==='asis'&&d.modulo==='trab')))];
+    $('#docMods').innerHTML=mods.length>1?mods.map(k=>`<button type="button" class="ghost${docF.mod===k?' on':''}" style="padding:7px 10px;font-size:13px${docF.mod===k?'':';background:var(--sunk)'}" data-docmod="${k}" aria-pressed="${docF.mod===k}">${k?MOD_DOC[k]:'Todos'}</button>`).join(''):'';
+    const xs=docsFiltrados();
+    $('#docMsg').textContent = !docsSub ? '' : !docsArch.length ? 'Todavía no hay documentos guardados. Se guardan solos cuando guardas lo que propone un asistente con fotos, o agrégalos aquí abajo.' : xs.length===docsArch.length ? `${xs.length} ${xs.length===1?'documento':'documentos'}` : xs.length ? `${xs.length} de ${docsArch.length} documentos` : 'Ningún documento coincide con lo escrito.';
+    $('#docGrid').innerHTML=xs.slice(0,300).map(d=>`<button type="button" data-docver="${esc(d.id)}"><img src="${esc(d.thumb||'')}" alt="" loading="lazy"><small>${fdate(d.fecha||'')} · ${esc(MOD_DOC[d.modulo]||'')}${d.refs&&d.refs.length?' · '+esc(d.refs.slice(0,3).join(', ')):''}</small></button>`).join(''); }
+  const cargarImgDoc = id => new Promise((res,rej)=>{ let un=null, fin=false; const t=setTimeout(()=>{ if(!fin){ fin=true; try{ un&&un(); }catch(_){} rej(new Error('No llegó la imagen.')); } }, 20000);
+    try{ un=dbRaiz.doc('adjuntosImg/'+id).onSnapshot(s=>{ if(fin) return; fin=true; clearTimeout(t); setTimeout(()=>{ try{ un&&un(); }catch(_){} },0); const v=s&&s.exists?(s.data()||{}).img:''; v?res(v):rej(new Error('No se encontró la imagen.')); }, e=>{ if(!fin){ fin=true; clearTimeout(t); rej(e); } }); }catch(e){ clearTimeout(t); rej(e); } });
+  function verDoc(id){ const xs=docsFiltrados(), i=Math.max(0,xs.findIndex(d=>d.id===id));
+    abrirVisor(xs.map(d=>({nombre:`${fdate(d.fecha||'')} · ${MOD_DOC[d.modulo]||''}`, esImg:true, cargar:()=>cargarImgDoc(d.id), pie:[d.nota, d.refs&&d.refs.length?'Referencias: '+d.refs.join(', '):''].filter(Boolean).join(' · '),
+      borrar:canWrite?()=>escribirJuntos([{op:'delete', col:'adjuntos', id:d.id, que:'el documento'},{op:'delete', col:'adjuntosImg', id:d.id, que:'la imagen del documento'}], 'el documento'):null})), i); }
+  function abrirDocs(q){ docF={mod:'', q:q||''}; $('#docQ').value=docF.q; $('#docStat').textContent=''; docsSuscribir(); renderDocs(); openSheet('#docSheet'); }
   function resumenTrabajos(){
     return docs.slice().sort(byOrden).map(d=>({id:d.id, cliente:d.cliente||'', unidad:d.unidad||'', descripcion:d.descripcion||'', orden_servicio:d.ods||'', referencia:d.nota||'', monto_usd:num(d.monto), ejecutado:!!d.ejecutado, fecha_ejecucion:d.fechaEjecucion||'', pagado_usd:r2(pagado(d)), saldo_usd:saldo(d), etapa:ETAPAS[etapa(d)].lbl, facturas:(d.cobros||[]).map(c=>c.numFactura).filter(Boolean),
       abonos_sin_factura:(d.cobros||[]).map((c,i)=>({indice:i, fecha:c.fecha||'', monto_usd:num(c.monto), cuenta:c.cuenta||'banco', numFactura:c.numFactura||''})).filter(c=>!c.numFactura).map(({numFactura,...c})=>c)}));
@@ -2983,11 +3064,11 @@ input,select,textarea{min-width:0;max-width:100%}
   /* Una factura o un cobro de un cliente que aparece en el asistente de otro módulo no se convierte en otra cosa: se anota en "para_cobranzas"
      y la app pasa el mismo material al asistente de Cobranzas, que es el que sabe registrarlo en su trabajo. */
   const REGLA_PARA_COB = `\n\nAdemás, en cualquier caso: si el material trae una factura que WORKPROCA le emitió a un cliente (membrete de WORKPROCA, «Factura No.», a nombre de un cliente) o un pago de un cliente por un trabajo, eso es un COBRO y no se registra aquí de ninguna forma: no lo conviertas en ingreso, movimiento, entrada ni nada parecido. Anótalo en el mismo objeto JSON, en el campo "para_cobranzas": [{"numero_factura":"","cliente":"","fecha":"AAAA-MM-DD","monto_bs":0,"monto_usd":0}], una entrada por factura o pago, con el monto SIN IVA si se distingue (0 en lo que no aparezca). Si no hay ninguno, "para_cobranzas": []. Una factura o nota de COMPRA a un proveedor no va ahí.`;
-  let aiPendCob=null;
+  let aiPendCob=null, aiDocPrevio=null, pasandoCob=false;
   function htmlParaCob(xs){ const hayProp=!$('#aiApplyRow').hidden, n=xs.length;
     return `<div class="tip" id="aiPCob" style="border:1px solid var(--accent);border-radius:12px;padding:10px 12px;margin:0 0 10px"><b>${n===1?'Este material trae una factura o un cobro de un cliente':`Este material trae ${n} facturas o cobros de clientes`}.</b> ${xs.map(x=>`${x.num?'Factura '+esc(x.num):'Cobro'}${x.bs>0?' · '+bs(x.bs):x.usd>0?' · '+usd(x.usd):''}`).join('; ')}. ${n===1?'Se registra':'Se registran'} en Cobranzas, para que ${n===1?'baje':'bajen'} el pendiente por cobrar.${hayProp?' Al guardar lo marcado, el asistente de Cobranzas se abre solo con este mismo material.':''}
       <div class="row-btns" style="margin-top:8px"><button type="button" class="btn ${hayProp?'sec':'pri'}" id="aiPCobGo">${hayProp?'Ir a Cobranzas sin guardar lo de aquí':n===1?'Registrarla en Cobranzas':'Registrarlas en Cobranzas'}</button></div></div>`; }
-  function pasarACobranzas(){ const m=aiPendCob; if(!m || !sampleFn) return; aiPendCob=null; hojaLimpia('#aiSheet'); abrirAI('cob'); $('#aiText').value=m.texto||''; aiFiles=[]; renderChips(); leerAI(undefined, m); }
+  function pasarACobranzas(){ const m=aiPendCob; if(!m || !sampleFn) return; aiPendCob=null; aiDocPrevio=m.previo||null; hojaLimpia('#aiSheet'); pasandoCob=true; abrirAI('cob'); pasandoCob=false; $('#aiText').value=m.texto||''; aiFiles=[]; renderChips(); leerAI(undefined, m); }
   /* Una lista de la respuesta: solo objetos y con tope; lo demás se anota como «no se entendió» */
   function listaIA(res, k, que){ const l=res&&res[k]; if(l==null) return []; if(!Array.isArray(l)){ aiNoEnt.push(`la lista de ${que} no vino como lista`); return []; } const ok=l.filter(esObj); if(ok.length<l.length) aiNoEnt.push(`${l.length-ok.length} ${que} sin forma reconocible`); if(ok.length>MAX_IA){ aiNoEnt.push(`${ok.length-MAX_IA} ${que} de más: solo se muestran ${MAX_IA}; envía el resto en otra lectura`); return ok.slice(0,MAX_IA); } return ok; }
   const htmlNoEnt = () => aiNoEnt.length?`<div class="dudas" data-noent><b>No se entendió y no se guarda</b><ul>${aiNoEnt.map(q=>`<li>${esc(q)}</li>`).join('')}</ul></div>`:'';
@@ -3175,9 +3256,9 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
       /* La respuesta se limpia antes de mostrarla: lo que no tiene la forma esperada se descarta y se dice */
       const res=esObj(res0)?res0:{}; if(!esObj(res0)) aiNoEnt.push('la respuesta del asistente no vino con la forma esperada: toca «Leer» otra vez');
       res.resumen=txtIA(res.resumen,800); res.dudas=(Array.isArray(res.dudas)?res.dudas:[]).map(q=>txtIA(q,400)).filter(Boolean).slice(0,12);
-      aiLast = {texto, textos, imgs, res, hilo: esResp ? aiLast.hilo : []};
+      aiLast = {texto, textos, imgs, res, hilo: esResp ? aiLast.hilo : [], nombres: esResp ? aiLast.nombres : mat ? mat.nombres : aiFiles.filter(f=>esImg(f)||/\.pdf$/i.test(f.name)).map(f=>f.name)};
       const pCob = aiMode==='cob' ? [] : (Array.isArray(res.para_cobranzas)?res.para_cobranzas:[]).filter(esObj).map(x=>({num:txtIA(x.numero_factura,20), bs:Math.max(0,nIA(x.monto_bs)), usd:Math.max(0,nIA(x.monto_usd))})).filter(x=>x.num||x.bs>0||x.usd>0).slice(0,20);
-      aiPendCob = pCob.length ? {texto, textos, imgs} : null;
+      aiPendCob = pCob.length ? {texto, textos, imgs, nombres:aiLast.nombres} : null;
       $('#aiReplyBox').hidden = !canWrite; $('#aiReply').value='';
       $('#aiStat').textContent=[...avisos, lineaConsultaIA()].filter(Boolean).join(' ');
       try{ if(aiMode==='av') renderAIAv(res); else if(aiMode==='asis') renderAIAsis(res); else if(aiMode==='trab') renderAITrab(res); else if(aiMode==='gas') renderAIGas(res); else if(aiMode==='inv') renderAIInv(res); else renderAI(res);
@@ -3352,7 +3433,7 @@ Responde solo con un objeto JSON:
   }
   /* ---------- asistente para trabajadores ---------- */
   function abrirAI(modo){
-    aiMode=modo; aiActs=[]; aiTrabs=[]; aiLast=null; aiPendCob=null; $('#aiReplyBox').hidden=true; $('#aiReply').value='';
+    aiMode=modo; aiActs=[]; aiTrabs=[]; aiLast=null; aiPendCob=null; if(!pasandoCob) aiDocPrevio=null; $('#aiReplyBox').hidden=true; $('#aiReply').value='';
     $('#aiRes').innerHTML=''; $('#aiApplyRow').hidden=true; $('#aiStat').textContent='';
     if(modo==='asis'){
       $('#aiTitle').textContent='Registrar asistencia con asistente';
@@ -3588,6 +3669,19 @@ Responde solo con un objeto JSON:
 
   $('#btnAI').addEventListener('click', ()=>abrirAI('cob'));
   $('#aiFiles').addEventListener('change', e=>{ aiFiles.push(...e.target.files); e.target.value=''; renderChips(); });
+  $('#btnDocs').addEventListener('click', ()=>abrirDocs());
+  $('#docQ').addEventListener('input', e=>{ docF.q=e.target.value; renderDocs(); });
+  $('#docMods').addEventListener('click', e=>{ const b=e.target.closest('[data-docmod]'); if(!b) return; docF.mod=b.dataset.docmod; renderDocs(); });
+  $('#docGrid').addEventListener('click', e=>{ const b=e.target.closest('[data-docver]'); if(b) verDoc(b.dataset.docver); });
+  $('#docFiles').addEventListener('change', async e=>{ const fs0=[...e.target.files]; e.target.value=''; if(!fs0.length) return; if(!canWrite){ $('#docStat').textContent='No tienes permiso para agregar documentos.'; return; }
+    const st=$('#docStat'), nota=$('#docNota').value.trim(), blobs=[], nombres=[];
+    for(const f of fs0){ st.textContent=`Preparando ${f.name}…`;
+      try{ if(/\.pdf$/i.test(f.name)||f.type==='application/pdf'){ const r=await pdfToImages(f, 10); r.imgs.forEach((b,k)=>{ blobs.push(b); nombres.push(`${f.name}${r.imgs.length>1?' · página '+(k+1):''}`); }); }
+        else { blobs.push(f); nombres.push(f.name); } }catch(er){ st.textContent=`${f.name}: no se pudo leer.`; } }
+    if(!blobs.length) return; st.textContent='Guardando…';
+    const n=await guardarDocs(blobs, {modulo:'manual', nota, texto:nota, nombres});
+    st.textContent = n===blobs.length ? `${n===1?'Documento guardado':n+' documentos guardados'}.` : `Se guardaron ${n} de ${blobs.length}. Revisa la señal y vuelve a intentar con los que faltan.`;
+    if(n) $('#docNota').value=''; docsSuscribir(); });
   /* ---------- asistente para registrar días o la semana de nómina ---------- */
   let aiDias=[], aiAdels=[];
   function promptAsis(texto, textosArch, nImgs){
@@ -3747,9 +3841,14 @@ Responde solo con un objeto JSON:
   $('#aiGo').addEventListener('click', ()=>leerAI());
   $('#aiReplyGo').addEventListener('click', ()=>leerAI($('#aiReply').value));
   $('#aiStop').addEventListener('click', ()=>aiCtl&&aiCtl.abort());
-  $('#aiApply').addEventListener('click', async ()=>{ const m0=aiMode;
+  $('#aiApply').addEventListener('click', async ()=>{ const m0=aiMode, mat=aiLast&&aiLast.imgs&&aiLast.imgs.length?{imgs:aiLast.imgs, res:aiLast.res, texto:aiLast.texto, nombres:aiLast.nombres}:null, pend=aiPendCob;
     await (m0==='av' ? aplicarAIAv() : m0==='asis' ? aplicarAIAsis() : m0==='trab' ? aplicarAITrab() : m0==='gas' ? aplicarAIGas() : m0==='inv' ? aplicarAIInv() : aplicarAI());
-    if(aiPendCob && m0!=='cob' && aiMode===m0 && !$('#aiSheet').hidden && !$('#aiText').value.trim() && !aiFiles.length) pasarACobranzas(); });
+    const salio = aiMode===m0 && !$('#aiText').value.trim() && !aiFiles.length;   /* el guardado salió bien: la hoja quedó vacía */
+    if(pend && m0!=='cob' && salio && !$('#aiSheet').hidden){ if(mat) aiPendCob={...aiPendCob, previo:{modulo:m0, resumen:(mat.res||{}).resumen||''}}; pasarACobranzas(); return; }   /* las fotos se guardan al terminar en Cobranzas, una sola vez */
+    if(mat && salio){ const res=mat.res||{}, acc=Array.isArray(res.acciones)?res.acciones:[], prev=aiDocPrevio; aiDocPrevio=null;
+      const trab=[...new Set(acc.flatMap(a=>[a&&a.id, ...((a&&a.asignaciones)||[]).map(x=>x&&x.id)]).filter(id=>id&&docs.some(d=>d.id===id)))].concat(m0==='av'&&avId?[avId]:[]);
+      guardarDocs(mat.imgs, {modulo:prev?prev.modulo:m0, resumen:[prev&&prev.resumen, res.resumen].filter(Boolean).join(' · '), texto:mat.texto, extra:JSON.stringify(res).slice(0,20000), trabajos:trab, nombres:mat.nombres})
+        .then(n=>{ if(n) toast(n===1?'Guardado también en Documentos':`${n} imágenes guardadas también en Documentos`); }); } });
   $('#aiSheet').addEventListener('click', e=>{ if(e.target.closest('#aiPCobGo')) pasarACobranzas(); });
 
   /* =====================================================================
