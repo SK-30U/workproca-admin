@@ -24,7 +24,7 @@
 #login button{border:0;background:#0D5C63;color:#fff;border-radius:12px;padding:13px 18px;font-weight:700;font-size:15px;width:100%}
 </style>
 </head>
-<body><div style="background:#B26A00;color:#fff;font:700 12px/1.3 system-ui,sans-serif;text-align:center;padding:4px 8px">VERSIÓN DE PRUEBA · v152 buscador de actividades · trabaja con tus datos reales</div>
+<body><div style="background:#B26A00;color:#fff;font:700 12px/1.3 system-ui,sans-serif;text-align:center;padding:4px 8px">VERSIÓN DE PRUEBA · v153 facturas desde cualquier asistente · trabaja con tus datos reales</div>
 <div id="login" class="scrim-login">
   <div class="box">
     <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:#5A6A75">Workproca · Trabajos Profesionales C.A.</div>
@@ -1993,7 +1993,7 @@ input,select,textarea{min-width:0;max-width:100%}
   /* =====================================================================
      GUARDADO SEGURO: todo o nada, identificadores estables por intento, cola del teléfono y causa real de cada error
      ===================================================================== */
-  const APP_VERSION='152';
+  const APP_VERSION='153';
   let dbRaiz=null;                                       /* la base de datos (se asigna al arrancar) */
   const cacheActiva = () => !!window.__persistencia;     /* versión independiente con la caché del teléfono activa: lo escrito queda en cola y sube solo */
   const sinRed = () => typeof navigator!=='undefined' && navigator.onLine===false;
@@ -2952,6 +2952,14 @@ input,select,textarea{min-width:0;max-width:100%}
   const esObj = v => !!v && typeof v==='object' && !Array.isArray(v);
   const MAX_IA=200;
   let aiNoEnt=[];
+  /* Una factura o un cobro de un cliente que aparece en el asistente de otro módulo no se convierte en otra cosa: se anota en "para_cobranzas"
+     y la app pasa el mismo material al asistente de Cobranzas, que es el que sabe registrarlo en su trabajo. */
+  const REGLA_PARA_COB = `\n\nAdemás, en cualquier caso: si el material trae una factura que WORKPROCA le emitió a un cliente (membrete de WORKPROCA, «Factura No.», a nombre de un cliente) o un pago de un cliente por un trabajo, eso es un COBRO y no se registra aquí de ninguna forma: no lo conviertas en ingreso, movimiento, entrada ni nada parecido. Anótalo en el mismo objeto JSON, en el campo "para_cobranzas": [{"numero_factura":"","cliente":"","fecha":"AAAA-MM-DD","monto_bs":0,"monto_usd":0}], una entrada por factura o pago, con el monto SIN IVA si se distingue (0 en lo que no aparezca). Si no hay ninguno, "para_cobranzas": []. Una factura o nota de COMPRA a un proveedor no va ahí.`;
+  let aiPendCob=null;
+  function htmlParaCob(xs){ const hayProp=!$('#aiApplyRow').hidden, n=xs.length;
+    return `<div class="tip" id="aiPCob" style="border:1px solid var(--accent);border-radius:12px;padding:10px 12px;margin:0 0 10px"><b>${n===1?'Este material trae una factura o un cobro de un cliente':`Este material trae ${n} facturas o cobros de clientes`}.</b> ${xs.map(x=>`${x.num?'Factura '+esc(x.num):'Cobro'}${x.bs>0?' · '+bs(x.bs):x.usd>0?' · '+usd(x.usd):''}`).join('; ')}. ${n===1?'Se registra':'Se registran'} en Cobranzas, para que ${n===1?'baje':'bajen'} el pendiente por cobrar.${hayProp?' Al guardar lo marcado, el asistente de Cobranzas se abre solo con este mismo material.':''}
+      <div class="row-btns" style="margin-top:8px"><button type="button" class="btn ${hayProp?'sec':'pri'}" id="aiPCobGo">${hayProp?'Ir a Cobranzas sin guardar lo de aquí':n===1?'Registrarla en Cobranzas':'Registrarlas en Cobranzas'}</button></div></div>`; }
+  function pasarACobranzas(){ const m=aiPendCob; if(!m || !sampleFn) return; aiPendCob=null; hojaLimpia('#aiSheet'); abrirAI('cob'); $('#aiText').value=m.texto||''; aiFiles=[]; renderChips(); leerAI(undefined, m); }
   /* Una lista de la respuesta: solo objetos y con tope; lo demás se anota como «no se entendió» */
   function listaIA(res, k, que){ const l=res&&res[k]; if(l==null) return []; if(!Array.isArray(l)){ aiNoEnt.push(`la lista de ${que} no vino como lista`); return []; } const ok=l.filter(esObj); if(ok.length<l.length) aiNoEnt.push(`${l.length-ok.length} ${que} sin forma reconocible`); if(ok.length>MAX_IA){ aiNoEnt.push(`${ok.length-MAX_IA} ${que} de más: solo se muestran ${MAX_IA}; envía el resto en otra lectura`); return ok.slice(0,MAX_IA); } return ok; }
   const htmlNoEnt = () => aiNoEnt.length?`<div class="dudas" data-noent><b>No se entendió y no se guarda</b><ul>${aiNoEnt.map(q=>`<li>${esc(q)}</li>`).join('')}</ul></div>`:'';
@@ -3114,22 +3122,23 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
       + (dudas.length?`<div class="dudas"><b>Revisa antes de guardar</b><ul>${dudas.map(q=>`<li>${esc(q)}</li>`).join('')}</ul></div>`:'');
     $('#aiApplyRow').hidden = !aiActs.some(x=>x.d) || !canWrite;
   }
-  async function leerAI(respuesta){
+  async function leerAI(respuesta, mat){
     if(!sampleFn) return;
     const esResp = typeof respuesta==='string' && !!aiLast;
-    const texto = esResp ? aiLast.texto : $('#aiText').value.trim();
-    if(!esResp && !texto && !aiFiles.length){ $('#aiStat').textContent='Pega un mensaje o adjunta una foto o archivo.'; return; }
+    const texto = esResp ? aiLast.texto : mat ? String(mat.texto||'') : $('#aiText').value.trim();
+    if(!esResp && !mat && !texto && !aiFiles.length){ $('#aiStat').textContent='Pega un mensaje o adjunta una foto o archivo.'; return; }
     if(esResp && !respuesta.trim()){ $('#aiStat').textContent='Escribe tu respuesta al asistente.'; return; }
     $('#aiRes').innerHTML=''; $('#aiApplyRow').hidden=true; $('#aiReplyBox').hidden=true; aiActs=[];
     $('#aiGo').disabled=true; $('#aiStop').hidden=false; $('#aiStat').textContent='Preparando los archivos…';
     aiCtl=new AbortController();
     try{
-      const {imgs, textos, avisos} = esResp ? {imgs:aiLast.imgs, textos:aiLast.textos, avisos:[]} : await prepararArchivos();
+      const {imgs, textos, avisos} = esResp ? {imgs:aiLast.imgs, textos:aiLast.textos, avisos:[]} : mat ? {imgs:mat.imgs||[], textos:mat.textos||[], avisos:[]} : await prepararArchivos();
       if(!texto && !textos.length && !imgs.length){ $('#aiStat').textContent=avisos.join(' ')||'No hay nada que leer.'; return; }
       $('#aiStat').textContent = esResp ? 'Corrigiendo la propuesta con tu respuesta…' : 'Leyendo… esto puede tardar hasta un minuto.';
       const opts={signal:aiCtl.signal, cache:false};
       if(imgs.length) opts.images=imgs;
       let pr = aiMode==='av' ? promptAv(texto, textos, imgs.length) : aiMode==='asis' ? promptAsis(texto, textos, imgs.length) : aiMode==='trab' ? promptTrab(texto, textos, imgs.length) : aiMode==='gas' ? promptGas(texto, textos, imgs.length) : aiMode==='inv' ? promptInv(texto, textos, imgs.length) : promptAI(texto, textos, imgs.length);
+      if(aiMode!=='cob') pr += REGLA_PARA_COB;
       if(esResp){
         aiLast.hilo=[...(aiLast.hilo||[]), {propuesta:aiLast.res, respuesta:respuesta.trim()}];
         pr += `\n\nYa revisamos este material antes. Conversación hasta ahora (tu propuesta y la respuesta de Fran):\n${aiLast.hilo.map((h,k)=>`Propuesta ${k+1}:\n${JSON.stringify(h.propuesta)}\nRespuesta de Fran:\n<<<\n${h.respuesta}\n>>>`).join('\n\n')}\n\nAplica lo que dice Fran (su palabra manda sobre lo que leíste) y devuelve la propuesta completa corregida, con el mismo formato JSON. Quita de "dudas" lo que su respuesta ya resolvió.`;
@@ -3139,10 +3148,12 @@ Si no hay nada que cambiar, "acciones" va vacío y explicas por qué en "resumen
       const res=esObj(res0)?res0:{}; if(!esObj(res0)) aiNoEnt.push('la respuesta del asistente no vino con la forma esperada: toca «Leer» otra vez');
       res.resumen=txtIA(res.resumen,800); res.dudas=(Array.isArray(res.dudas)?res.dudas:[]).map(q=>txtIA(q,400)).filter(Boolean).slice(0,12);
       aiLast = {texto, textos, imgs, res, hilo: esResp ? aiLast.hilo : []};
+      const pCob = aiMode==='cob' ? [] : (Array.isArray(res.para_cobranzas)?res.para_cobranzas:[]).filter(esObj).map(x=>({num:txtIA(x.numero_factura,20), bs:Math.max(0,nIA(x.monto_bs)), usd:Math.max(0,nIA(x.monto_usd))})).filter(x=>x.num||x.bs>0||x.usd>0).slice(0,20);
+      aiPendCob = pCob.length ? {texto, textos, imgs} : null;
       $('#aiReplyBox').hidden = !canWrite; $('#aiReply').value='';
       $('#aiStat').textContent=[...avisos, lineaConsultaIA()].filter(Boolean).join(' ');
       try{ if(aiMode==='av') renderAIAv(res); else if(aiMode==='asis') renderAIAsis(res); else if(aiMode==='trab') renderAITrab(res); else if(aiMode==='gas') renderAIGas(res); else if(aiMode==='inv') renderAIInv(res); else renderAI(res);
-        $('#aiRes').insertAdjacentHTML('beforeend', htmlNoEnt()); }
+        $('#aiRes').insertAdjacentHTML('beforeend', htmlNoEnt()); if(pCob.length) $('#aiRes').insertAdjacentHTML('afterbegin', htmlParaCob(pCob)); }
       catch(eR){ try{ console.error(eR); }catch(_){} aiActs=[]; $('#aiRes').innerHTML=''; $('#aiApplyRow').hidden=true; $('#aiReplyBox').hidden=true; $('#aiStat').textContent='El asistente devolvió una respuesta que no se pudo leer. No se guardó nada: toca «Leer» otra vez.'; return; }
       if(!$('#aiApplyRow').hidden) marcarCambio('#aiSheet');   /* hay propuestas en pantalla sin guardar */
     }catch(e){
@@ -3313,7 +3324,7 @@ Responde solo con un objeto JSON:
   }
   /* ---------- asistente para trabajadores ---------- */
   function abrirAI(modo){
-    aiMode=modo; aiActs=[]; aiTrabs=[]; aiLast=null; $('#aiReplyBox').hidden=true; $('#aiReply').value='';
+    aiMode=modo; aiActs=[]; aiTrabs=[]; aiLast=null; aiPendCob=null; $('#aiReplyBox').hidden=true; $('#aiReply').value='';
     $('#aiRes').innerHTML=''; $('#aiApplyRow').hidden=true; $('#aiStat').textContent='';
     if(modo==='asis'){
       $('#aiTitle').textContent='Registrar asistencia con asistente';
@@ -3708,7 +3719,10 @@ Responde solo con un objeto JSON:
   $('#aiGo').addEventListener('click', ()=>leerAI());
   $('#aiReplyGo').addEventListener('click', ()=>leerAI($('#aiReply').value));
   $('#aiStop').addEventListener('click', ()=>aiCtl&&aiCtl.abort());
-  $('#aiApply').addEventListener('click', ()=> aiMode==='av' ? aplicarAIAv() : aiMode==='asis' ? aplicarAIAsis() : aiMode==='trab' ? aplicarAITrab() : aiMode==='gas' ? aplicarAIGas() : aiMode==='inv' ? aplicarAIInv() : aplicarAI());
+  $('#aiApply').addEventListener('click', async ()=>{ const m0=aiMode;
+    await (m0==='av' ? aplicarAIAv() : m0==='asis' ? aplicarAIAsis() : m0==='trab' ? aplicarAITrab() : m0==='gas' ? aplicarAIGas() : m0==='inv' ? aplicarAIInv() : aplicarAI());
+    if(aiPendCob && m0!=='cob' && aiMode===m0 && !$('#aiSheet').hidden && !$('#aiText').value.trim() && !aiFiles.length) pasarACobranzas(); });
+  $('#aiSheet').addEventListener('click', e=>{ if(e.target.closest('#aiPCobGo')) pasarACobranzas(); });
 
   /* =====================================================================
      MÓDULOS (pestañas de arriba)
@@ -6316,7 +6330,7 @@ Cada movimiento:
 - fecha: AAAA-MM-DD; si no aparece, usa ${today()}.
 - concepto: corto y claro (por ejemplo "2 bombonas de argón", "Gasolina camioneta").
 - monto y moneda ("VES" para bolívares, "USD" para dólares o USDT).
-- cuenta: una de ${gcfg.cuentas.map(c=>`"${c.id}" (${c.nombre}, ${c.moneda==='VES'?'bolívares':'dólares'})`).join(', ')}. Regla de la empresa: todo gasto y todo pago sale de "binance" (se venden USDT), aunque se haya pagado en bolívares por pago móvil o transferencia; solo va a "banco" o "efectivo" si el material lo dice explícitamente (por ejemplo "del banco", "de la cuenta en bolívares", "en efectivo"). Un gasto en bolívares que sale de "binance" lleva su monto en bolívares, moneda "VES" y la tasa a la que se vendieron los USDT. Los cobros de clientes en bolívares sí van a "banco".
+- cuenta: una de ${gcfg.cuentas.map(c=>`"${c.id}" (${c.nombre}, ${c.moneda==='VES'?'bolívares':'dólares'})`).join(', ')}. Regla de la empresa: todo gasto y todo pago sale de "binance" (se venden USDT), aunque se haya pagado en bolívares por pago móvil o transferencia; solo va a "banco" o "efectivo" si el material lo dice explícitamente (por ejemplo "del banco", "de la cuenta en bolívares", "en efectivo"). Un gasto en bolívares que sale de "binance" lleva su monto en bolívares, moneda "VES" y la tasa a la que se vendieron los USDT. (Los cobros de clientes no se registran aquí: mira la regla de más abajo.)
 - tasa en bolívares por dólar solo si aparece; si no, 0.
 - a_cargo: "Empresa", "Papá" o "Fran". Por defecto "Empresa"; gastos personales evidentes (colegio, condominio, Cashea, comida de la casa) van a "Fran" salvo que se diga que son de papá.
 - categoria: de la empresa una de [${gcfg.catEmpresa.join('; ')}]; personales una de [${gcfg.catPersonal.join('; ')}]; ingresos una de [${gcfg.catIngreso.join('; ')}].
@@ -6326,7 +6340,8 @@ Cada movimiento:
 
 Reglas:
 - No inventes montos. Resuelve tú lo menor (formato de números, tildes, nombres). En "dudas" pon solo lo que puede hacer que el registro quede mal (un monto ilegible, una moneda que no se puede saber), con tu propuesta.
-- No registres pagos de nómina ni cobros a clientes por facturas: esos ya entran solos desde las otras pestañas. Si aparecen, menciónalo en "dudas".
+- No registres pagos de nómina: entran solos desde Nómina.
+- Los cobros a clientes (facturas que emite WORKPROCA o pagos de un cliente por un trabajo) NUNCA son un "ingreso" aquí: van en "para_cobranzas" (se explica al final) y su dinero entra solo a la cuenta cuando se registran en Cobranzas, por el monto sin IVA. Única excepción: si el material dice que el cliente pagó el total de la factura con IVA, o que pagó el IVA, registra SOLO el IVA como "ingreso" en "banco", moneda "VES", con concepto "IVA cobrado de la factura N (cliente)", el monto del IVA en bolívares y la tasa del cobro. El cambio de esos bolívares a dólares, si aparece, sí es un "cambio" normal.
 ${REGLAS_COMUNES}
 
 Material a leer:
