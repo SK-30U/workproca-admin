@@ -1,5 +1,5 @@
 /* Caché de la app para abrirla rápido y sin señal. Los datos viven en Firestore (con su propia caché). */
-const CACHE = 'workproca-prueba-v156-miniaturas-de-adjuntos';
+const CACHE = 'workproca-prueba-v157-documentos';
 const APP = ['./', './index.html', './firebase-config.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-180.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(APP)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
