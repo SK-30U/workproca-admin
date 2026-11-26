@@ -2031,7 +2031,7 @@ input,select,textarea{min-width:0;max-width:100%}
   /* =====================================================================
      GUARDADO SEGURO: todo o nada, identificadores estables por intento, cola del teléfono y causa real de cada error
      ===================================================================== */
-  const APP_VERSION='157';
+  const APP_VERSION='158';
   let dbRaiz=null;                                       /* la base de datos (se asigna al arrancar) */
   const cacheActiva = () => !!window.__persistencia;     /* versión independiente con la caché del teléfono activa: lo escrito queda en cola y sube solo */
   const sinRed = () => typeof navigator!=='undefined' && navigator.onLine===false;
@@ -2561,8 +2561,8 @@ input,select,textarea{min-width:0;max-width:100%}
   }
   /* Versión corta: número de orden y monto pendiente */
   /* Reporte corto: qué mostrar en cada línea (se recuerda en este teléfono) */
-  const CORTO_CAMPOS=[['ods','Orden de servicio'],['req','Requisición'],['unidad','Unidad'],['desc','Descripción'],['monto','Monto'],['estado','Estatus'],['subt','Subtotales']];
-  let ecCampos={ods:true, req:true, unidad:false, desc:false, monto:true, estado:false, subt:false};
+  const CORTO_CAMPOS=[['ods','Orden de servicio'],['req','Requisición'],['unidad','Unidad'],['desc','Descripción'],['monto','Monto'],['fact','Facturas'],['estado','Estatus'],['subt','Subtotales']];
+  let ecCampos={ods:true, req:true, unidad:false, desc:false, monto:true, fact:true, estado:false, subt:false};
   try{ const g=JSON.parse(localStorage.getItem('ecCampos')||'null'); if(g&&typeof g==='object') ecCampos={...ecCampos, ...g}; }catch(_){}
   function guardarCampos(){ try{ localStorage.setItem('ecCampos', JSON.stringify(ecCampos)); }catch(_){} }
   const estatusDe = d => { const e=etapa(d); return e==='cancelado'?'Cancelado' : e==='listo'?'Ejecutado, listo para facturar' : e==='sinOrden'?'Ejecutado, sin orden de servicio' : e==='porEjecutar'?(enEjecucion(d)?'En ejecución':tieneOrden(d)?'Con orden, por ejecutar':'Por ejecutar') : 'Cobrado'; };
@@ -2593,7 +2593,7 @@ input,select,textarea{min-width:0;max-width:100%}
     }
     /* Cobrado: los trabajos cobrados completos y también lo ya cobrado de los que tienen saldo, con sus facturas, para que ningún cobro quede fuera del reporte */
     if(sel('cobrado')){ const it=base.filter(pred('cobrado')), par=base.filter(d=>!pred('cobrado')(d) && pagado(d)>0), facts=d=>[...new Set((d.cobros||[]).map(c=>String(c.numFactura||'').trim()).filter(Boolean))];
-      const txtF=(f,parcial)=>f.length>1 ? ` · ${f.length} facturas, N° ${f.join(', ')}` : f.length ? ` · Factura N° ${f[0]}` : '';
+      const txtF=(f,parcial)=>!C.fact ? '' : f.length>1 ? ` · ${f.length} facturas, N° ${f.join(', ')}` : f.length ? ` · Factura N° ${f[0]}` : '';
       if(it.length||par.length){ L.push(''); L.push(par.length?'*Cobrado*':'*Cobrados*');
         it.forEach(d=>L.push(linea(d, pagado(d), txtF(facts(d)))));
         if(par.length){ if(it.length) L.push('_Cobrado en parte (con saldo pendiente)_'); par.forEach(d=>L.push(linea(d, pagado(d), txtF(facts(d)))+(C.monto?` · queda por cobrar ${usd(saldo(d))}`:''))); }
