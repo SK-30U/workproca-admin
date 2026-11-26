@@ -4,30 +4,44 @@
 <meta charset="utf-8">
 <title>Workproca (prueba)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0D5C63">
+<meta name="theme-color" content="#07080B" id="metaTheme">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Workproca">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
+<script>
+(function(){
+  try{
+    var ed=localStorage.getItem('wkEdicion')||'fey', md=localStorage.getItem('wkModo')||'auto', d=document.documentElement;
+    var ok={fey:1,bridge:1,titanium:1,linear:1,bronce:1,porsche:1,clasico:1}; if(!ok[ed]) ed='fey';
+    var dark=md==='dark'||(md!=='light'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches);
+    d.dataset.edition=ed; d.dataset.modo=md; d.dataset.resolved=dark?'dark':'light';
+    if(md==='dark'||md==='light') d.dataset.theme=md; else delete d.dataset.theme;
+    var tc={fey:['#07080B','#F4F5F8'],bridge:['#050912','#EEF4FA'],titanium:['#08080A','#F4F4F6'],linear:['#08090E','#F6F7FB'],bronce:['#050C0E','#F5F4EF'],porsche:['#08090A','#F3F4F6'],clasico:['#0E161B','#0D5C63']};
+    var m=document.getElementById('metaTheme'); if(m&&tc[ed]) m.content=tc[ed][dark?0:1];
+  }catch(_){}
+})();
+</script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="firebase-config.js"></script>
 <style>
-#login{position:fixed;inset:0;z-index:100;background:#ECEFF1;display:flex;align-items:center;justify-content:center;padding:24px;font-family:'Barlow',system-ui,sans-serif}
-@media (prefers-color-scheme:dark){#login{background:#0E161B;color:#E3E9ED}}
-#login .box{max-width:360px;width:100%;background:var(--surface,#fff);border:1px solid var(--line,#D3DADF);border-radius:16px;padding:22px 20px;text-align:center}
-#login h2{margin:0 0 6px;font-size:22px}
-#login p{margin:0 0 14px;font-size:14px;color:var(--muted,#5A6A75);line-height:1.45}
-#login button{border:0;background:#0D5C63;color:#fff;border-radius:12px;padding:13px 18px;font-weight:700;font-size:15px;width:100%}
+#login{position:fixed;inset:0;z-index:100;background:var(--orb,none),var(--bg,#07080B);color:var(--ink,#F1F3F9);display:flex;align-items:center;justify-content:center;padding:24px;font-family:var(--f-body,'Inter','Barlow',system-ui,sans-serif)}
+#login .box{max-width:368px;width:100%;background:var(--hero-spot,none),var(--surface,#10131B);border:1px solid var(--line,rgba(255,255,255,.09));border-radius:18px;padding:26px 22px 22px;text-align:center;box-shadow:var(--sh-card,0 16px 40px rgba(0,0,0,.55))}
+#login .login-w{width:42px;height:42px;border-radius:11px;margin:0 auto 12px;display:inline-flex;align-items:center;justify-content:center;font-weight:900;font-size:19px;background:var(--emblem-bg,#0D5C63);color:var(--emblem-ink,#fff);box-shadow:var(--emblem-sh,none)}
+#login h2{margin:4px 0 8px;font-size:24px;font-family:var(--f-disp,inherit);letter-spacing:-.02em}
+#login p{margin:0 0 16px;font-size:14px;color:var(--muted,#8A94A8);line-height:1.45}
+#login button{border:0;background:var(--pri-bg,#0D5C63);color:var(--pri-ink,#fff);border-radius:12px;padding:13px 18px;font-weight:700;font-size:15px;width:100%;box-shadow:var(--pri-sh,none)}
 </style>
 </head>
-<body><div style="background:#B26A00;color:#fff;font:700 12px/1.3 system-ui,sans-serif;text-align:center;padding:4px 8px">VERSIÓN DE PRUEBA · v162 siguiente imagen en documentos · trabaja con tus datos reales</div>
+<body><div style="background:#B26A00;color:#fff;font:700 12px/1.3 system-ui,sans-serif;text-align:center;padding:4px 8px">VERSIÓN DE PRUEBA · v163 temas y apariencia · trabaja con tus datos reales</div>
 <div id="login" class="scrim-login">
   <div class="box">
-    <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:#5A6A75">Workproca · Trabajos Profesionales C.A.</div>
+    <div class="login-w" aria-hidden="true">W</div>
+    <div style="font-size:11px;letter-spacing:.09em;text-transform:uppercase;font-weight:700;color:var(--eyebrow-c,var(--muted,#5A6A75))">Workproca · Trabajos Profesionales C.A.</div>
     <h2>Administración</h2>
     <p id="loginMsg">Cargando…</p>
     <button type="button" id="loginBtn" hidden>Entrar con Google</button>
@@ -187,28 +201,240 @@ window.__standalone = true;
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap">
 <style>
 /* Layout: ficha de cobranza de astillero — "Por cobrar" arriba con su desglose, pestañas fijas por etapa, tarjetas por trabajo, hojas inferiores para editar y facturar */
 :root{
+  --bg:#F4F5F8; --surface:#FFFFFF; --sunk:#ECEEF4; --ink:#0D1017; --muted:#5B6478; --line:#DCE0EB;
+  --accent:#9A7211; --accent-ink:#FFFFFF; --danger:#C52820;
+  --pe:#5B6478; --pe-bg:#E8EBF2; --so:#AD5700; --so-bg:#FDECD6; --lf:#1E4FD6; --lf-bg:#E3ECFF; --co:#177A48; --co-bg:#DCF5E7;
+  --c-lf:#2563EB; --c-po:#0D9488; --c-so:#D97706; --c-ps:#7C3AED; --c-co:#16A34A; --track:#E2E6F0;
+  --card:var(--surface); --pri:var(--accent);
+  --f-body:'Inter','Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --f-disp:'Plus Jakarta Sans','Barlow Condensed',system-ui,sans-serif;
+  --f-mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+  /* Acabado físico y luces (Modo Claro base: I · Obsidiana & Champán) */
+  --chrome:rgba(244,245,248,.84); --sheet-bg:#FFFFFF;
+  --orb:radial-gradient(900px 360px at 50% -110px, rgba(212,175,55,.13) 0%, transparent 70%);
+  --hero-bg:linear-gradient(165deg,#FFFFFF 0%,#F6F7FB 100%);
+  --hero-spot:radial-gradient(90% 105% at 10% -15%, rgba(212,175,55,.14) 0%, transparent 65%);
+  --eyebrow-c:#8C650B; --num-shade:#2B3345;
+  --emblem-bg:linear-gradient(145deg,#F3D98B 0%,#B89028 100%); --emblem-ink:#090A0D; --emblem-sh:inset 0 1px 0 rgba(255,255,255,.6),0 2px 8px rgba(184,144,40,.28);
+  --pri-bg:linear-gradient(180deg,#1B202C 0%,#0B0E14 100%); --pri-ink:#FFFFFF; --pri-glow:rgba(13,16,23,.24);
+  --fab-bg:linear-gradient(180deg,#ECC964 0%,#B88E22 100%); --fab-ink:#090A0D; --fab-glow:rgba(184,142,34,.35);
+  --rim-top:rgba(255,255,255,.9); --rim-mid:rgba(15,23,42,.08); --rim-bot:rgba(15,23,42,.12);
+  --sh-card:0 1px 2px rgba(13,16,23,.04), 0 8px 22px -6px rgba(13,16,23,.07);
+  --sh-sheet:0 -12px 38px rgba(13,16,23,.18);
+  --glass-bg:linear-gradient(180deg,#FFFFFF 0%,#F7F8FB 100%); --glass-bg-h:#FFFFFF;
+  --nav-on-bg:#0D1017; --nav-on-ink:#FFFFFF; --nav-on-sh:0 2px 6px rgba(13,16,23,.2);
+  --milled:rgba(13,16,23,.07); --code-bg:#F0F2F7;
+}
+
+/* II · Puente Naval — Claro */
+:root[data-edition="bridge"]{
+  --bg:#EEF4FA; --surface:#FFFFFF; --sunk:#E3ECF5; --ink:#091526; --muted:#4B6078; --line:#CFDCE9;
+  --accent:#0284C7; --accent-ink:#FFFFFF;
+  --chrome:rgba(238,244,250,.85); --orb:radial-gradient(900px 360px at 50% -110px, rgba(14,165,233,.15) 0%, transparent 70%);
+  --hero-bg:linear-gradient(165deg,#FFFFFF 0%,#F2F7FC 100%); --hero-spot:radial-gradient(90% 105% at 10% -15%, rgba(14,165,233,.13) 0%, transparent 65%);
+  --eyebrow-c:#0369A1; --num-shade:#16325B;
+  --emblem-bg:linear-gradient(145deg,#FBBF24 0%,#D97706 100%); --emblem-ink:#050912; --emblem-sh:inset 0 1px 0 rgba(255,255,255,.55),0 2px 8px rgba(217,119,6,.3);
+  --pri-bg:linear-gradient(180deg,#16325B 0%,#0B192C 100%); --pri-ink:#FFFFFF; --pri-glow:rgba(11,25,44,.28);
+  --fab-bg:linear-gradient(180deg,#FBBF24 0%,#D97706 100%); --fab-ink:#050912; --fab-glow:rgba(217,119,6,.36);
+  --nav-on-bg:#0B192C; --nav-on-ink:#FFFFFF; --code-bg:#EBF2F9;
+}
+
+/* III · Titanio & Zafiro — Claro */
+:root[data-edition="titanium"]{
+  --bg:#F4F4F6; --surface:#FFFFFF; --sunk:#EAEAEF; --ink:#09090B; --muted:#575761; --line:#DCDCE2;
+  --accent:#2563EB; --accent-ink:#FFFFFF;
+  --chrome:rgba(244,244,246,.85); --orb:radial-gradient(900px 360px at 50% -110px, rgba(37,99,235,.10) 0%, transparent 70%);
+  --hero-bg:linear-gradient(165deg,#FFFFFF 0%,#F7F7FA 100%); --hero-spot:radial-gradient(90% 105% at 10% -15%, rgba(37,99,235,.10) 0%, transparent 65%);
+  --eyebrow-c:#2563EB; --num-shade:#27272A;
+  --emblem-bg:linear-gradient(145deg,#27272A 0%,#09090B 100%); --emblem-ink:#FAFAFA; --emblem-sh:inset 0 1px 0 rgba(255,255,255,.22),0 2px 8px rgba(0,0,0,.22);
+  --pri-bg:linear-gradient(180deg,#3B82F6 0%,#1D4ED8 100%); --pri-ink:#FFFFFF; --pri-glow:rgba(37,99,235,.32);
+  --fab-bg:linear-gradient(180deg,#27272A 0%,#09090B 100%); --fab-ink:#FFFFFF; --fab-glow:rgba(9,9,11,.28);
+  --nav-on-bg:#18181B; --nav-on-ink:#FFFFFF; --code-bg:#EFEFF3;
+}
+
+/* IV · Ónix Índigo — Claro */
+:root[data-edition="linear"]{
+  --bg:#F6F7FB; --surface:#FFFFFF; --sunk:#ECEEF7; --ink:#111320; --muted:#5E637E; --line:#DFE2F0;
+  --accent:#5266EB; --accent-ink:#FFFFFF;
+  --chrome:rgba(246,247,251,.85); --orb:radial-gradient(900px 360px at 50% -110px, rgba(82,102,235,.14) 0%, transparent 70%);
+  --hero-bg:linear-gradient(165deg,#FFFFFF 0%,#F5F6FC 100%); --hero-spot:radial-gradient(90% 105% at 10% -15%, rgba(82,102,235,.13) 0%, transparent 65%);
+  --eyebrow-c:#4B56BA; --num-shade:#252842;
+  --emblem-bg:linear-gradient(145deg,#7C87EB 0%,#4E5AC0 100%); --emblem-ink:#FFFFFF; --emblem-sh:inset 0 1px 0 rgba(255,255,255,.4),0 2px 8px rgba(82,102,235,.32);
+  --pri-bg:linear-gradient(180deg,#6472E6 0%,#4956C2 100%); --pri-ink:#FFFFFF; --pri-glow:rgba(82,102,235,.34);
+  --fab-bg:linear-gradient(180deg,#23263B 0%,#131522 100%); --fab-ink:#FFFFFF; --fab-glow:rgba(19,21,34,.28);
+  --nav-on-bg:#5266EB; --nav-on-ink:#FFFFFF; --code-bg:#EFF1FA;
+}
+
+/* V · Petróleo & Bronce — Claro */
+:root[data-edition="bronce"]{
+  --bg:#F5F4EF; --surface:#FFFFFF; --sunk:#ECEAE2; --ink:#0F2024; --muted:#56686C; --line:#DDDAD0;
+  --accent:#0D6E76; --accent-ink:#FFFFFF;
+  --chrome:rgba(245,244,239,.86); --orb:radial-gradient(900px 360px at 50% -110px, rgba(13,110,118,.13) 0%, transparent 70%);
+  --hero-bg:linear-gradient(165deg,#FFFFFF 0%,#F8F7F2 100%); --hero-spot:radial-gradient(90% 105% at 10% -15%, rgba(13,110,118,.12) 0%, transparent 65%);
+  --eyebrow-c:#0A5C63; --num-shade:#173C42;
+  --emblem-bg:linear-gradient(145deg,#EDA158 0%,#B8651B 100%); --emblem-ink:#050C0E; --emblem-sh:inset 0 1px 0 rgba(255,255,255,.45),0 2px 8px rgba(184,101,27,.3);
+  --pri-bg:linear-gradient(180deg,#11767E 0%,#094C52 100%); --pri-ink:#FFFFFF; --pri-glow:rgba(9,76,82,.28);
+  --fab-bg:linear-gradient(180deg,#E8984C 0%,#B8641B 100%); --fab-ink:#050C0E; --fab-glow:rgba(184,100,27,.34);
+  --nav-on-bg:#0B4D53; --nav-on-ink:#FFFFFF; --code-bg:#EFECE4;
+}
+
+/* VI · Carbono & Magma — Claro */
+:root[data-edition="porsche"]{
+  --bg:#F3F4F6; --surface:#FFFFFF; --sunk:#E8EAEE; --ink:#101215; --muted:#585F6A; --line:#D8DCE3;
+  --accent:#EA580C; --accent-ink:#FFFFFF;
+  --chrome:rgba(243,244,246,.86); --orb:radial-gradient(900px 360px at 50% -110px, rgba(234,88,12,.12) 0%, transparent 70%);
+  --hero-bg:linear-gradient(165deg,#FFFFFF 0%,#F7F8FA 100%); --hero-spot:radial-gradient(90% 105% at 10% -15%, rgba(234,88,12,.12) 0%, transparent 65%);
+  --eyebrow-c:#C2410C; --num-shade:#262A30;
+  --emblem-bg:linear-gradient(145deg,#FB923C 0%,#EA580C 100%); --emblem-ink:#08090A; --emblem-sh:inset 0 1px 0 rgba(255,255,255,.45),0 2px 8px rgba(234,88,12,.32);
+  --pri-bg:linear-gradient(180deg,#F97316 0%,#C2410C 100%); --pri-ink:#FFFFFF; --pri-glow:rgba(234,88,12,.32);
+  --fab-bg:linear-gradient(180deg,#202328 0%,#101215 100%); --fab-ink:#FFFFFF; --fab-glow:rgba(16,18,21,.28);
+  --nav-on-bg:#16191D; --nav-on-ink:#FFFFFF; --code-bg:#ECEEF2;
+}
+
+/* Clásico v162 — Claro */
+:root[data-edition="clasico"]{
   --bg:#ECEFF1; --surface:#FFFFFF; --sunk:#F5F7F8; --ink:#15222B; --muted:#5A6A75; --line:#D3DADF;
   --accent:#0D5C63; --accent-ink:#FFFFFF; --danger:#B3261E;
   --pe:#5A6A75; --pe-bg:#E6EAED; --so:#A85B06; --so-bg:#FBEBD5; --lf:#1D57A0; --lf-bg:#E0EAF7; --co:#2A7439; --co-bg:#DDF0E1;
   --c-lf:#1D57A0; --c-po:#0E8A7A; --c-so:#A85B06; --c-ps:#6E56CF; --c-co:#2A7439; --track:#E9EDF0;
   --f-body:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
   --f-disp:'Barlow Condensed','Arial Narrow',system-ui,sans-serif;
-  --f-mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+  --orb:none; --hero-spot:none; --emblem-bg:#0D5C63; --emblem-ink:#FFFFFF; --emblem-sh:none;
+  --pri-bg:#0D5C63; --pri-ink:#FFFFFF; --eyebrow-c:#5A6A75;
 }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0E161B; --surface:#162128; --sunk:#111B21; --ink:#E3E9ED; --muted:#91A1AC; --line:#25333C;
+
+/* =====================================================================
+   MODO OSCURO DE ALTA PRECISIÓN (6 EDICIONES + CLÁSICO)
+   ===================================================================== */
+:root[data-resolved="dark"]{
+  color-scheme:dark;
+  /* Base I · Obsidiana & Champán (Fey / Centurion) */
+  --bg:#07080B; --surface:#10131B; --sunk:#0A0C11; --sheet-bg:#131722;
+  --ink:#F1F3F9; --muted:#8A94A8; --line:rgba(255,255,255,.075);
+  --accent:#E5C158; --accent-ink:#08090C; --danger:#F87171;
+  --pe:#94A3B8; --pe-bg:rgba(148,163,184,.12);
+  --so:#FBBF24; --so-bg:rgba(245,158,11,.13);
+  --lf:#7DD3FC; --lf-bg:rgba(56,189,248,.13);
+  --co:#34D399; --co-bg:rgba(16,185,129,.13);
+  --c-lf:#60A5FA; --c-po:#2DD4BF; --c-so:#F59E0B; --c-ps:#A78BFA; --c-co:#34D399; --track:rgba(0,0,0,.55);
+  --chrome:rgba(13,16,23,.80);
+  --orb:radial-gradient(880px 380px at 50% -100px, rgba(229,193,88,.14) 0%, transparent 70%);
+  --hero-bg:linear-gradient(165deg,#131722 0%,#0B0D14 100%);
+  --hero-spot:radial-gradient(92% 105% at 12% -15%, rgba(229,193,88,.16) 0%, transparent 65%);
+  --eyebrow-c:#E5C158; --num-shade:#B2BCD0;
+  --emblem-bg:linear-gradient(145deg,#F3D98B 0%,#B89028 100%); --emblem-ink:#090A0D; --emblem-sh:inset 0 1px 0 rgba(255,255,255,.55),0 2px 12px rgba(212,175,55,.35);
+  --pri-bg:linear-gradient(180deg,#FFFFFF 0%,#DCE2EE 100%); --pri-ink:#07080B; --pri-glow:rgba(255,255,255,.18);
+  --fab-bg:linear-gradient(180deg,#ECC964 0%,#B88E22 100%); --fab-ink:#090A0D; --fab-glow:rgba(212,175,55,.40);
+  --rim-top:rgba(255,255,255,.21); --rim-mid:rgba(255,255,255,.06); --rim-bot:rgba(255,255,255,.015);
+  --sh-card:inset 0 1px 0 rgba(255,255,255,.08), 0 12px 28px -8px rgba(0,0,0,.72), 0 0 0 1px rgba(0,0,0,.75);
+  --sh-sheet:inset 0 1px 0 rgba(255,255,255,.15), 0 -18px 50px rgba(0,0,0,.82);
+  --glass-bg:linear-gradient(180deg,rgba(255,255,255,.065) 0%,rgba(255,255,255,.02) 100%);
+  --glass-bg-h:linear-gradient(180deg,rgba(255,255,255,.105) 0%,rgba(255,255,255,.04) 100%);
+  --nav-on-bg:linear-gradient(180deg,#262B38 0%,#1A1E29 100%); --nav-on-ink:#FFFFFF; --nav-on-sh:inset 0 1px 0 rgba(255,255,255,.15),0 2px 6px rgba(0,0,0,.55);
+  --milled:rgba(0,0,0,.58); --code-bg:rgba(255,255,255,.05);
+}
+
+/* II · Puente Naval — Oscuro */
+:root[data-resolved="dark"][data-edition="bridge"]{
+  --bg:#050912; --surface:#0C1627; --sunk:#070E1A; --sheet-bg:#101D33;
+  --ink:#ECF3FC; --muted:#849BB8; --line:rgba(147,197,253,.095);
+  --accent:#38BDF8; --accent-ink:#041320;
+  --chrome:rgba(9,17,32,.82);
+  --orb:radial-gradient(880px 380px at 50% -100px, rgba(14,165,233,.20) 0%, transparent 70%);
+  --hero-bg:linear-gradient(160deg,#0F1E36 0%,#081120 100%);
+  --hero-spot:radial-gradient(95% 110% at 12% -15%, rgba(56,189,248,.20) 0%, transparent 65%);
+  --eyebrow-c:#7DD3FC; --num-shade:#93C5FD;
+  --emblem-bg:linear-gradient(145deg,#FBBF24 0%,#D97706 100%); --emblem-ink:#050912; --emblem-sh:inset 0 1px 0 rgba(255,255,255,.5),0 2px 12px rgba(245,158,11,.42);
+  --pri-bg:linear-gradient(180deg,#0EA5E9 0%,#0369A1 100%); --pri-ink:#FFFFFF; --pri-glow:rgba(14,165,233,.44);
+  --fab-bg:linear-gradient(180deg,#FBBF24 0%,#D97706 100%); --fab-ink:#050912; --fab-glow:rgba(245,158,11,.42);
+  --rim-top:rgba(147,197,253,.24); --rim-mid:rgba(56,189,248,.07); --rim-bot:rgba(255,255,255,.015);
+  --nav-on-bg:linear-gradient(180deg,#1B3154 0%,#12223B 100%); --nav-on-sh:inset 0 1px 0 rgba(147,197,253,.22),0 2px 6px rgba(0,0,0,.6);
+  --code-bg:rgba(56,189,248,.08);
+}
+
+/* III · Titanio & Zafiro — Oscuro */
+:root[data-resolved="dark"][data-edition="titanium"]{
+  --bg:#08080A; --surface:#121216; --sunk:#0B0B0E; --sheet-bg:#17171C;
+  --ink:#F4F4F6; --muted:#9696A0; --line:rgba(255,255,255,.085);
+  --accent:#60A5FA; --accent-ink:#05152E;
+  --chrome:rgba(18,18,22,.82);
+  --orb:radial-gradient(880px 380px at 50% -100px, rgba(255,255,255,.09) 0%, transparent 70%);
+  --hero-bg:linear-gradient(165deg,#17171C 0%,#0D0D10 100%);
+  --hero-spot:radial-gradient(90% 100% at 15% -20%, rgba(255,255,255,.09) 0%, transparent 65%);
+  --eyebrow-c:#D4D4D8; --num-shade:#A1A1AA;
+  --emblem-bg:linear-gradient(145deg,#F4F4F5 0%,#A1A1AA 100%); --emblem-ink:#09090B; --emblem-sh:inset 0 1px 0 #FFFFFF,0 2px 10px rgba(255,255,255,.18);
+  --pri-bg:linear-gradient(180deg,#3B82F6 0%,#1D4ED8 100%); --pri-ink:#FFFFFF; --pri-glow:rgba(37,99,235,.48);
+  --fab-bg:linear-gradient(180deg,#FAFAFA 0%,#D4D4D8 100%); --fab-ink:#09090B; --fab-glow:rgba(255,255,255,.20);
+  --rim-top:rgba(255,255,255,.25); --rim-mid:rgba(255,255,255,.07); --rim-bot:rgba(255,255,255,.02);
+  --nav-on-bg:linear-gradient(180deg,#27272A 0%,#1C1C20 100%);
+}
+
+/* IV · Ónix Índigo — Oscuro */
+:root[data-resolved="dark"][data-edition="linear"]{
+  --bg:#08090E; --surface:#111320; --sunk:#0B0C15; --sheet-bg:#161929;
+  --ink:#EEF0FA; --muted:#8E95B2; --line:rgba(199,210,254,.085);
+  --accent:#818CF8; --accent-ink:#080914;
+  --chrome:rgba(15,17,28,.80);
+  --orb:radial-gradient(880px 380px at 50% -100px, rgba(94,106,210,.22) 0%, transparent 70%);
+  --hero-bg:linear-gradient(165deg,#151828 0%,#0C0E18 100%);
+  --hero-spot:radial-gradient(90% 105% at 15% -15%, rgba(94,106,210,.24) 0%, transparent 66%);
+  --eyebrow-c:#A5B4FC; --num-shade:#C7D2FE;
+  --emblem-bg:linear-gradient(145deg,#7C87EB 0%,#4E5AC0 100%); --emblem-ink:#FFFFFF; --emblem-sh:inset 0 1px 0 rgba(255,255,255,.4),0 2px 12px rgba(94,106,210,.45);
+  --pri-bg:linear-gradient(180deg,#6875E2 0%,#4D59C2 100%); --pri-ink:#FFFFFF; --pri-glow:rgba(94,106,210,.48);
+  --fab-bg:linear-gradient(180deg,#6875E2 0%,#4D59C2 100%); --fab-ink:#FFFFFF; --fab-glow:rgba(94,106,210,.48);
+  --rim-top:rgba(199,210,254,.22); --rim-mid:rgba(94,106,210,.08); --rim-bot:rgba(255,255,255,.015);
+  --nav-on-bg:linear-gradient(180deg,#25283D 0%,#1A1C2C 100%); --nav-on-sh:inset 0 1px 0 rgba(199,210,254,.18),0 2px 6px rgba(0,0,0,.55);
+  --code-bg:rgba(94,106,210,.10);
+}
+
+/* V · Petróleo & Bronce — Oscuro */
+:root[data-resolved="dark"][data-edition="bronce"]{
+  --bg:#050C0E; --surface:#0B1B1F; --sunk:#061114; --sheet-bg:#0F2328;
+  --ink:#E8F5F4; --muted:#82A6A8; --line:rgba(153,246,228,.085);
+  --accent:#2DD4BF; --accent-ink:#03201E;
+  --chrome:rgba(9,22,26,.82);
+  --orb:radial-gradient(880px 380px at 50% -100px, rgba(13,148,136,.20) 0%, transparent 70%);
+  --hero-bg:linear-gradient(160deg,#0D2328 0%,#071417 100%);
+  --hero-spot:radial-gradient(95% 105% at 12% -15%, rgba(20,184,166,.20) 0%, transparent 65%);
+  --eyebrow-c:#5EEAD4; --num-shade:#99F6E4;
+  --emblem-bg:linear-gradient(145deg,#EDA158 0%,#B8651B 100%); --emblem-ink:#050C0E; --emblem-sh:inset 0 1px 0 rgba(255,255,255,.45),0 2px 12px rgba(224,142,69,.4);
+  --pri-bg:linear-gradient(180deg,#117E86 0%,#0A555B 100%); --pri-ink:#FFFFFF; --pri-glow:rgba(17,126,134,.45);
+  --fab-bg:linear-gradient(180deg,#E8984C 0%,#B8641B 100%); --fab-ink:#050C0E; --fab-glow:rgba(224,142,69,.40);
+  --rim-top:rgba(153,246,228,.20); --rim-mid:rgba(20,184,166,.07); --rim-bot:rgba(255,255,255,.015);
+  --nav-on-bg:linear-gradient(180deg,#13333A 0%,#0C2227 100%); --nav-on-sh:inset 0 1px 0 rgba(153,246,228,.20),0 2px 6px rgba(0,0,0,.6);
+  --code-bg:rgba(20,184,166,.09);
+}
+
+/* VI · Carbono & Magma — Oscuro */
+:root[data-resolved="dark"][data-edition="porsche"]{
+  --bg:#08090A; --surface:#121417; --sunk:#0B0C0E; --sheet-bg:#16191D;
+  --ink:#F2F3F5; --muted:#8E959E; --line:rgba(255,255,255,.075);
+  --accent:#FB923C; --accent-ink:#140702;
+  --chrome:rgba(17,19,22,.82);
+  --orb:radial-gradient(880px 380px at 50% -100px, rgba(249,115,22,.16) 0%, transparent 70%);
+  --hero-bg:linear-gradient(165deg,#16191E 0%,#0C0E10 100%);
+  --hero-spot:radial-gradient(90% 100% at 12% -15%, rgba(249,115,22,.18) 0%, transparent 65%);
+  --eyebrow-c:#FB923C; --num-shade:#B0B5BD;
+  --emblem-bg:linear-gradient(145deg,#FB923C 0%,#EA580C 100%); --emblem-ink:#08090A; --emblem-sh:inset 0 1px 0 rgba(255,255,255,.45),0 2px 12px rgba(249,115,22,.4);
+  --pri-bg:linear-gradient(180deg,#F97316 0%,#C2410C 100%); --pri-ink:#FFFFFF; --pri-glow:rgba(234,88,12,.46);
+  --fab-bg:linear-gradient(180deg,#272A30 0%,#181A1E 100%); --fab-ink:#FAFAFA; --fab-glow:rgba(0,0,0,.55);
+  --rim-top:rgba(255,255,255,.22); --rim-mid:rgba(255,255,255,.06); --rim-bot:rgba(255,255,255,.015);
+  --nav-on-bg:linear-gradient(180deg,#262A30 0%,#191C20 100%);
+}
+
+/* Clásico v162 — Oscuro */
+:root[data-resolved="dark"][data-edition="clasico"]{
+  --bg:#0E161B; --surface:#162128; --sunk:#111B21; --sheet-bg:#162128; --ink:#E3E9ED; --muted:#91A1AC; --line:#25333C;
   --accent:#4DB0B7; --accent-ink:#04282B; --danger:#F08A82;
   --pe:#A7B4BD; --pe-bg:#222E36; --so:#F0A452; --so-bg:#3A2914; --lf:#86B4EF; --lf-bg:#172A43; --co:#7FCB8E; --co-bg:#15321D;
-  --c-lf:#4A8BDD; --c-po:#1FA48C; --c-so:#D27A1F; --c-ps:#8C72E6; --c-co:#43A25A; --track:#22303A; color-scheme:dark}}
-:root[data-theme="dark"]{
-  --bg:#0E161B; --surface:#162128; --sunk:#111B21; --ink:#E3E9ED; --muted:#91A1AC; --line:#25333C;
-  --accent:#4DB0B7; --accent-ink:#04282B; --danger:#F08A82;
-  --pe:#A7B4BD; --pe-bg:#222E36; --so:#F0A452; --so-bg:#3A2914; --lf:#86B4EF; --lf-bg:#172A43; --co:#7FCB8E; --co-bg:#15321D; color-scheme:dark;
-  --c-lf:#4A8BDD; --c-po:#1FA48C; --c-so:#D27A1F; --c-ps:#8C72E6; --c-co:#43A25A; --track:#22303A;}
+  --c-lf:#4A8BDD; --c-po:#1FA48C; --c-so:#D27A1F; --c-ps:#8C72E6; --c-co:#43A25A; --track:#22303A;
+  --orb:none; --hero-spot:none; --emblem-bg:#4DB0B7; --emblem-ink:#04282B; --emblem-sh:none;
+  --pri-bg:#4DB0B7; --pri-ink:#04282B; --eyebrow-c:#91A1AC;
+}
 
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.4;-webkit-tap-highlight-color:transparent}
@@ -588,9 +814,260 @@ select.combo-oculto{display:none}
   [data-cta]{cursor:pointer}
 .num-malo{border-color:var(--danger)!important;box-shadow:0 0 0 2px color-mix(in srgb,var(--danger) 25%,transparent)}
 .num-msg{display:block;color:var(--danger);font-size:12.5px;line-height:1.3;margin-top:4px;font-weight:500}
-body{overflow-wrap:anywhere}
+body{overflow-wrap:anywhere;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 main,section.sheet .wrap,label.f,.card,.ln,.panel,.mv,.row,.cobro{min-width:0;max-width:100%}
 input,select,textarea{min-width:0;max-width:100%}
+
+/* Cabecera superior con insignia W e icono de engranaje arriba a la derecha */
+.topchrome{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.topbrand{display:flex;align-items:center;gap:9px;min-width:0}
+.wemblem{width:26px;height:26px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-family:var(--f-disp);font-weight:800;font-size:13px;letter-spacing:-.03em;background:var(--emblem-bg);color:var(--emblem-ink);box-shadow:var(--emblem-sh);flex:none}
+.topbrand-txt{font-size:11px;letter-spacing:.09em;text-transform:uppercase;font-weight:700;color:var(--eyebrow-c,var(--muted));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbrand-txt em{font-style:normal;color:var(--muted);font-weight:600}
+@media (max-width:380px){.topbrand-txt em{display:none}}
+.modtabs{margin-top:8px}
+.gearbtn{width:34px;height:34px;border-radius:9px;border:1px solid var(--line);background:var(--glass-bg,var(--surface));color:var(--ink);display:inline-flex;align-items:center;justify-content:center;padding:0;flex:none;transition:transform .22s cubic-bezier(.16,1,.3,1),background .18s,border-color .18s,box-shadow .18s;box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 2px 6px rgba(0,0,0,.18)}
+.gearbtn svg{width:17px;height:17px;opacity:.88;transition:transform .28s cubic-bezier(.16,1,.3,1)}
+.gearbtn:hover svg,.gearbtn[aria-expanded="true"] svg,body:has(#themeSheet:not([hidden])) .gearbtn svg{transform:rotate(36deg);opacity:1}
+.gearbtn:hover{background:var(--glass-bg-h,var(--sunk))}
+body:has(#themeSheet:not([hidden])) .gearbtn{border-color:var(--accent);color:var(--accent)}
+
+/* Selector de ediciones en la hoja del engranaje */
+.tgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:8px}
+@media (max-width:430px){.tgrid{grid-template-columns:1fr}}
+.tcard{position:relative;display:flex;flex-direction:column;gap:8px;text-align:left;border:1px solid var(--line);background:var(--sunk);border-radius:13px;padding:11px 12px;transition:transform .16s,border-color .16s,box-shadow .16s}
+.tcard:active{transform:scale(.99)}
+.tcard.on{border-color:var(--accent);background:var(--surface);box-shadow:0 0 0 1px var(--accent) inset,0 6px 18px -6px rgba(0,0,0,.35)}
+.tcard-prev{height:44px;border-radius:9px;padding:7px 9px;display:flex;align-items:center;justify-content:space-between;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.10)}
+.tcard-prev .tp-l{display:flex;align-items:center;gap:7px}
+.tcard-prev .tp-w{width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-weight:900;font-size:10px}
+.tcard-prev .tp-lines{display:flex;flex-direction:column;gap:4px}
+.tcard-prev .tp-lines i{display:block;height:4px;border-radius:2px}
+.tcard-prev .tp-dots{display:flex;gap:4px}
+.tcard-prev .tp-dots i{width:9px;height:9px;border-radius:50%;border:1px solid rgba(255,255,255,.22)}
+.tcard-head{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.tcard-head b{font-size:14px;font-weight:700;color:var(--ink)}
+.tcard-chk{width:18px;height:18px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;font-size:11px;font-weight:800;color:transparent;flex:none}
+.tcard.on .tcard-chk{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.tcard small{font-size:12px;color:var(--muted);line-height:1.35}
+
+/* =====================================================================
+   ACABADO DE ALTA RELOJERÍA / FINTECH (activo en las 6 ediciones nuevas)
+   ===================================================================== */
+html:not([data-edition="clasico"]) body{
+  background-color:var(--bg);
+  background-image:var(--orb);
+  background-repeat:no-repeat;
+  background-attachment:fixed;
+  font-feature-settings:"cv01" 1,"ss03" 1;
+}
+html:not([data-edition="clasico"]) header.top .brand .eyebrow{display:none}
+html:not([data-edition="clasico"]) header.top{padding-block:12px 6px}
+html:not([data-edition="clasico"]) h1{font-size:30px;letter-spacing:-.03em;margin:0}
+
+/* Barra superior de cristal ahumado y cápsula fresada de módulos */
+html:not([data-edition="clasico"]) .topnav{
+  background:var(--chrome);
+  backdrop-filter:blur(18px) saturate(160%);
+  -webkit-backdrop-filter:blur(18px) saturate(160%);
+  padding-block:10px 9px;
+  box-shadow:0 8px 24px -10px rgba(0,0,0,.35);
+}
+@media (display-mode: standalone){html:not([data-edition="clasico"]) .topnav{padding-top:18px}}
+html:not([data-edition="clasico"]) .modtabs{
+  background:var(--milled);
+  padding:3px;
+  border-radius:11px;
+  border:1px solid var(--line);
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.28);
+  gap:2px;
+}
+html:not([data-edition="clasico"]) .modtabs button{
+  border:0;
+  background:transparent;
+  border-radius:8px;
+  padding:8px 2px;
+  font-weight:600;
+  color:var(--muted);
+  transition:background .16s,color .16s,box-shadow .16s;
+}
+html:not([data-edition="clasico"]) .modtabs button:hover:not([aria-selected="true"]){color:var(--ink)}
+html:not([data-edition="clasico"]) .modtabs button[aria-selected="true"]{
+  background:var(--nav-on-bg);
+  color:var(--nav-on-ink);
+  box-shadow:var(--nav-on-sh);
+  font-weight:700;
+}
+html:not([data-edition="clasico"]) .bar{
+  background:color-mix(in srgb,var(--bg) 84%,transparent);
+  backdrop-filter:blur(14px) saturate(150%);
+  -webkit-backdrop-filter:blur(14px) saturate(150%);
+}
+html:not([data-edition="clasico"]) .tabs{
+  background:var(--milled);
+  border-color:var(--line);
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.22);
+}
+html:not([data-edition="clasico"]) .tabs button[aria-selected="true"]{
+  background:var(--nav-on-bg);
+  color:var(--nav-on-ink);
+  box-shadow:var(--nav-on-sh);
+}
+html:not([data-edition="clasico"]) .seg{
+  background:var(--milled);
+  border-color:var(--line);
+}
+
+/* Bordes especulares de luz cenital (técnica Linear / Fey) */
+html[data-resolved="dark"]:not([data-edition="clasico"]) :is(.hero,.card,.stat,.ln,.wrow,.wcard,.panel){
+  position:relative;
+  border-color:transparent;
+}
+html[data-resolved="dark"]:not([data-edition="clasico"]) :is(.hero,.card,.stat,.ln,.wrow,.wcard,.panel)::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  border-radius:inherit;
+  padding:1px;
+  background:linear-gradient(180deg,var(--rim-top) 0%,var(--rim-mid) 46%,var(--rim-bot) 100%);
+  -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
+  -webkit-mask-composite:xor;
+  mask-composite:exclude;
+  pointer-events:none;
+}
+html:not([data-edition="clasico"]) :is(.card,.stat,.ln,.wrow,.wcard,.panel,.solic,.regBtns button){
+  box-shadow:var(--sh-card);
+  border-radius:14px;
+  transition:transform .16s cubic-bezier(.16,1,.3,1),background .16s,box-shadow .16s;
+}
+
+/* Tarjeta Insignia (.hero) con foco radial y cifras metálicas */
+html:not([data-edition="clasico"]) .hero{
+  background:var(--hero-spot),var(--hero-bg);
+  border-radius:16px;
+  padding:16px 16px 14px;
+  box-shadow:var(--sh-card);
+}
+html:not([data-edition="clasico"]) .hero .lbl{color:var(--eyebrow-c);letter-spacing:.1em}
+html:not([data-edition="clasico"]) .hero .big{
+  letter-spacing:-.03em;
+  font-weight:800;
+  background:linear-gradient(180deg,var(--ink) 30%,var(--num-shade) 100%);
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+html:not([data-edition="clasico"]) .hero .big small{-webkit-text-fill-color:var(--muted);font-weight:600;letter-spacing:.04em}
+
+/* Pistas fresadas para barras segmentadas y de avance */
+html:not([data-edition="clasico"]) :is(.segbar,.split,.avbar){
+  background:var(--milled);
+  height:9px;
+  padding:1.5px;
+  border-radius:99px;
+  border:0;
+  box-shadow:inset 0 1.5px 3px rgba(0,0,0,.42),0 1px 0 rgba(255,255,255,.05);
+}
+html:not([data-edition="clasico"]) :is(.segbar i,.split i,.avbar i){height:100%;border-radius:99px}
+
+/* Tarjetas de trabajo: filamento láser lateral, placas PO y pastillas LED */
+html:not([data-edition="clasico"]) .card{position:relative;padding-left:16px}
+html:not([data-edition="clasico"]) .card::after{
+  content:"";
+  position:absolute;
+  left:0;
+  top:20%;
+  bottom:20%;
+  width:2.5px;
+  border-radius:0 3px 3px 0;
+  background:var(--pe);
+  opacity:.75;
+}
+html:not([data-edition="clasico"]) .card:has(.pill.lf)::after{background:var(--lf);opacity:1;box-shadow:0 0 10px color-mix(in srgb,var(--lf) 65%,transparent)}
+html:not([data-edition="clasico"]) .card:has(.pill.co)::after{background:var(--co);opacity:1;box-shadow:0 0 10px color-mix(in srgb,var(--co) 65%,transparent)}
+html:not([data-edition="clasico"]) .card:has(.pill.so)::after{background:var(--so);opacity:1;box-shadow:0 0 10px color-mix(in srgb,var(--so) 65%,transparent)}
+html:not([data-edition="clasico"]) .card:has(.pill.ej)::after{background:var(--c-po);opacity:1;box-shadow:0 0 10px color-mix(in srgb,var(--c-po) 65%,transparent)}
+html:not([data-edition="clasico"]) button.card:hover,html:not([data-edition="clasico"]) button.wcard:hover,html:not([data-edition="clasico"]) button.avcard:hover{
+  background:color-mix(in srgb,var(--surface) 94%,var(--ink));
+}
+html:not([data-edition="clasico"]) .meta .code{
+  background:var(--code-bg);
+  border:1px solid var(--line);
+  border-radius:5px;
+  padding:1px 6px;
+  font-size:11.5px;
+  opacity:1;
+}
+html:not([data-edition="clasico"]) .pill{
+  gap:6px;
+  padding:3px 10px;
+  border:1px solid color-mix(in srgb,currentColor 26%,transparent);
+  font-weight:600;
+}
+html:not([data-edition="clasico"]) .pill::before{
+  content:"";
+  width:5.5px;
+  height:5.5px;
+  border-radius:50%;
+  background:currentColor;
+  box-shadow:0 0 6px currentColor;
+  flex:none;
+}
+html:not([data-edition="clasico"]) .money{letter-spacing:-.02em;font-weight:700}
+
+/* Botonera táctil de cristal ahumado y metal anodizado */
+html:not([data-edition="clasico"]) :is(.ghost,.btn.sec,.daynav button){
+  background:var(--glass-bg);
+  border:1px solid var(--line);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 2px 8px -2px rgba(0,0,0,.22);
+  transition:background .16s,transform .14s,box-shadow .16s;
+}
+html:not([data-edition="clasico"]) :is(.ghost,.btn.sec,.daynav button):hover:not(:disabled){
+  background:var(--glass-bg-h);
+}
+html:not([data-edition="clasico"]) .btn.pri,html:not([data-edition="clasico"]) .ghost.on{
+  background:var(--pri-bg);
+  color:var(--pri-ink);
+  border-color:transparent;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.32),0 0 0 1px rgba(0,0,0,.2),0 6px 18px -4px var(--pri-glow);
+  transition:transform .14s,filter .16s,box-shadow .16s;
+}
+html:not([data-edition="clasico"]) .btn.pri:hover:not(:disabled){filter:brightness(1.05)}
+html:not([data-edition="clasico"]) .btn:active:not(:disabled),html:not([data-edition="clasico"]) .ghost:active:not(:disabled),html:not([data-edition="clasico"]) .fab:active{transform:scale(.98)}
+html:not([data-edition="clasico"]) .fab{
+  background:var(--fab-bg);
+  color:var(--fab-ink);
+  border-radius:14px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.42),0 0 0 1px rgba(0,0,0,.28),0 10px 26px -4px var(--fab-glow);
+  transition:transform .16s cubic-bezier(.16,1,.3,1),filter .16s;
+}
+html:not([data-edition="clasico"]) .fab:hover{filter:brightness(1.05)}
+
+/* Hojas inferiores (.sheet), barra de selección y campos */
+html:not([data-edition="clasico"]) .scrim{
+  background:rgba(3,6,12,.62);
+  backdrop-filter:blur(6px);
+  -webkit-backdrop-filter:blur(6px);
+}
+html:not([data-edition="clasico"]) .sheet{
+  background:var(--sheet-bg);
+  border-radius:22px 22px 0 0;
+  border-top:1px solid var(--rim-top);
+  box-shadow:var(--sh-sheet);
+}
+html:not([data-edition="clasico"]) .sh-head{background:var(--sheet-bg)}
+html:not([data-edition="clasico"]) .selbar{
+  background:var(--chrome);
+  backdrop-filter:blur(18px) saturate(160%);
+  -webkit-backdrop-filter:blur(18px) saturate(160%);
+}
+html:not([data-edition="clasico"]) :is(label.f input,label.f select,label.f textarea,.filters select,.filters input,.daynav input,.combo-in,.bp-in,textarea.ai,textarea.share,.wex input,.wex select){
+  transition:border-color .15s,box-shadow .15s,background .15s;
+}
+html:not([data-edition="clasico"]) :is(label.f input,label.f select,label.f textarea,.filters select,.filters input,.daynav input,.combo-in,.bp-in,textarea.ai,textarea.share,.wex input,.wex select):focus{
+  outline:none;
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent);
+}
 </style>
 
 <div class="topnav" id="topnav">
@@ -598,6 +1075,15 @@ input,select,textarea{min-width:0;max-width:100%}
     <div class="netbar" id="netBar" role="status" hidden></div>
     <div class="rechazo" id="avRech" role="alert" hidden></div>
     <div class="rechazo" id="avCfg" role="alert" hidden></div>
+    <div class="topchrome">
+      <div class="topbrand">
+        <span class="wemblem" aria-hidden="true">W</span>
+        <span class="topbrand-txt">Workproca <em>· Trabajos Profesionales C.A.</em></span>
+      </div>
+      <button type="button" class="gearbtn" id="btnTheme" aria-label="Temas y apariencia" title="Temas y apariencia">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+      </button>
+    </div>
     <nav class="modtabs" id="modTabs" role="tablist" aria-label="Módulos">
       <button type="button" role="tab" data-m="cob" aria-selected="true">Cobranzas</button>
       <button type="button" role="tab" data-m="av" aria-selected="false">Avance</button>
@@ -725,6 +1211,26 @@ input,select,textarea{min-width:0;max-width:100%}
 </div>
 
 <div class="scrim" id="scrim" hidden></div>
+
+<!-- Apariencia y ediciones visuales -->
+<section class="sheet" id="themeSheet" hidden aria-modal="true" role="dialog" aria-labelledby="thTitle">
+  <div class="wrap">
+    <div class="grab"></div>
+    <div class="sh-head"><h3 id="thTitle">Apariencia y temas</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
+    <fieldset style="margin-top:6px">
+      <legend>Iluminación</legend>
+      <div class="seg" id="modoSeg" role="group" aria-label="Modo de iluminación">
+        <button type="button" data-modo="dark">Oscuro</button>
+        <button type="button" data-modo="light">Claro</button>
+        <button type="button" data-modo="auto">Automático</button>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Edición visual</legend>
+      <div class="tgrid" id="themeGrid"></div>
+    </fieldset>
+  </div>
+</section>
 
 <!-- Editar un trabajo -->
 <section class="sheet" id="sheet" hidden aria-modal="true" role="dialog" aria-labelledby="shTitle">
@@ -2001,7 +2507,7 @@ input,select,textarea{min-width:0;max-width:100%}
      Se pone con cualquier cambio real: teclear, cambiar un selector o una casilla (eventos input y change) y los botones que agregan o quitan
      renglones, pagos, líneas o actividades (marcarCambio). Se quita en todo guardado exitoso (hojaLimpia) y cada vez que una hoja se abre.
      Mientras una hoja se abre y el código la rellena, nada la marca: una hoja recién abierta nunca nace marcada. */
-  const HOJAS_LECTURA=['shareSheet','ctaSheet','trSheet','impSheet'];   /* solo se leen o se copian: no tienen nada que guardar */
+  const HOJAS_LECTURA=['shareSheet','ctaSheet','trSheet','impSheet','themeSheet'];   /* solo se leen o se copian: no tienen nada que guardar */
   const TXT_SUCIA='Tienes datos sin guardar. Toca otra vez para descartarlos.';
   let cierreArmado=0, abriendoHoja=0;
   /* Aviso que pide un segundo toque (fecha futura, monto muy alto, trabajo repetido…): la primera vez muestra el mensaje y no sigue; la segunda, con lo mismo, sigue. Al abrir una hoja se olvidan todos. */
@@ -2040,7 +2546,53 @@ input,select,textarea{min-width:0;max-width:100%}
   /* =====================================================================
      GUARDADO SEGURO: todo o nada, identificadores estables por intento, cola del teléfono y causa real de cada error
      ===================================================================== */
-  const APP_VERSION='162';
+  const APP_VERSION='163';
+
+  /* =====================================================================
+     MOTOR DE TEMAS Y APARIENCIA (6 ediciones + clásico)
+     ===================================================================== */
+  const EDICIONES_TEMA=[
+    {id:'fey',      nom:'Obsidiana & Champán', desc:'Negro espacial, acción en platino y acento oro champán', bg:'#0B0D14', wBg:'linear-gradient(145deg,#F3D98B,#B89028)', wInk:'#090A0D', bar:'#E5C158', sw:['#07080B','#131722','#E5C158','#F4F5F8']},
+    {id:'bridge',   nom:'Puente Naval',        desc:'Zafiro abisal, cian de instrumentación y ámbar táctico', bg:'#081120', wBg:'linear-gradient(145deg,#FBBF24,#D97706)', wInk:'#050912', bar:'#38BDF8', sw:['#050912','#0F1E36','#38BDF8','#F59E0B']},
+    {id:'titanium', nom:'Titanio & Zafiro',    desc:'Titanio negro cepillado con aristas plateadas y azul zafiro', bg:'#0D0D10', wBg:'linear-gradient(145deg,#F4F4F5,#A1A1AA)', wInk:'#09090B', bar:'#60A5FA', sw:['#08080A','#17171C','#3B82F6','#E4E4E7']},
+    {id:'linear',   nom:'Ónix Índigo',         desc:'Cristal ónix violeta con halo índigo y micro-bordes', bg:'#0C0E18', wBg:'linear-gradient(145deg,#7C87EB,#4E5AC0)', wInk:'#FFFFFF', bar:'#818CF8', sw:['#08090E','#151828','#5E6AD2','#C7D2FE']},
+    {id:'bronce',   nom:'Petróleo & Bronce',   desc:'Verde petróleo abisal de Workproca con bronce bruñido', bg:'#071417', wBg:'linear-gradient(145deg,#EDA158,#B8651B)', wInk:'#050C0E', bar:'#2DD4BF', sw:['#050C0E','#0D2328','#14B8A6','#E08E45']},
+    {id:'porsche',  nom:'Carbono & Magma',     desc:'Fibra de carbono mate, tungsteno y naranja técnico', bg:'#0C0E10', wBg:'linear-gradient(145deg,#FB923C,#EA580C)', wInk:'#08090A', bar:'#FB923C', sw:['#08090A','#16191E','#F97316','#D4D4D8']},
+    {id:'clasico',  nom:'Clásico (v162)',      desc:'El diseño plano original de la aplicación', bg:'#162128', wBg:'#4DB0B7', wInk:'#04282B', bar:'#4DB0B7', sw:['#0E161B','#162128','#0D5C63','#ECEFF1']}
+  ];
+  const META_TEMA={fey:['#07080B','#F4F5F8'],bridge:['#050912','#EEF4FA'],titanium:['#08080A','#F4F4F6'],linear:['#08090E','#F6F7FB'],bronce:['#050C0E','#F5F4EF'],porsche:['#08090A','#F3F4F6'],clasico:['#0E161B','#0D5C63']};
+  function aplicarTema(ed, md){
+    const d=document.documentElement;
+    ed = EDICIONES_TEMA.some(x=>x.id===ed) ? ed : (d.dataset.edition||'fey');
+    md = ['dark','light','auto'].includes(md) ? md : (d.dataset.modo||'auto');
+    const dark = md==='dark' || (md!=='light' && window.matchMedia && window.matchMedia('(prefers-color-scheme:dark)').matches);
+    d.dataset.edition=ed; d.dataset.modo=md; d.dataset.resolved=dark?'dark':'light';
+    if(md==='dark'||md==='light') d.dataset.theme=md; else delete d.dataset.theme;
+    try{ localStorage.setItem('wkEdicion', ed); localStorage.setItem('wkModo', md); }catch(_){}
+    const m=document.getElementById('metaTheme'); if(m&&META_TEMA[ed]) m.content=META_TEMA[ed][dark?0:1];
+    pintarHojaTemas();
+    if(typeof medirNav==='function') setTimeout(medirNav, 0);
+  }
+  function pintarHojaTemas(){
+    const d=document.documentElement, ed=d.dataset.edition||'fey', md=d.dataset.modo||'auto';
+    document.querySelectorAll('#modoSeg button').forEach(b=>b.classList.toggle('on', b.dataset.modo===md));
+    const g=$('#themeGrid'); if(!g) return;
+    g.innerHTML = EDICIONES_TEMA.map(t=>{
+      const on=t.id===ed;
+      return `<button type="button" class="tcard${on?' on':''}" data-ed="${t.id}" aria-pressed="${on}">
+        <div class="tcard-prev" style="background:${t.bg};box-shadow:inset 3px 0 0 ${t.bar}">
+          <div class="tp-l"><span class="tp-w" style="background:${t.wBg};color:${t.wInk}">W</span><span class="tp-lines"><i style="width:58px;background:rgba(255,255,255,.85)"></i><i style="width:38px;background:rgba(255,255,255,.32)"></i></span></div>
+          <div class="tp-dots">${t.sw.map(c=>`<i style="background:${c}"></i>`).join('')}</div>
+        </div>
+        <div class="tcard-head"><b>${t.nom}</b><span class="tcard-chk">✓</span></div>
+        <small>${t.desc}</small>
+      </button>`;
+    }).join('');
+  }
+  if($('#btnTheme')) $('#btnTheme').addEventListener('click', ()=>{ if(!$('#themeSheet').hidden){ closeSheets(); return; } if(!dejarHoja()) return; closeSheets(); pintarHojaTemas(); openSheet('#themeSheet'); });
+  if($('#modoSeg')) $('#modoSeg').addEventListener('click', e=>{ const b=e.target.closest('[data-modo]'); if(b) aplicarTema(null, b.dataset.modo); });
+  if($('#themeGrid')) $('#themeGrid').addEventListener('click', e=>{ const b=e.target.closest('[data-ed]'); if(b) aplicarTema(b.dataset.ed, null); });
+  try{ const mq=window.matchMedia('(prefers-color-scheme:dark)'); if(mq&&mq.addEventListener) mq.addEventListener('change', ()=>{ if((document.documentElement.dataset.modo||'auto')==='auto') aplicarTema(null,'auto'); }); }catch(_){}
   let dbRaiz=null;                                       /* la base de datos (se asigna al arrancar) */
   const cacheActiva = () => !!window.__persistencia;     /* versión independiente con la caché del teléfono activa: lo escrito queda en cola y sube solo */
   const sinRed = () => typeof navigator!=='undefined' && navigator.onLine===false;
