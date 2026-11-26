@@ -425,6 +425,9 @@ textarea.ai{width:100%;min-height:120px;border:1px solid var(--line);background:
 #aiChips .adj .ver img{width:100%;height:100%;object-fit:cover;display:block}
 #aiChips .adj em{font-size:11px;text-align:center}
 #aiChips .adj [data-rmf]{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:12px;line-height:1;padding:0}
+.docbox .dbgrid{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 8px}.docbox .dbgrid button{width:76px;border:1px solid var(--line);background:var(--sunk);border-radius:10px;padding:3px;display:flex;flex-direction:column;gap:2px;color:var(--ink);position:relative}
+.docbox .dbgrid img{width:100%;height:84px;object-fit:cover;border-radius:7px;display:block;background:var(--card)}.docbox .dbgrid small{font-size:10.5px;color:var(--muted);line-height:1.2;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.docbox .dbgrid .pend{border-style:dashed}.docbox .dbtip{font-size:12.5px;color:var(--muted);margin:2px 0 6px}
 #docGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
 #docGrid button{display:flex;flex-direction:column;gap:4px;border:1px solid var(--line);background:var(--sunk);border-radius:12px;padding:4px;text-align:left;color:var(--ink);min-width:0;cursor:pointer}
 #docGrid img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:8px;display:block;background:var(--card)}
@@ -789,6 +792,8 @@ input,select,textarea{min-width:0;max-width:100%}
         </div>
       </fieldset>
 
+      <fieldset id="trDocsF"><legend>Documentos</legend><div class="docbox" id="trDocs" data-col="facturas"></div></fieldset>
+
       <div class="err" id="formErr"></div>
       <div class="row-btns" style="margin-top:14px">
         <button type="submit" class="btn pri" id="btnSave">Guardar</button>
@@ -895,13 +900,14 @@ input,select,textarea{min-width:0;max-width:100%}
   <div class="wrap">
     <div class="grab"></div>
     <div class="sh-head"><h3 id="docTitle">Documentos</h3><button class="x" type="button" data-close aria-label="Cerrar">✕</button></div>
-    <p style="margin:2px 0 10px;color:var(--muted);font-size:13.5px">Facturas, órdenes de servicio y capturas que pasaron por los asistentes, y las que agregues aquí. Busca por número de factura, orden, requisición, embarcación o lo que diga la nota.</p>
+    <p style="margin:2px 0 10px;color:var(--muted);font-size:13.5px">Facturas, órdenes de servicio, pedidos de presupuesto y capturas. Lo que subas aquí lo lee el asistente y lo asigna solo a su orden. Busca por número de factura, orden, requisición o embarcación.</p>
     <label class="f full">Buscar<input id="docQ" data-sinmarca type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Ej.: 000420, PO1227, Lupara III"></label>
     <div class="chips" id="docMods" style="margin-top:8px"></div>
     <div class="tip" id="docMsg" style="border:0;margin:6px 0 0" aria-live="polite"></div>
+    <div class="row-btns" id="docLeerRow" hidden style="margin-top:8px"><button type="button" class="btn sec" id="docLeer"></button></div>
     <div id="docGrid" class="docgrid"></div>
     <div class="sech" style="font-size:16px">Agregar documentos</div>
-    <label class="f full">Nota (qué es: factura, orden de servicio, captura de pago…)<input id="docNota" data-sinmarca maxlength="200" placeholder="Ej.: Factura 000422 INMARVENCO, orden PO1227"></label>
+    <label class="f full">Nota (opcional; el asistente lee el documento de todas formas)<input id="docNota" data-sinmarca maxlength="200" placeholder="Ej.: facturas de la Lupara III"></label>
     <label class="filepick" style="margin-top:8px"><input type="file" id="docFiles" multiple accept="image/*,.pdf">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
       Agregar fotos o PDF</label>
@@ -1026,6 +1032,7 @@ input,select,textarea{min-width:0;max-width:100%}
       <label class="f full" id="mvCredF1L" hidden>Primera cuota<input id="mvCredF1" type="date"></label>
     </div>
     <div class="conv num" id="mvConv"></div>
+    <div class="docbox" id="mvDocs" data-col="movimientos" style="margin-top:12px"></div>
     <div class="err" id="mvErr"></div>
     <div class="row-btns" style="margin-top:12px">
       <button type="button" class="btn pri" id="mvSave">Guardar</button>
@@ -2031,7 +2038,7 @@ input,select,textarea{min-width:0;max-width:100%}
   /* =====================================================================
      GUARDADO SEGURO: todo o nada, identificadores estables por intento, cola del teléfono y causa real de cada error
      ===================================================================== */
-  const APP_VERSION='159';
+  const APP_VERSION='160';
   let dbRaiz=null;                                       /* la base de datos (se asigna al arrancar) */
   const cacheActiva = () => !!window.__persistencia;     /* versión independiente con la caché del teléfono activa: lo escrito queda en cola y sube solo */
   const sinRed = () => typeof navigator!=='undefined' && navigator.onLine===false;
@@ -2232,7 +2239,7 @@ input,select,textarea{min-width:0;max-width:100%}
     $('#iMonto').value = draft.monto ? nf.format(num(draft.monto)) : '';
     $('#iFecha').value=draft.fecha||''; $('#iEjecutado').checked=!!draft.ejecutado; $('#iFechaEjec').value=draft.fechaEjecucion||'';
     $('#iCancelado').checked=!!draft.cancelado; $('#iEnEjec').checked=!!draft.enEjecucion; $('#iFechaIni').value=draft.fechaInicio||''; { const auto=editingId&&!draft.ejecutado&&!draft.enEjecucion&&actividadDe(editingId); $('#enEjecTip').textContent = auto ? `Ya tiene ${auto}: se muestra como en ejecución aunque no marques la casilla.` : ''; }
-    resetPayForm();
+    resetPayForm(); abrirDocBox('#trDocs', editingId);
     $('#formErr').textContent=''; $('#btnDel').hidden=!src; $('#btnResumen').hidden=!src; $('#btnDup').hidden=!src||!canWrite; $('#iAI').hidden=!!src||!sampleFn||!canWrite; disarmDel();
     syncEjec(); renderPagos();
     [...$('#form').elements].forEach(x=>{ x.disabled=!canWrite; });
@@ -2370,7 +2377,7 @@ input,select,textarea{min-width:0;max-width:100%}
       { const mt='monto' in cambios ? C.monto : num(act.monto), tF=r2(sum(F.lista,c=>num(c.monto))), tH=r2(sum(draft.cobros||[],c=>num(c.monto)));
         if(F.tocada && (draft.cobros||[]).some(c=>c._nuevo) && tF>mt+0.005 && tH<=mt+0.005){ avisoChoque('#sheet', '#formErr', '', ` Mientras tenías la hoja abierta entró otro cobro a este trabajo. Con el tuyo, lo cobrado (${usd(tF)}) pasaría del monto (${usd(mt)}). Recarga para ver cómo quedó.`, recargar, null, true); return; } }
       if(F.tocada) cambios.cobros=F.lista;
-      if(!Object.keys(cambios).length){ closeSheets(); toast('Sin cambios: no había nada que guardar'); return; }
+      if(!Object.keys(cambios).length){ if(docPend['#trDocs'].length){ guardarDocBox('#trDocs', idE, {modulo:'cob', trabajos:[idE], nota:desc}); closeSheets(); return; } closeSheets(); toast('Sin cambios: no había nada que guardar'); return; }
       body={...act, ...C, cobros:F.tocada?F.lista:(act.cobros||[])}; delete body.id;
       op=opEditar('facturas', idE, {...cambios, actualizado:ah}, 'el trabajo «'+desc.slice(0,50)+'»');
       /* El registro de cambios se anota después de guardar bien (se compara contra lo que había antes de escribir) */
@@ -2381,7 +2388,7 @@ input,select,textarea{min-width:0;max-width:100%}
       op=opSet('facturas', idEstable('#sheet|trabajo','facturas'), body);
     }
     const btn=$('#btnSave'); if(btn.dataset.busy) return; btn.dataset.busy='1'; btn.disabled=true; btn.textContent='Guardando…';
-    try{ await escribirJuntos([op], 'el trabajo «'+desc.slice(0,50)+'»'); if(anotar) anotar(); soltarIntento('#sheet'); (draft.cobros||[]).filter(c=>c._nuevo).forEach(c=>{ if(num(c.tasa)>0 && c.fecha && c.fecha<=today()) aprenderTasa(c.fecha, num(c.tasa), 'cobro'); }); { const nb=(draft.cobros||[]).filter(c=>c._nuevo && modoDe(c)==='banco' && num(c.tasa)>0), bsT=r2(sum(nb,c=>num(c.monto)*num(c.tasa)));
+    try{ await escribirJuntos([op], 'el trabajo «'+desc.slice(0,50)+'»'); if(docPend['#trDocs'].length) guardarDocBox('#trDocs', op.id, {modulo:'cob', trabajos:[op.id], nota:desc}); if(anotar) anotar(); soltarIntento('#sheet'); (draft.cobros||[]).filter(c=>c._nuevo).forEach(c=>{ if(num(c.tasa)>0 && c.fecha && c.fecha<=today()) aprenderTasa(c.fecha, num(c.tasa), 'cobro'); }); { const nb=(draft.cobros||[]).filter(c=>c._nuevo && modoDe(c)==='banco' && num(c.tasa)>0), bsT=r2(sum(nb,c=>num(c.monto)*num(c.tasa)));
         closeSheets();
         if(bsT>0 && !esRegistro()) toast('Guardado', {label:'Comprar USDT', fn:()=>{ setModulo('gas'); openMov('cambio', null); $('#mvOrig').value='banco'; $('#mvDest').value='binance'; $('#mvFecha').value=nb[nb.length-1].fecha||today(); $('#mvOrigMonto').value=nf.format(bsT); syncMvMoneda(); renderMvConv(); }});
         else toast('Guardado'); } }
@@ -3024,26 +3031,80 @@ input,select,textarea{min-width:0;max-width:100%}
     (x.match(/\bP[O0]\s?-?\d{3,6}\b/gi)||[]).forEach(v=>r.add(v.toUpperCase().replace(/[\s-]/g,'').replace(/^P0/,'PO')));   /* órdenes PO1227 */
     (x.match(/\bEPR\s?-?\d{3,6}\b/gi)||[]).forEach(v=>r.add(v.toUpperCase().replace(/[\s-]/g,'')));
     return [...r].slice(0,30); };
+  const TIPO_DOC={factura:'Factura', orden:'Orden de servicio', presupuesto:'Pedido de presupuesto', compra:'Factura de compra', pago:'Comprobante de pago', otro:'Otro'};
+  const buscaDe = (meta, refs, trab, mvs) => normTxt([meta.resumen, meta.texto, meta.nota, TIPO_DOC[meta.tipo]||'', refs.join(' '), ...trab.map(d=>[d.cliente,d.unidad,d.descripcion,d.ods,d.nota].join(' ')), ...mvs.map(m=>[m.concepto,m.categoria,m.referencia].join(' '))].join(' ')).slice(0,3000);
   async function guardarDocs(blobs, meta){ if(!blobs||!blobs.length||!dbRaiz) return 0; let ok=0;
-    const trab=(meta.trabajos||[]).map(id=>docs.find(d=>d.id===id)).filter(Boolean), refs=[...new Set([...refsDe([meta.resumen,meta.texto,meta.extra].join(' ')), ...trab.map(d=>String(d.ods||'').trim()).filter(Boolean)])];
-    const busca=normTxt([meta.resumen, meta.texto, meta.nota, refs.join(' '), ...trab.map(d=>[d.cliente,d.unidad,d.descripcion,d.ods,d.nota].join(' '))].join(' ')).slice(0,3000);
+    const trab=(meta.trabajos||[]).map(id=>docs.find(d=>d.id===id)).filter(Boolean), mvs=(meta.movs||[]).map(id=>movs.find(m=>m.id===id)||{id, concepto:meta.movTxt||''}), refs=[...new Set([...(meta.refs||[]), ...refsDe([meta.resumen,meta.texto,meta.extra,meta.nota].join(' ')), ...trab.map(d=>String(d.ods||'').trim()).filter(Boolean)])];
+    const busca=buscaDe(meta, refs, trab, mvs);
     for(let i=0;i<blobs.length;i++){ try{ const {full,thumb}=await prepararDoc(blobs[i]), id='adj'+Date.now().toString(36)+Math.random().toString(36).slice(2,7), ah=new Date().toISOString();
         await escribirJuntos([{op:'set', col:'adjuntosImg', id, datos:{img:full.url, creado:ah}, que:'la imagen del documento', nuevo:true},
-          {op:'set', col:'adjuntos', id, datos:{modulo:meta.modulo||'manual', nombre:(meta.nombres&&meta.nombres[i])||`Documento ${i+1}`, nota:String(meta.nota||meta.resumen||'').slice(0,400), refs, trabajos:trab.map(d=>d.id), busca, thumb:thumb.url, w:full.w, h:full.h, fecha:today(), creado:ah, actualizado:ah}, que:'el documento', nuevo:true}], 'el documento');
-        ok++; }catch(e){ try{ console.error(e); }catch(_){} } }
+          {op:'set', col:'adjuntos', id, datos:{modulo:meta.modulo||'manual', nombre:(meta.nombres&&meta.nombres[i])||`Documento ${i+1}`, nota:String(meta.nota||meta.resumen||'').slice(0,400), refs, trabajos:trab.map(d=>d.id), movs:mvs.map(m=>m.id), tipo:meta.tipo||'', leido:meta.leido!==false, busca, thumb:thumb.url, w:full.w, h:full.h, fecha:today(), creado:ah, actualizado:ah}, que:'el documento', nuevo:true}], 'el documento');
+        ok++; if(meta.ids) meta.ids.push(id); }catch(e){ try{ console.error(e); }catch(_){} } }
     return ok; }
-  function docsSuscribir(){ if(docsSub||!dbRaiz) return; try{ docsSub=dbRaiz.collection('adjuntos').onSnapshot(sn=>{ docsArch=(sn.docs||[]).map(d=>({id:d.id, ...d.data()})).sort((a,b)=>String(b.creado||'').localeCompare(String(a.creado||''))); if(!$('#docSheet').hidden) renderDocs(); }, e=>{ $('#docMsg').textContent=errMsg(e); }); }catch(e){ $('#docMsg').textContent=errMsg(e); } }
-  const docsFiltrados = () => { const ps=normTxt(docF.q).split(' ').filter(Boolean); return docsArch.filter(d=>(!docF.mod || (docF.mod==='asis'?['asis','trab'].includes(d.modulo):d.modulo===docF.mod)) && ps.every(w=>String(d.busca||'').includes(w) || normTxt(d.nombre).includes(w))); };
-  function renderDocs(){ const mods=['', ...Object.keys(MOD_DOC).filter(k=>k!=='trab' && docsArch.some(d=>d.modulo===k || (k==='asis'&&d.modulo==='trab')))];
-    $('#docMods').innerHTML=mods.length>1?mods.map(k=>`<button type="button" class="ghost${docF.mod===k?' on':''}" style="padding:7px 10px;font-size:13px${docF.mod===k?'':';background:var(--sunk)'}" data-docmod="${k}" aria-pressed="${docF.mod===k}">${k?MOD_DOC[k]:'Todos'}</button>`).join(''):'';
+  function docsSuscribir(){ if(docsSub||!dbRaiz) return; try{ docsSub=dbRaiz.collection('adjuntos').onSnapshot(sn=>{ docsArch=(sn.docs||[]).map(d=>({id:d.id, ...d.data()})).sort((a,b)=>String(b.creado||'').localeCompare(String(a.creado||''))); if(!$('#docSheet').hidden) renderDocs(); else renderDocBoxes(); }, e=>{ $('#docMsg').textContent=errMsg(e); }); }catch(e){ $('#docMsg').textContent=errMsg(e); } }
+  const tipoDe = d => d.tipo && TIPO_DOC[d.tipo] ? d.tipo : '';
+  const docsFiltrados = () => { const ps=normTxt(docF.q).split(' ').filter(Boolean); return docsArch.filter(d=>(!docF.mod || (docF.mod==='_sin'?!tipoDe(d):tipoDe(d)===docF.mod)) && ps.every(w=>String(d.busca||'').includes(w) || normTxt(d.nombre).includes(w))); };
+  const rotuloDoc = d => [TIPO_DOC[tipoDe(d)]||'', ...(d.refs||[]).slice(0,2)].filter(Boolean).join(' · ') || MOD_DOC[d.modulo] || '';
+  function renderDocs(){ const mods=['', ...Object.keys(TIPO_DOC).filter(k=>docsArch.some(d=>tipoDe(d)===k)), ...(docsArch.some(d=>!tipoDe(d))?['_sin']:[])];
+    $('#docMods').innerHTML=mods.length>1?mods.map(k=>`<button type="button" class="ghost${docF.mod===k?' on':''}" style="padding:7px 10px;font-size:13px${docF.mod===k?'':';background:var(--sunk)'}" data-docmod="${k}" aria-pressed="${docF.mod===k}">${!k?'Todos':k==='_sin'?'Sin clasificar':TIPO_DOC[k]} · ${docsArch.filter(d=>!k||(k==='_sin'?!tipoDe(d):tipoDe(d)===k)).length}</button>`).join(''):'';
+    { const sin=docsArch.filter(d=>d.leido===false || (d.modulo==='manual' && d.leido===undefined)); $('#docLeerRow').hidden=!(sin.length && sampleFn && canWrite) || docLeyendo; if(!docLeyendo) $('#docLeer').textContent=`Leer con el asistente y asignar a su orden (${sin.length} sin leer)`; }
     const xs=docsFiltrados();
     $('#docMsg').textContent = !docsSub ? '' : !docsArch.length ? 'Todavía no hay documentos guardados. Se guardan solos cuando guardas lo que propone un asistente con fotos, o agrégalos aquí abajo.' : xs.length===docsArch.length ? `${xs.length} ${xs.length===1?'documento':'documentos'}` : xs.length ? `${xs.length} de ${docsArch.length} documentos` : 'Ningún documento coincide con lo escrito.';
-    $('#docGrid').innerHTML=xs.slice(0,300).map(d=>`<button type="button" data-docver="${esc(d.id)}"><img src="${esc(d.thumb||'')}" alt="" loading="lazy"><small>${fdate(d.fecha||'')} · ${esc(MOD_DOC[d.modulo]||'')}${d.refs&&d.refs.length?' · '+esc(d.refs.slice(0,3).join(', ')):''}</small></button>`).join(''); }
+    $('#docGrid').innerHTML=xs.slice(0,300).map(d=>`<button type="button" data-docver="${esc(d.id)}"><img src="${esc(d.thumb||'')}" alt="" loading="lazy"><small>${fdate(d.fecha||'')} · ${esc(rotuloDoc(d))}</small></button>`).join(''); renderDocBoxes(); }
   const cargarImgDoc = id => new Promise((res,rej)=>{ let un=null, fin=false; const t=setTimeout(()=>{ if(!fin){ fin=true; try{ un&&un(); }catch(_){} rej(new Error('No llegó la imagen.')); } }, 20000);
     try{ un=dbRaiz.doc('adjuntosImg/'+id).onSnapshot(s=>{ if(fin) return; fin=true; clearTimeout(t); setTimeout(()=>{ try{ un&&un(); }catch(_){} },0); const v=s&&s.exists?(s.data()||{}).img:''; v?res(v):rej(new Error('No se encontró la imagen.')); }, e=>{ if(!fin){ fin=true; clearTimeout(t); rej(e); } }); }catch(e){ clearTimeout(t); rej(e); } });
-  function verDoc(id){ const xs=docsFiltrados(), i=Math.max(0,xs.findIndex(d=>d.id===id));
-    abrirVisor(xs.map(d=>({nombre:`${fdate(d.fecha||'')} · ${MOD_DOC[d.modulo]||''}`, esImg:true, cargar:()=>cargarImgDoc(d.id), pie:[d.nota, d.refs&&d.refs.length?'Referencias: '+d.refs.join(', '):''].filter(Boolean).join(' · '),
+  function verDoc(id, lista){ const xs=lista||docsFiltrados(), i=Math.max(0,xs.findIndex(d=>d.id===id));
+    abrirVisor(xs.map(d=>({nombre:`${fdate(d.fecha||'')} · ${rotuloDoc(d)}`, esImg:true, cargar:()=>cargarImgDoc(d.id), pie:[d.nota, d.refs&&d.refs.length?'Referencias: '+d.refs.join(', '):'', (d.trabajos||[]).map(id=>docs.find(x=>x.id===id)).filter(Boolean).map(x=>'Orden: '+(x.ods||x.descripcion)+(x.unidad?' · '+x.unidad:'')).join('; ')].filter(Boolean).join(' · '),
       borrar:canWrite?()=>escribirJuntos([{op:'delete', col:'adjuntos', id:d.id, que:'el documento'},{op:'delete', col:'adjuntosImg', id:d.id, que:'la imagen del documento'}], 'el documento'):null})), i); }
+  /* El asistente lee cada documento, dice qué es y a qué orden pertenece; la app confirma la orden por número de orden, factura o requisición */
+  let docLeyendo=false;
+  const normOds = v => String(v||'').toUpperCase().replace(/[\s\-.]/g,'').replace(/^P0(?=\d)/,'PO');
+  const digitos = v => String(v||'').replace(/\D/g,'').replace(/^0+/,'');
+  function trabajoDeLectura(x){ const vivos=docs.filter(d=>!d.cancelado);
+    if(x.trabajo_id && vivos.some(d=>d.id===x.trabajo_id)) return x.trabajo_id;
+    const o=normOds(x.orden_servicio); if(o){ const t=vivos.find(d=>normOds(d.ods)===o); if(t) return t.id; }
+    const f=digitos(x.numero_factura); if(f){ const t=vivos.find(d=>(d.cobros||[]).some(c=>digitos(c.numFactura)===f)); if(t) return t.id; }
+    const r=digitos(x.requisicion); if(r){ const t=vivos.find(d=>digitos(d.nota)===r); if(t) return t.id; }
+    return ''; }
+  const promptDoc = nota => `Eres el archivista de WORKPROCA (Trabajos Profesionales C.A.), taller naval en Maracaibo. Te paso UNA imagen de un documento. Dime qué es y a qué trabajo pertenece.
+Tipos: "factura" (factura que WORKPROCA le emite a un cliente: membrete de WORKPROCA, «Factura No.»), "orden" (orden de servicio o pedido de compra del cliente, con código PO), "presupuesto" (solicitud o pedido de presupuesto del cliente), "compra" (factura o nota de un proveedor a WORKPROCA), "pago" (captura o comprobante de un pago o transferencia), "otro".
+Trabajos registrados (id | orden de servicio | requisición | embarcación | descripción | facturas ya cobradas):
+${docs.filter(d=>!d.cancelado).map(d=>`${d.id} | ${d.ods||'sin orden'} | ${d.nota||'-'} | ${d.unidad||'-'} | ${d.descripcion||''} | ${(d.cobros||[]).map(c=>c.numFactura).filter(Boolean).join(', ')||'-'}`).join('\n')}
+${nota?`Nota de Fran sobre este documento: «${nota}»\n`:''}Responde SOLO un objeto JSON: {"tipo":"factura|orden|presupuesto|compra|pago|otro","numero_factura":"","orden_servicio":"","requisicion":"","cliente":"","unidad":"","fecha":"AAAA-MM-DD","monto":0,"moneda":"VES|USD","descripcion":"una línea","trabajo_id":""}.
+Deja "" o 0 lo que no aparezca. "trabajo_id" solo si el documento corresponde con claridad a uno de la lista (misma orden de servicio, misma requisición o una factura de ese trabajo); si dudas, "". En facturas, "monto" es la base imponible sin IVA.`;
+  async function leerDoc(blob, nota){ const img = imgLimits ? await toAcceptedImage(blob) : blob;
+    const r=await sampleFn.json(promptDoc(nota), {images:[img], cache:false}); const x=esObj(r)?r:{};
+    const tipo=Object.keys(TIPO_DOC).includes(x.tipo)?x.tipo:'otro', tj=trabajoDeLectura(x), t=docs.find(d=>d.id===tj);
+    const refs=[x.numero_factura&&String(x.numero_factura).trim(), x.orden_servicio&&normOds(x.orden_servicio), x.requisicion&&String(x.requisicion).toUpperCase().replace(/\s/g,'')].filter(Boolean).map(v=>txtIA(v,30));
+    const nt=[TIPO_DOC[tipo], x.numero_factura?'N° '+txtIA(x.numero_factura,20):'', txtIA(x.cliente,60), txtIA(x.unidad,40), txtIA(x.descripcion,140), t?`Orden ${t.ods||t.descripcion}`:''].filter(Boolean).join(' · ');
+    return {tipo, refs, trabajos:tj?[tj]:[], nota:[nota, nt].filter(Boolean).join(' — ').slice(0,400), texto:JSON.stringify(x).slice(0,1500)}; }
+  async function leerPendientes(){ if(docLeyendo||!sampleFn) return; const sin=docsArch.filter(d=>d.leido===false || (d.modulo==='manual' && d.leido===undefined)); if(!sin.length) return;
+    docLeyendo=true; renderDocs(); const st=$('#docStat'); let ok=0, asign=0;
+    for(let i=0;i<sin.length;i++){ const d=sin[i]; st.textContent=`Leyendo ${i+1} de ${sin.length}…`;
+      try{ const url=await cargarImgDoc(d.id), blob=await (await fetch(url)).blob(), L=await leerDoc(blob, d.nota&&d.modulo==='manual'?d.nota:'');
+        const trab=L.trabajos.map(id=>docs.find(x=>x.id===id)).filter(Boolean), refs=[...new Set([...L.refs, ...trab.map(x=>String(x.ods||'').trim()).filter(Boolean)])];
+        await escribirJuntos([{op:'update', col:'adjuntos', id:d.id, datos:{tipo:L.tipo, refs, trabajos:trab.map(x=>x.id), nota:L.nota, leido:true, busca:buscaDe({...L}, refs, trab, []), actualizado:new Date().toISOString()}, que:'el documento'}], 'el documento');
+        ok++; if(trab.length) asign++; }catch(e){ if(e&&e.name==='AbortError') break; } }
+    docLeyendo=false; st.textContent=`Listo: ${ok} de ${sin.length} leídos, ${asign} asignados a su orden.${ok-asign>0?` ${ok-asign} sin orden clara: búscalos en «Sin orden» o ábrelos para ver qué son.`:''}`; renderDocs(); }
+
+  /* Caja de documentos dentro del trabajo y del movimiento: muestra los ya guardados y los que se agregan, que se guardan al guardar la hoja */
+  const docPend={'#trDocs':[], '#mvDocs':[]}, docBoxId={'#trDocs':null, '#mvDocs':null}, urlPend=new Map();
+  const ligados = (box, id) => !id ? [] : docsArch.filter(d=>(box==='#trDocs'?(d.trabajos||[]):(d.movs||[])).includes(id));
+  function renderDocBox(box){ const el=$(box); if(!el) return; const id=docBoxId[box], ya=ligados(box,id), pend=docPend[box];
+    el.innerHTML=`<div class="dbtip">${box==='#trDocs'?'Orden de servicio, pedido de presupuesto, facturas y fotos de este trabajo.':'Factura digital, nota de entrega o captura del pago.'}${!docsSub&&id?' Cargando…':''}</div>
+      ${ya.length||pend.length?`<div class="dbgrid">${ya.map(d=>`<button type="button" data-dbver="${esc(d.id)}" aria-label="Ver documento"><img src="${esc(d.thumb||'')}" alt=""><small>${esc(TIPO_DOC[tipoDe(d)]||fdate(d.fecha||''))}</small></button>`).join('')}${pend.map((f,i)=>{ if(!urlPend.has(f)){ try{ urlPend.set(f, esImg(f)?URL.createObjectURL(f):''); }catch(_){ urlPend.set(f,''); } } const u=urlPend.get(f); return `<button type="button" class="pend" data-dbquita="${i}" aria-label="Quitar ${esc(f.name)}">${u?`<img src="${u}" alt="">`:`<span style="height:84px;display:flex;align-items:center;justify-content:center;font-weight:700">${esc(tipoAdj(f))}</span>`}<small>Se guarda al guardar · ✕</small></button>`; }).join('')}</div>`:''}
+      ${canWrite?`<label class="filepick"><input type="file" data-dbfile multiple accept="image/*,.pdf"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>${box==='#trDocs'?'Agregar orden, presupuesto o factura':'Agregar factura o comprobante'}</label>`:''}`; }
+  function renderDocBoxes(){ ['#trDocs','#mvDocs'].forEach(b=>{ const sh=$(b)&&$(b).closest('.sheet'); if(sh&&!sh.hidden) renderDocBox(b); }); }
+  function abrirDocBox(box, id){ docPend[box].forEach(f=>{ const u=urlPend.get(f); if(u) try{ URL.revokeObjectURL(u); }catch(_){} urlPend.delete(f); }); docPend[box]=[]; docBoxId[box]=id||null; if(id) docsSuscribir(); renderDocBox(box); }
+  async function guardarDocBox(box, id, meta){ const fs0=docPend[box]; docPend[box]=[]; if(!fs0.length||!id) return;
+    const blobs=[], nombres=[]; for(const f of fs0){ try{ if(/\.pdf$/i.test(f.name)||f.type==='application/pdf'){ const r=await pdfToImages(f, 10); r.imgs.forEach((b,k)=>{ blobs.push(b); nombres.push(`${f.name}${r.imgs.length>1?' · página '+(k+1):''}`); }); } else { blobs.push(f); nombres.push(f.name); } }catch(_){ } }
+    const tipos=[]; if(sampleFn && box==='#trDocs'){ for(const b of blobs){ try{ tipos.push((await leerDoc(b, meta.nota||'')).tipo); }catch(_){ tipos.push(''); } } }
+    let n=0; for(let i=0;i<blobs.length;i++) n+=await guardarDocs([blobs[i]], {...meta, tipo:tipos[i]||meta.tipo||'', nombres:[nombres[i]], leido:true});
+    if(n) toast(n===1?'Documento guardado':`${n} documentos guardados`); else if(blobs.length) toast('No se pudieron guardar los documentos: revisa la señal y vuelve a agregarlos.'); docsSuscribir(); }
+  ['#trDocs','#mvDocs'].forEach(box=>{ const el=$(box); if(!el) return;
+    el.addEventListener('change', e=>{ const i=e.target.closest('[data-dbfile]'); if(!i) return; docPend[box].push(...i.files); i.value=''; renderDocBox(box); });
+    el.addEventListener('click', e=>{ const v=e.target.closest('[data-dbver]'); if(v){ verDoc(v.dataset.dbver, ligados(box, docBoxId[box])); return; } const q=e.target.closest('[data-dbquita]'); if(q){ docPend[box].splice(+q.dataset.dbquita,1); renderDocBox(box); } }); });
+
   function abrirDocs(q){ docF={mod:'', q:q||''}; $('#docQ').value=docF.q; $('#docStat').textContent=''; docsSuscribir(); renderDocs(); openSheet('#docSheet'); }
   function resumenTrabajos(){
     return docs.slice().sort(byOrden).map(d=>({id:d.id, cliente:d.cliente||'', unidad:d.unidad||'', descripcion:d.descripcion||'', orden_servicio:d.ods||'', referencia:d.nota||'', monto_usd:num(d.monto), ejecutado:!!d.ejecutado, fecha_ejecucion:d.fechaEjecucion||'', pagado_usd:r2(pagado(d)), saldo_usd:saldo(d), etapa:ETAPAS[etapa(d)].lbl, facturas:(d.cobros||[]).map(c=>c.numFactura).filter(Boolean),
@@ -3681,10 +3742,15 @@ Responde solo con un objeto JSON:
     for(const f of fs0){ st.textContent=`Preparando ${f.name}…`;
       try{ if(/\.pdf$/i.test(f.name)||f.type==='application/pdf'){ const r=await pdfToImages(f, 10); r.imgs.forEach((b,k)=>{ blobs.push(b); nombres.push(`${f.name}${r.imgs.length>1?' · página '+(k+1):''}`); }); }
         else { blobs.push(f); nombres.push(f.name); } }catch(er){ st.textContent=`${f.name}: no se pudo leer.`; } }
-    if(!blobs.length) return; st.textContent='Guardando…';
-    const n=await guardarDocs(blobs, {modulo:'manual', nota, texto:nota, nombres});
-    st.textContent = n===blobs.length ? `${n===1?'Documento guardado':n+' documentos guardados'}.` : `Se guardaron ${n} de ${blobs.length}. Revisa la señal y vuelve a intentar con los que faltan.`;
+    if(!blobs.length) return; let n=0, asign=0, leidos=0;
+    for(let i=0;i<blobs.length;i++){ let L=null;
+      if(sampleFn){ st.textContent=`Leyendo ${i+1} de ${blobs.length} con el asistente…`; try{ L=await leerDoc(blobs[i], nota); leidos++; }catch(_){ L=null; } }
+      st.textContent=`Guardando ${i+1} de ${blobs.length}…`;
+      const g=await guardarDocs([blobs[i]], L ? {modulo:'manual', ...L, nombres:[nombres[i]], leido:true} : {modulo:'manual', nota, texto:nota, nombres:[nombres[i]], leido:false});
+      n+=g; if(g && L && L.trabajos.length) asign++; }
+    st.textContent = (n===blobs.length ? `${n===1?'Documento guardado':n+' documentos guardados'}.` : `Se guardaron ${n} de ${blobs.length}. Revisa la señal y vuelve a intentar con los que faltan.`) + (sampleFn ? ` ${asign} asignados a su orden${leidos-asign>0?`, ${leidos-asign} sin orden clara («Sin clasificar» o sin orden)`:''}.` : ' El asistente no está disponible: quedaron sin leer; cuando lo esté, toca «Leer con el asistente».');
     if(n) $('#docNota').value=''; docsSuscribir(); });
+  $('#docLeer').addEventListener('click', leerPendientes);
   /* ---------- asistente para registrar días o la semana de nómina ---------- */
   let aiDias=[], aiAdels=[];
   function promptAsis(texto, textosArch, nImgs){
@@ -3844,13 +3910,14 @@ Responde solo con un objeto JSON:
   $('#aiGo').addEventListener('click', ()=>leerAI());
   $('#aiReplyGo').addEventListener('click', ()=>leerAI($('#aiReply').value));
   $('#aiStop').addEventListener('click', ()=>aiCtl&&aiCtl.abort());
-  $('#aiApply').addEventListener('click', async ()=>{ const m0=aiMode, mat=aiLast&&aiLast.imgs&&aiLast.imgs.length?{imgs:aiLast.imgs, res:aiLast.res, texto:aiLast.texto, nombres:aiLast.nombres}:null, pend=aiPendCob;
+  $('#aiApply').addEventListener('click', async ()=>{ const antesMv=new Set(movs.map(m=>m.id)), m0=aiMode, mat=aiLast&&aiLast.imgs&&aiLast.imgs.length?{imgs:aiLast.imgs, res:aiLast.res, texto:aiLast.texto, nombres:aiLast.nombres}:null, pend=aiPendCob;
     await (m0==='av' ? aplicarAIAv() : m0==='asis' ? aplicarAIAsis() : m0==='trab' ? aplicarAITrab() : m0==='gas' ? aplicarAIGas() : m0==='inv' ? aplicarAIInv() : aplicarAI());
     const salio = aiMode===m0 && !$('#aiText').value.trim() && !aiFiles.length;   /* el guardado salió bien: la hoja quedó vacía */
-    if(pend && m0!=='cob' && salio && !$('#aiSheet').hidden){ if(mat) aiPendCob={...aiPendCob, previo:{modulo:m0, resumen:(mat.res||{}).resumen||''}}; pasarACobranzas(); return; }   /* las fotos se guardan al terminar en Cobranzas, una sola vez */
+    if(pend && m0!=='cob' && salio && !$('#aiSheet').hidden){ if(mat) aiPendCob={...aiPendCob, previo:{modulo:m0, resumen:(mat.res||{}).resumen||'', movs:movs.filter(m=>!antesMv.has(m.id)).map(m=>m.id)}}; pasarACobranzas(); return; }   /* las fotos se guardan al terminar en Cobranzas, una sola vez */
     if(mat && salio){ const res=mat.res||{}, acc=Array.isArray(res.acciones)?res.acciones:[], prev=aiDocPrevio; aiDocPrevio=null;
       const trab=[...new Set(acc.flatMap(a=>[a&&a.id, ...((a&&a.asignaciones)||[]).map(x=>x&&x.id)]).filter(id=>id&&docs.some(d=>d.id===id)))].concat(m0==='av'&&avId?[avId]:[]);
-      guardarDocs(mat.imgs, {modulo:prev?prev.modulo:m0, resumen:[prev&&prev.resumen, res.resumen].filter(Boolean).join(' · '), texto:mat.texto, extra:JSON.stringify(res).slice(0,20000), trabajos:trab, nombres:mat.nombres})
+      const mvN=[...((prev&&prev.movs)||[]), ...movs.filter(m=>!antesMv.has(m.id)).map(m=>m.id)].slice(0,20);
+      guardarDocs(mat.imgs, {movs:mvN, movTxt:mvN.map(id=>(movs.find(m=>m.id===id)||{}).concepto||'').join(' · '), modulo:prev?prev.modulo:m0, resumen:[prev&&prev.resumen, res.resumen].filter(Boolean).join(' · '), texto:mat.texto, extra:JSON.stringify(res).slice(0,20000), trabajos:trab, nombres:mat.nombres})
         .then(n=>{ if(n) toast(n===1?'Guardado también en Documentos':`${n} imágenes guardadas también en Documentos`); }); } });
   $('#aiSheet').addEventListener('click', e=>{ if(e.target.closest('#aiPCobGo')) pasarACobranzas(); });
 
@@ -5876,7 +5943,7 @@ Responde solo con un objeto JSON:
   $('#mvVia').addEventListener('click', e=>{ const b=e.target.closest('[data-via]'); if(!b) return; mvVia=b.dataset.via; syncMvMoneda(); });
   ['#mvViaBs','#mvViaTasa'].forEach(x=>$(x).addEventListener('input', ()=>{ const vb=parseNum($('#mvViaBs').value)||0, vt=parseNum($('#mvViaTasa').value)||0; if(vb>0&&vt>0) $('#mvMonto').value=nf.format(r2(vb/vt)); renderMvConv(); }));
   function openMov(tipo, id){ mvDeuda=null; mvTasaOk=''; mvPagoOk=''; mvCxpOk=''; quitarPregAbono(); mvVia='directo'; $('#mvViaBs').value=''; $('#mvViaTasa').value='';
-    const m=id?movs.find(x=>x.id===id):null; mvEditId=id||null; mvAplicando=false; mvTipo=m?m.tipo:tipo;
+    const m=id?movs.find(x=>x.id===id):null; mvEditId=id||null; mvAplicando=false; mvTipo=m?m.tipo:tipo; abrirDocBox('#mvDocs', mvEditId);
     ['#mvTrab','#mvCuenta','#mvOrig','#mvDest'].forEach(s=>{ $(s).value=''; }); fillMvSelects();
     $('#mvTitle').textContent = m ? 'Editar movimiento' : mvTipo==='gasto'?'Nuevo gasto':mvTipo==='ingreso'?'Nuevo ingreso':'Cambio entre cuentas';
     $('#mvFecha').value=m?m.fecha:today(); $('#mvACargo').value=m&&m.aCargo||'Empresa';
@@ -5995,7 +6062,7 @@ Responde solo con un objeto JSON:
       if(!old||!mvOrig) return err('Este movimiento ya no existe (lo eliminaron desde otro teléfono). Cierra la hoja.');
       cambiosMv=cambiosDe(mvBase, C); const chq=choquesDe(cambiosMv, mvOrig, old);
       if(chq.length && !avisoChoque('#mvSheet', '#mvErr', canon(chq.map(k=>old[k])), detalleChoque(chq, {fecha:'fecha', concepto:'concepto', categoria:'categoría', aCargo:'a cargo de', cuenta:'cuenta', monto:'monto', tasa:'tasa', trabajoId:'orden', referencia:'referencia', montoBs:'monto en bolívares', cuentaOrigen:'cuenta de la que sale', montoOrigen:'monto que sale', cuentaDestino:'cuenta a la que entra', montoDestino:'monto que entra'}, old), ()=>openMov(mvTipo, idEd), ()=>guardarMov())) return;
-      if(!Object.keys(cambiosMv).length){ closeSheets(); toast('Sin cambios: no había nada que guardar'); return; }
+      if(!Object.keys(cambiosMv).length){ if(docPend['#mvDocs'].length){ guardarDocBox('#mvDocs', idEd, {modulo:'gas', movs:[idEd], movTxt:body.concepto||'', nota:[body.concepto, body.referencia].filter(Boolean).join(' · ')}); closeSheets(); return; } closeSheets(); toast('Sin cambios: no había nada que guardar'); return; }
       ops=[opEditar('movimientos', idEd, {...cambiosMv, actualizado:body.actualizado}, queMv)];
       { const b2=aplicarCambios(old, cambiosMv); delete b2.id; b2.actualizado=body.actualizado; body=b2; }
     } else ops=[opSet('movimientos', idMv, body, queMv)];
@@ -6021,6 +6088,7 @@ Responde solo con un objeto JSON:
       avisos.push(()=>setTimeout(()=>{ if(gView==='mov') renderGas(); },300)); D=null; }
     const old0=old?JSON.parse(JSON.stringify(old)):null;
     return enviar(ops, queMv, ()=>{
+      if(docPend['#mvDocs'].length) guardarDocBox('#mvDocs', idMv, {modulo:'gas', movs:[idMv], movTxt:body.concepto||'', nota:[body.concepto, body.referencia].filter(Boolean).join(' · ')});
       if(idEd){ const o=old0; if(o) diffCampos('movimientos', idEd, o.concepto||o.tipo, o, body, [['monto','monto',v=>nf.format(num(v))],['tasa','tasa',v=>nfT.format(num(v))],['fecha','fecha'],['cuenta','cuenta'],['categoria','categoría'],['montoOrigen','monto que sale',v=>nf.format(num(v))],['montoDestino','monto que entra',v=>nf.format(num(v))],['trabajoId','orden']]); }
       soltarIntento('#mvSheet'); if(esPago) mvDeuda=null;
       if(body.tipo==='deuda') setTimeout(()=>toast('Quedó en cuentas por pagar: no salió dinero todavía'),50);
